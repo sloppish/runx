@@ -33,6 +33,9 @@ result_limit = 24
 
 [plugins]
 directories = []
+search_paths = []
+# Example:
+# search_paths = ["/opt/homebrew/bin"]
 
 # Per-plugin configuration can live under `[plugin.<id>]`.
 [ui]
@@ -47,6 +50,7 @@ muted = "#756759"
 pub struct LoadedConfig {
     pub config: Config,
     pub plugin_dirs: Vec<PathBuf>,
+    pub plugin_search_paths: Vec<PathBuf>,
 }
 
 #[derive(Debug, Clone, Deserialize, Default)]
@@ -88,6 +92,7 @@ pub struct RankingConfig {
 #[serde(default)]
 pub struct PluginsConfig {
     pub directories: Vec<String>,
+    pub search_paths: Vec<String>,
 }
 
 #[derive(Debug, Clone, Deserialize)]
@@ -131,9 +136,16 @@ impl LoadedConfig {
         }
         dedup_paths(&mut plugin_dirs);
 
+        let mut plugin_search_paths = Vec::new();
+        for configured in &config.plugins.search_paths {
+            plugin_search_paths.push(resolve_path(&root_dir, base_dirs.home_dir(), configured));
+        }
+        dedup_paths(&mut plugin_search_paths);
+
         Ok(Self {
             config,
             plugin_dirs,
+            plugin_search_paths,
         })
     }
 }

@@ -1,5 +1,7 @@
 use std::{
-    env, fs,
+    env,
+    ffi::OsString,
+    fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
 };
@@ -18,6 +20,7 @@ use crate::{
 #[derive(Clone, Default)]
 pub struct PluginHost {
     plugins: Vec<LuaPlugin>,
+    search_paths: Vec<PathBuf>,
     config: std::collections::HashMap<String, JsonValue>,
 }
 
@@ -55,6 +58,7 @@ pub struct PluginExecutionContext {
 impl PluginHost {
     pub fn load(
         directories: &[PathBuf],
+        search_paths: &[PathBuf],
         config: std::collections::HashMap<String, JsonValue>,
     ) -> Self {
         let mut plugins = Vec::new();
@@ -69,7 +73,7 @@ impl PluginHost {
                     continue;
                 }
 
-                match load_plugin(&path) {
+                match load_plugin(&path, search_paths) {
                     Ok(plugin) => plugins.push(plugin),
                     Err(error) => eprintln!("Skipping plugin {}: {error:#}", path.display()),
                 }
@@ -77,14 +81,23 @@ impl PluginHost {
         }
 
         plugins.sort_by(|left, right| left.name.cmp(&right.name));
-        Self { plugins, config }
+        Self {
+            plugins,
+            search_paths: search_paths.to_vec(),
+            config,
+        }
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<SearchItem>> {
         let mut items = Vec::new();
         for plugin in &self.plugins {
-            let plugin_items = run_search(plugin, query, self.plugin_config(&plugin.id))
-                .with_context(|| format!("plugin `{}` search failed", plugin.id))?;
+            let plugin_items = run_search(
+                plugin,
+                query,
+                self.plugin_config(&plugin.id),
+                &self.search_paths,
+            )
+            .with_context(|| format!("plugin `{}` search failed", plugin.id))?;
             items.extend(plugin_items);
         }
         Ok(items)
@@ -101,7 +114,13 @@ impl PluginHost {
             .iter()
             .find(|plugin| plugin.id == plugin_id)
             .with_context(|| format!("unknown plugin `{plugin_id}`"))?;
-        run_action(plugin, payload, context, self.plugin_config(plugin_id))
+        run_action(
+            plugin,
+            payload,
+            context,
+            self.plugin_config(plugin_id),
+            &self.search_paths,
+        )
     }
 
     fn plugin_config(&self, plugin_id: &str) -> JsonValue {
@@ -112,10 +131,10 @@ impl PluginHost {
     }
 }
 
-fn load_plugin(path: &Path) -> Result<LuaPlugin> {
+fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
     let source = fs::read_to_string(path)
         .with_context(|| format!("failed to read plugin {}", path.display()))?;
-    let (lua, table) = load_table(path, &source, &empty_plugin_config())?;
+    let (lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths)?;
     let metadata = extract_metadata(&lua, &table)?;
 
     let fallback_id = path
@@ -146,8 +165,9 @@ fn run_search(
     plugin: &LuaPlugin,
     query: &str,
     plugin_config: JsonValue,
+    search_paths: &[PathBuf],
 ) -> Result<Vec<SearchItem>> {
-    let (lua, table) = load_table(&plugin.path, &plugin.source, &plugin_config)?;
+    let (lua, table) = load_table(&plugin.path, &plugin.source, &plugin_config, search_paths)?;
     let search: Function = match table.get::<Option<Function>>("search")? {
         Some(function) => function,
         None => return Ok(Vec::new()),
@@ -180,9 +200,15 @@ fn run_action(
     payload: &PluginActionPayload,
     context: &PluginExecutionContext,
     plugin_config: JsonValue,
+    search_paths: &[PathBuf],
 ) -> Result<Option<String>> {
-    let (lua, table) =
-        load_table_with_context(&plugin.path, &plugin.source, context, &plugin_config)?;
+    let (lua, table) = load_table_with_context(
+        &plugin.path,
+        &plugin.source,
+        context,
+        &plugin_config,
+        search_paths,
+    )?;
     let run: Function = table
         .get::<Option<Function>>("run")?
         .ok_or_else(|| anyhow!("plugin `{}` does not export a `run` function", plugin.id))?;
@@ -209,12 +235,18 @@ fn run_action(
     Ok(outcome.message)
 }
 
-fn load_table(path: &Path, source: &str, plugin_config: &JsonValue) -> Result<(Lua, Table)> {
+fn load_table(
+    path: &Path,
+    source: &str,
+    plugin_config: &JsonValue,
+    search_paths: &[PathBuf],
+) -> Result<(Lua, Table)> {
     load_table_with_context(
         path,
         source,
         &PluginExecutionContext::default(),
         plugin_config,
+        search_paths,
     )
 }
 
@@ -223,9 +255,10 @@ fn load_table_with_context(
     source: &str,
     context: &PluginExecutionContext,
     plugin_config: &JsonValue,
+    search_paths: &[PathBuf],
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
-    install_runtime(&lua, context, plugin_config)?;
+    install_runtime(&lua, context, plugin_config, search_paths)?;
     let table: Table = lua
         .load(source)
         .set_name(path.to_string_lossy().as_ref())
@@ -238,8 +271,10 @@ fn install_runtime(
     lua: &Lua,
     context: &PluginExecutionContext,
     plugin_config: &JsonValue,
+    search_paths: &[PathBuf],
 ) -> Result<()> {
     let runtime = lua.create_table()?;
+    let search_paths = search_paths.to_vec();
 
     runtime.set(
         "fuzzy_score",
@@ -260,40 +295,55 @@ fn install_runtime(
         })?,
     )?;
 
+    let exec_capture_paths = search_paths.clone();
     runtime.set(
         "exec_capture",
         lua.create_function(
-            |_, (program, args, first_line_only): (String, Vec<String>, Option<bool>)| {
-                exec_capture(&program, &args, first_line_only.unwrap_or(false))
-                    .map_err(mlua::Error::external)
+            move |_, (program, args, first_line_only): (String, Vec<String>, Option<bool>)| {
+                exec_capture(
+                    &program,
+                    &args,
+                    first_line_only.unwrap_or(false),
+                    &exec_capture_paths,
+                )
+                .map_err(mlua::Error::external)
             },
         )?,
     )?;
 
+    let exec_status_paths = search_paths.clone();
     runtime.set(
         "exec_status",
         lua.create_function(
-            |_, (program, args, silence_stderr): (String, Vec<String>, Option<bool>)| {
-                exec_status(&program, &args, silence_stderr.unwrap_or(false))
-                    .map_err(mlua::Error::external)?;
+            move |_, (program, args, silence_stderr): (String, Vec<String>, Option<bool>)| {
+                exec_status(
+                    &program,
+                    &args,
+                    silence_stderr.unwrap_or(false),
+                    &exec_status_paths,
+                )
+                .map_err(mlua::Error::external)?;
                 Ok(true)
             },
         )?,
     )?;
 
+    let exec_json_paths = search_paths.clone();
     runtime.set(
         "exec_json",
-        lua.create_function(|lua, (program, args): (String, Vec<String>)| {
-            let output = exec_capture(&program, &args, false).map_err(mlua::Error::external)?;
+        lua.create_function(move |lua, (program, args): (String, Vec<String>)| {
+            let output = exec_capture(&program, &args, false, &exec_json_paths)
+                .map_err(mlua::Error::external)?;
             let json = serde_json::from_str::<JsonValue>(&output).map_err(mlua::Error::external)?;
             lua.to_value(&json)
         })?,
     )?;
 
+    let copy_text_paths = search_paths.clone();
     runtime.set(
         "copy_text",
-        lua.create_function(|_, text: String| {
-            let mut child = Command::new("pbcopy")
+        lua.create_function(move |_, text: String| {
+            let mut child = command_for_plugin("pbcopy", &copy_text_paths)
                 .stdin(Stdio::piped())
                 .stdout(Stdio::null())
                 .stderr(Stdio::null())
@@ -372,8 +422,13 @@ fn walk_directory(root: &Path, current: &Path, files: &mut Vec<String>) -> Resul
     Ok(())
 }
 
-fn exec_capture(program: &str, args: &[String], first_line_only: bool) -> Result<String> {
-    let output = Command::new(program)
+fn exec_capture(
+    program: &str,
+    args: &[String],
+    first_line_only: bool,
+    search_paths: &[PathBuf],
+) -> Result<String> {
+    let output = command_for_plugin(program, search_paths)
         .args(args)
         .stdin(Stdio::null())
         .output()
@@ -401,8 +456,13 @@ fn exec_capture(program: &str, args: &[String], first_line_only: bool) -> Result
     Ok(text)
 }
 
-fn exec_status(program: &str, args: &[String], silence_stderr: bool) -> Result<()> {
-    let mut command = Command::new(program);
+fn exec_status(
+    program: &str,
+    args: &[String],
+    silence_stderr: bool,
+    search_paths: &[PathBuf],
+) -> Result<()> {
+    let mut command = command_for_plugin(program, search_paths);
     command
         .args(args)
         .stdin(Stdio::null())
@@ -425,6 +485,27 @@ fn exec_status(program: &str, args: &[String], silence_stderr: bool) -> Result<(
     bail!("{stderr}");
 }
 
+fn command_for_plugin(program: &str, search_paths: &[PathBuf]) -> Command {
+    let mut command = Command::new(program);
+    command.env("PATH", plugin_search_path(search_paths));
+    command
+}
+
+fn plugin_search_path(search_paths: &[PathBuf]) -> OsString {
+    let mut paths = match env::var_os("PATH") {
+        Some(value) => env::split_paths(&value).collect::<Vec<_>>(),
+        None => Vec::new(),
+    };
+
+    for path in search_paths {
+        if !paths.iter().any(|candidate| candidate == path) {
+            paths.push(path.clone());
+        }
+    }
+
+    env::join_paths(paths).unwrap_or_default()
+}
+
 struct BaseHome;
 
 impl BaseHome {
@@ -433,5 +514,36 @@ impl BaseHome {
             mlua::Error::external("could not resolve the current user's home directory")
         })?;
         Ok(home.home_dir().to_path_buf())
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use std::env;
+    use std::path::PathBuf;
+
+    use super::plugin_search_path;
+
+    #[test]
+    fn plugin_search_path_includes_configured_paths() {
+        let path = plugin_search_path(&[PathBuf::from("/opt/homebrew/bin")])
+            .to_string_lossy()
+            .into_owned();
+
+        assert!(path.contains("/opt/homebrew/bin"));
+    }
+
+    #[test]
+    fn plugin_search_path_keeps_existing_path_entries() {
+        let path = plugin_search_path(&[PathBuf::from("/opt/homebrew/bin")])
+            .to_string_lossy()
+            .into_owned();
+
+        if let Some(existing) = env::var_os("PATH") {
+            let existing = existing.to_string_lossy();
+            if !existing.is_empty() {
+                assert!(path.contains(existing.as_ref()));
+            }
+        }
     }
 }
