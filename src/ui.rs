@@ -209,6 +209,8 @@ pub fn html(theme: &UiConfig) -> String {
     }}
 
     .badge.has-icon {{
+      min-width: 46px;
+      width: 46px;
       padding: 0;
       background: rgba(255,255,255,0.66);
     }}
@@ -216,7 +218,7 @@ pub fn html(theme: &UiConfig) -> String {
     .icon-image {{
       width: 100%;
       height: 100%;
-      object-fit: cover;
+      object-fit: contain;
       display: block;
       border-radius: 14px;
     }}

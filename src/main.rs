@@ -300,7 +300,6 @@ impl LauncherApp {
     fn start_search(&mut self, query: String) {
         self.current_generation += 1;
         self.current_query = query;
-        self.provider_items.clear();
         self.pending_providers = self.providers.provider_count();
         self.status = Some(StatusLine {
             kind: "info",
