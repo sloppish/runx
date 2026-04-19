@@ -114,6 +114,7 @@ struct LauncherApp {
     current_generation: u64,
     provider_items: HashMap<String, Vec<SearchItem>>,
     rendered_items: Vec<SearchItem>,
+    pending_providers: usize,
     status: Option<StatusLine>,
     shown_at: Option<Instant>,
     focused_since_show: bool,
@@ -161,6 +162,7 @@ impl LauncherApp {
             current_generation: 0,
             provider_items: HashMap::new(),
             rendered_items: Vec::new(),
+            pending_providers: 0,
             status: Some(StatusLine {
                 kind: "info",
                 message: "Type to search. Arrow keys, Enter, click, or ⌥1-9.".to_owned(),
@@ -211,6 +213,7 @@ impl LauncherApp {
         self.window.set_visible(false);
         self.current_query.clear();
         self.provider_items.clear();
+        self.pending_providers = 0;
         self.render()?;
         Ok(())
     }
@@ -247,6 +250,7 @@ impl LauncherApp {
                 items,
             } => {
                 if generation == self.current_generation {
+                    self.pending_providers = self.pending_providers.saturating_sub(1);
                     self.provider_items.insert(provider, items);
                     self.render()?;
                 }
@@ -257,6 +261,7 @@ impl LauncherApp {
                 message,
             } => {
                 if generation == self.current_generation {
+                    self.pending_providers = self.pending_providers.saturating_sub(1);
                     self.status = Some(StatusLine {
                         kind: "error",
                         message: format!("{provider}: {message}"),
@@ -289,7 +294,7 @@ impl LauncherApp {
         self.current_generation += 1;
         self.current_query = query;
         self.provider_items.clear();
-        self.rendered_items.clear();
+        self.pending_providers = self.providers.provider_count();
         self.status = Some(StatusLine {
             kind: "info",
             message: if self.current_query.trim().is_empty() {
@@ -337,7 +342,12 @@ impl LauncherApp {
             .values()
             .flat_map(|items| items.clone())
             .collect::<Vec<_>>();
-        self.rendered_items = sort_and_trim(all_items, &self.loaded.config.ranking);
+        let next_items = sort_and_trim(all_items, &self.loaded.config.ranking);
+        let keep_previous_items =
+            self.pending_providers > 0 && next_items.is_empty() && !self.rendered_items.is_empty();
+        if !keep_previous_items {
+            self.rendered_items = next_items;
+        }
 
         let items = self
             .rendered_items

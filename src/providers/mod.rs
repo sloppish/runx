@@ -31,6 +31,8 @@ pub struct ProviderSet {
 }
 
 impl ProviderSet {
+    pub const PROVIDER_COUNT: usize = 5;
+
     pub fn new(config: Arc<Config>, plugins: Arc<PluginHost>) -> anyhow::Result<Self> {
         Ok(Self {
             apps: Arc::new(AppProvider::new()?),
@@ -40,6 +42,10 @@ impl ProviderSet {
             plugins,
             config,
         })
+    }
+
+    pub fn provider_count(&self) -> usize {
+        Self::PROVIDER_COUNT
     }
 
     pub fn spawn_search(
