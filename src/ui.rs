@@ -405,8 +405,8 @@ pub fn html(theme: &UiConfig) -> String {
         return;
       }}
 
-      if (event.altKey && /^[1-9]$/.test(event.key)) {{
-        const index = Number(event.key) - 1;
+      if (event.altKey && /^Digit[1-9]$/.test(event.code)) {{
+        const index = Number(event.code.slice("Digit".length)) - 1;
         if (index < state.items.length) {{
           event.preventDefault();
           send({{ type: "activate", index }});
