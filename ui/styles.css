@@ -173,6 +173,12 @@ input::placeholder {
   font: inherit;
 }
 
+.item.compact {
+  grid-template-columns: 1fr auto;
+  gap: 12px;
+  padding-left: 18px;
+}
+
 .item:hover {
   background: var(--item-hover);
 }
@@ -219,6 +225,12 @@ input::placeholder {
 
 .copy {
   min-width: 0;
+}
+
+.item.compact .copy {
+  display: flex;
+  align-items: center;
+  min-height: 24px;
 }
 
 .title {

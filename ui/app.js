@@ -137,15 +137,20 @@
     for (const [index, item] of state.items.entries()) {
       const row = document.createElement("button");
       row.type = "button";
-      row.className = "item" + (index === state.selectedIndex ? " selected" : "");
-      const badgeMarkup = item.icon
+      row.className = "item" + (item.compact ? " compact" : "") + (index === state.selectedIndex ? " selected" : "");
+      const badgeMarkup = item.compact
+        ? ""
+        : item.icon
         ? `<div class="badge has-icon"><img class="icon-image" src="${escapeAttr(item.icon)}" alt="" /></div>`
         : `<div class="badge">${item.badge}</div>`;
+      const subtitleMarkup = item.compact
+        ? ""
+        : `<div class="subtitle">${escapeHtml(item.subtitle)}</div>`;
       row.innerHTML = `
         ${badgeMarkup}
         <div class="copy">
           <div class="title">${escapeHtml(item.title)}</div>
-          <div class="subtitle">${escapeHtml(item.subtitle)}</div>
+          ${subtitleMarkup}
         </div>
         <div class="accelerator">${item.accelerator ? escapeHtml(item.accelerator) : ""}</div>
       `;

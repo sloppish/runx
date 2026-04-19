@@ -170,6 +170,7 @@ impl SearchSession {
                 badge: item.badge.clone(),
                 icon: item.icon.clone(),
                 accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
+                compact: item.provider == "plugins",
             })
             .collect();
 

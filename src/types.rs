@@ -99,6 +99,7 @@ pub struct ViewItem {
     pub badge: String,
     pub icon: Option<String>,
     pub accelerator: Option<String>,
+    pub compact: bool,
 }
 
 #[derive(Debug, Clone, Serialize)]
