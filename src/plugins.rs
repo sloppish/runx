@@ -224,77 +224,36 @@ fn install_runtime(lua: &Lua, context: &PluginExecutionContext) -> Result<()> {
     )?;
 
     runtime.set(
-        "list_password_store",
-        lua.create_function(|_, ()| list_password_store().map_err(mlua::Error::external))?,
+        "getenv",
+        lua.create_function(|_, name: String| Ok(env::var(name).ok()))?,
     )?;
 
     runtime.set(
-        "pass_show",
-        lua.create_function(|_, entry: String| {
-            run_capture("pass", &["show".to_owned(), entry], true).map_err(mlua::Error::external)
+        "walk_files",
+        lua.create_function(|_, root: String| {
+            walk_files(Path::new(&root)).map_err(mlua::Error::external)
         })?,
     )?;
 
     runtime.set(
-        "pass_copy",
-        lua.create_function(|_, entry: String| {
-            run_status("pass", &["show".to_owned(), "-c1".to_owned(), entry], false)
-                .map_err(mlua::Error::external)?;
-            Ok("Copied password".to_owned())
-        })?,
+        "exec_capture",
+        lua.create_function(
+            |_, (program, args, first_line_only): (String, Vec<String>, Option<bool>)| {
+                exec_capture(&program, &args, first_line_only.unwrap_or(false))
+                    .map_err(mlua::Error::external)
+            },
+        )?,
     )?;
 
     runtime.set(
-        "pass_otp",
-        lua.create_function(|_, entry: String| {
-            run_capture("pass", &["otp".to_owned(), entry], true).map_err(mlua::Error::external)
-        })?,
-    )?;
-
-    runtime.set(
-        "pass_otp_copy",
-        lua.create_function(|_, entry: String| {
-            run_status("pass", &["otp".to_owned(), "-c".to_owned(), entry], false)
-                .map_err(mlua::Error::external)?;
-            Ok("Copied OTP".to_owned())
-        })?,
-    )?;
-
-    runtime.set(
-        "pass_generate",
-        lua.create_function(|_, args: String| {
-            let parts = split_args(&args);
-            if parts.is_empty() {
-                return Err(mlua::Error::external("pass-gen needs arguments"));
-            }
-
-            let mut command = vec!["generate".to_owned()];
-            command.extend(parts.clone());
-            run_status("pass", &command, false).map_err(mlua::Error::external)?;
-
-            let entry = parts
-                .iter()
-                .find(|value| !value.starts_with('-'))
-                .cloned()
-                .ok_or_else(|| mlua::Error::external("could not infer generated pass entry"))?;
-
-            run_capture("pass", &["show".to_owned(), entry], true).map_err(mlua::Error::external)
-        })?,
-    )?;
-
-    runtime.set(
-        "pass_generate_copy",
-        lua.create_function(|_, args: String| {
-            let parts = split_args(&args);
-            if parts.is_empty() {
-                return Err(mlua::Error::external("pass-gen-copy needs arguments"));
-            }
-
-            let mut command = vec!["generate".to_owned(), "-c".to_owned()];
-            command.extend(parts);
-            run_status("pass", &command, false).map_err(mlua::Error::external)?;
-            Ok("Generated password and copied it".to_owned())
-        })?,
+        "exec_status",
+        lua.create_function(
+            |_, (program, args, silence_stderr): (String, Vec<String>, Option<bool>)| {
+                exec_status(&program, &args, silence_stderr.unwrap_or(false))
+                    .map_err(mlua::Error::external)?;
+                Ok(true)
+            },
+        )?,
     )?;
 
     runtime.set(
@@ -390,56 +349,38 @@ end run
     bail!("{stderr}");
 }
 
-fn list_password_store() -> Result<Vec<String>> {
-    let root = password_store_dir();
+fn walk_files(root: &Path) -> Result<Vec<String>> {
     if !root.exists() {
         return Ok(Vec::new());
     }
 
-    let mut entries = Vec::new();
-    walk_password_store(&root, &root, &mut entries)?;
-    entries.sort();
-    Ok(entries)
+    let mut files = Vec::new();
+    walk_directory(root, root, &mut files)?;
+    files.sort();
+    Ok(files)
 }
 
-fn walk_password_store(root: &Path, current: &Path, entries: &mut Vec<String>) -> Result<()> {
+fn walk_directory(root: &Path, current: &Path, files: &mut Vec<String>) -> Result<()> {
     for entry in
         fs::read_dir(current).with_context(|| format!("failed to read {}", current.display()))?
     {
         let entry = entry?;
         let path = entry.path();
         if path.is_dir() {
-            walk_password_store(root, &path, entries)?;
-            continue;
-        }
-
-        if path.extension().and_then(|value| value.to_str()) != Some("gpg") {
+            walk_directory(root, &path, files)?;
             continue;
         }
 
         let relative = path
             .strip_prefix(root)
             .with_context(|| format!("failed to relativize {}", path.display()))?;
-        let value = relative
-            .to_string_lossy()
-            .trim_end_matches(".gpg")
-            .to_owned();
-        entries.push(value);
+        files.push(relative.to_string_lossy().to_string());
     }
+
     Ok(())
 }
 
-fn password_store_dir() -> PathBuf {
-    if let Ok(value) = env::var("PASSWORD_STORE_DIR") {
-        return PathBuf::from(value);
-    }
-
-    BaseHome::resolve()
-        .unwrap_or_else(|_| PathBuf::from("~"))
-        .join(".password-store")
-}
-
-fn run_capture(program: &str, args: &[String], first_line_only: bool) -> Result<String> {
+fn exec_capture(program: &str, args: &[String], first_line_only: bool) -> Result<String> {
     let output = Command::new(program)
         .args(args)
         .stdin(Stdio::null())
@@ -468,7 +409,7 @@ fn run_capture(program: &str, args: &[String], first_line_only: bool) -> Result<
     Ok(text)
 }
 
-fn run_status(program: &str, args: &[String], silence_stderr: bool) -> Result<()> {
+fn exec_status(program: &str, args: &[String], silence_stderr: bool) -> Result<()> {
     let mut command = Command::new(program);
     command
         .args(args)
@@ -490,12 +431,6 @@ fn run_status(program: &str, args: &[String], silence_stderr: bool) -> Result<()
         bail!("`{program}` exited with status {}", output.status);
     }
     bail!("{stderr}");
-}
-
-fn split_args(raw: &str) -> Vec<String> {
-    raw.split_whitespace()
-        .map(|value| value.to_owned())
-        .collect()
 }
 
 struct BaseHome;
