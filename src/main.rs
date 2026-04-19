@@ -19,7 +19,7 @@ use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use icons::IconCache;
 use providers::ProviderSet;
 #[cfg(target_os = "macos")]
-use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
+use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS, WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
     dpi::{LogicalSize, PhysicalPosition},
     event::{Event, WindowEvent},
@@ -62,7 +62,12 @@ fn run() -> Result<()> {
     let icons = Arc::new(IconCache::new()?);
     let providers = ProviderSet::new(config.clone(), plugins.clone(), icons)?;
 
-    let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
+    let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
+    #[cfg(target_os = "macos")]
+    {
+        event_loop.set_activation_policy(ActivationPolicy::Accessory);
+        event_loop.set_dock_visibility(false);
+    }
     let proxy = event_loop.create_proxy();
     let mut app = LauncherApp::new(
         loaded,
