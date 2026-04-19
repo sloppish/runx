@@ -36,21 +36,11 @@ local function pass_rank_binary()
   return path
 end
 
-local function list_password_store()
-  local root = password_store_dir()
-  local entries = {}
-
-  for _, path in ipairs(runx.walk_files(root)) do
-    if path:sub(-4) == ".gpg" then
-      table.insert(entries, path:sub(1, -5))
-    end
+local function ranked_password_store(query)
+  if trim(query) == "" then
+    return {}
   end
 
-  table.sort(entries)
-  return entries
-end
-
-local function ranked_password_store(query)
   local payload = runx.exec_json(pass_rank_binary(), { query })
   local ranked = {}
 
@@ -168,7 +158,7 @@ end
 local function score_entries(query, command)
   local items = {}
   local trimmed = trim(query)
-  local entries = trimmed == "" and list_password_store() or ranked_password_store(trimmed)
+  local entries = ranked_password_store(trimmed)
   local total = #entries
 
   for index, entry in ipairs(entries) do

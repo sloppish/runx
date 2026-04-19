@@ -365,7 +365,9 @@ pub fn html(theme: &UiConfig) -> String {
     }});
 
     inputEl.addEventListener("keydown", (event) => {{
-      if (event.key === "ArrowDown") {{
+      const ctrlDown = event.ctrlKey && !event.metaKey && !event.altKey;
+
+      if (event.key === "ArrowDown" || (ctrlDown && event.key.toLowerCase() === "n")) {{
         event.preventDefault();
         if (state.items.length > 0) {{
           state.selectedIndex = Math.min(state.selectedIndex + 1, state.items.length - 1);
@@ -374,7 +376,7 @@ pub fn html(theme: &UiConfig) -> String {
         return;
       }}
 
-      if (event.key === "ArrowUp") {{
+      if (event.key === "ArrowUp" || (ctrlDown && event.key.toLowerCase() === "p")) {{
         event.preventDefault();
         if (state.items.length > 0) {{
           state.selectedIndex = Math.max(state.selectedIndex - 1, 0);
