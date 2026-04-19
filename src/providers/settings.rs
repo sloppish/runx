@@ -63,13 +63,14 @@ impl SettingsProvider {
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
-        if query.trim().is_empty() {
+        let query = query.trim();
+        if query.is_empty() {
             return Ok(Vec::new());
         }
 
         let mut items = Vec::new();
         for setting in &self.items {
-            let score = fuzzy_score(&setting.title, query) + (fuzzy_score(&setting.id, query) / 3);
+            let score = setting_score(setting, query);
             if score <= 0 {
                 continue;
             }
@@ -103,6 +104,23 @@ impl SettingsProvider {
             })
             .collect())
     }
+}
+
+fn setting_score(setting: &SettingRecord, query: &str) -> i64 {
+    let mut score = fuzzy_score(&setting.title, query) + (fuzzy_score(&setting.id, query) / 3);
+    let title_lower = setting.title.to_ascii_lowercase();
+    let query_lower = query.to_ascii_lowercase();
+
+    if title_lower == query_lower {
+        score += 260;
+    } else if title_lower.starts_with(&query_lower) {
+        score += 180;
+    } else if title_lower.contains(&query_lower) {
+        score += 90;
+    }
+
+    score -= setting.title.matches('›').count() as i64 * 40;
+    score
 }
 
 fn scan_bundle_metadata() -> Result<HashMap<String, BundleMetadata>> {

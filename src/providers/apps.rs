@@ -6,6 +6,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use directories::BaseDirs;
+use plist::Value;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
@@ -23,6 +24,7 @@ pub struct AppProvider {
 struct AppRecord {
     name: String,
     path: String,
+    score_adjustment: i64,
 }
 
 impl AppProvider {
@@ -67,9 +69,11 @@ impl AppProvider {
                     .and_then(|value| value.to_str())
                     .unwrap_or("Application")
                     .to_owned();
+                let score_adjustment = app_score_adjustment(path);
                 apps.push(AppRecord {
                     name,
                     path: normalized,
+                    score_adjustment,
                 });
             }
         }
@@ -85,7 +89,7 @@ impl AppProvider {
 
         let mut matches = Vec::new();
         for app in &self.apps {
-            let score = fuzzy_score(&app.name, query);
+            let score = fuzzy_score(&app.name, query) + app.score_adjustment;
             if score <= 0 {
                 continue;
             }
@@ -121,6 +125,51 @@ fn filter_entry(entry: &DirEntry) -> bool {
 
     let name = entry.file_name().to_string_lossy();
     !name.starts_with('.')
+}
+
+fn app_score_adjustment(path: &Path) -> i64 {
+    let mut adjustment = 0;
+    let path_text = path.to_string_lossy();
+    let info_path = path.join("Contents/Info.plist");
+    let Ok(plist) = Value::from_file(&info_path) else {
+        return path_penalty(&path_text);
+    };
+    let Some(dict) = plist.as_dictionary() else {
+        return path_penalty(&path_text);
+    };
+
+    let is_agent = dict
+        .get("LSUIElement")
+        .or_else(|| dict.get("NSUIElement"))
+        .is_some_and(plist_truthy);
+    let is_background = dict.get("LSBackgroundOnly").is_some_and(plist_truthy);
+
+    if is_agent || is_background {
+        adjustment -= 180;
+    }
+
+    adjustment + path_penalty(&path_text)
+}
+
+fn path_penalty(path: &str) -> i64 {
+    if path.contains("/System/Library/CoreServices/") {
+        return -110;
+    }
+
+    if path.contains("/System/Applications/Utilities/") {
+        return -70;
+    }
+
+    0
+}
+
+fn plist_truthy(value: &Value) -> bool {
+    match value {
+        Value::Boolean(value) => *value,
+        Value::String(text) => matches!(text.to_ascii_lowercase().as_str(), "1" | "true" | "yes"),
+        Value::Integer(number) => number.as_signed().is_some_and(|value| value != 0),
+        _ => false,
+    }
 }
 
 #[allow(dead_code)]
