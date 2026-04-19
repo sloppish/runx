@@ -126,6 +126,7 @@ impl LauncherApp {
     ) -> Result<Self> {
         let html = ui::html(&config.ui);
         let webview = WebViewBuilder::new()
+            .with_transparent(true)
             .with_html(&html)
             .with_ipc_handler(move |request| {
                 let payload = request.body();
@@ -388,6 +389,7 @@ fn build_window<T: 'static>(
     WindowBuilder::new()
         .with_title("Runx")
         .with_visible(false)
+        .with_transparent(true)
         .with_decorations(false)
         .with_resizable(false)
         .with_inner_size(size)

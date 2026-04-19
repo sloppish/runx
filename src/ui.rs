@@ -15,6 +15,64 @@ pub fn html(theme: &UiConfig) -> String {
       --text: {text};
       --muted: {muted};
       --font: {font_family};
+      --shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(252, 246, 238, 0.98));
+      --shell-shadow:
+        0 32px 80px rgba(81, 55, 31, 0.16),
+        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      --shell-border: rgba(140, 102, 67, 0.16);
+      --label-strong: color-mix(in srgb, var(--text) 88%, white);
+      --input-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,240,230,0.9));
+      --input-border: rgba(140, 102, 67, 0.14);
+      --input-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+      --placeholder: color-mix(in srgb, var(--muted) 78%, white);
+      --scrollbar: rgba(134, 98, 66, 0.18);
+      --item-bg: rgba(255,255,255,0.45);
+      --item-hover: rgba(255,255,255,0.86);
+      --item-selected-bg: linear-gradient(135deg, rgba(199, 123, 73, 0.15), rgba(255,255,255,0.94));
+      --item-selected-shadow:
+        0 18px 44px rgba(139, 87, 46, 0.14),
+        inset 0 0 0 1px rgba(199, 123, 73, 0.22);
+      --badge-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, white), rgba(255,255,255,0.95));
+      --badge-border: rgba(199, 123, 73, 0.18);
+      --badge-text: color-mix(in srgb, var(--accent) 72%, black);
+      --chip-text: color-mix(in srgb, var(--muted) 80%, white);
+      --chip-bg: rgba(255,255,255,0.68);
+      --chip-border: rgba(140, 102, 67, 0.12);
+      --status-error: #9c4420;
+    }}
+
+    @media (prefers-color-scheme: dark) {{
+      :root {{
+        --accent: #d7a17b;
+        --bg: #16110f;
+        --panel: #211916;
+        --text: #f3eadf;
+        --muted: #a99a8c;
+        --shell-bg: linear-gradient(180deg, rgba(37, 30, 27, 0.96), rgba(24, 19, 17, 0.985));
+        --shell-shadow:
+          0 34px 90px rgba(0, 0, 0, 0.42),
+          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        --shell-border: rgba(215, 161, 123, 0.16);
+        --label-strong: color-mix(in srgb, var(--text) 94%, white);
+        --input-bg: linear-gradient(180deg, rgba(33, 26, 23, 0.98), rgba(27, 21, 19, 0.98));
+        --input-border: rgba(215, 161, 123, 0.12);
+        --input-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+        --placeholder: color-mix(in srgb, var(--muted) 88%, black);
+        --scrollbar: rgba(215, 161, 123, 0.24);
+        --item-bg: rgba(255,255,255,0.025);
+        --item-hover: rgba(255,255,255,0.06);
+        --item-selected-bg: linear-gradient(135deg, rgba(215, 161, 123, 0.16), rgba(41, 31, 27, 0.98));
+        --item-selected-shadow:
+          0 18px 44px rgba(0, 0, 0, 0.22),
+          inset 0 0 0 1px rgba(215, 161, 123, 0.2);
+        --badge-bg: linear-gradient(180deg, rgba(215, 161, 123, 0.14), rgba(255,255,255,0.02));
+        --badge-border: rgba(215, 161, 123, 0.16);
+        --badge-text: color-mix(in srgb, var(--accent) 82%, white);
+        --chip-text: color-mix(in srgb, var(--muted) 86%, white);
+        --chip-bg: rgba(255,255,255,0.03);
+        --chip-border: rgba(215, 161, 123, 0.12);
+        --status-error: #f18a63;
+      }}
     }}
 
     * {{
@@ -26,17 +84,16 @@ pub fn html(theme: &UiConfig) -> String {
       height: 100%;
       margin: 0;
       overflow: hidden;
-      background:
-        radial-gradient(circle at top, rgba(255, 255, 255, 0.68), transparent 42%),
-        linear-gradient(180deg, rgba(255, 255, 255, 0.78) 0%, rgba(250, 243, 233, 0.96) 100%);
+      background: transparent;
       color: var(--text);
       font-family: var(--font);
+      color-scheme: light dark;
       -webkit-font-smoothing: antialiased;
       user-select: none;
     }}
 
     body {{
-      padding: 20px;
+      padding: 18px;
     }}
 
     .shell {{
@@ -46,12 +103,10 @@ pub fn html(theme: &UiConfig) -> String {
       gap: 14px;
       padding: 18px;
       border-radius: 24px;
-      background:
-        linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(252, 246, 238, 0.98));
-      box-shadow:
-        0 32px 80px rgba(81, 55, 31, 0.16),
-        inset 0 1px 0 rgba(255, 255, 255, 0.72);
-      border: 1px solid rgba(140, 102, 67, 0.16);
+      overflow: hidden;
+      background: var(--shell-bg);
+      box-shadow: var(--shell-shadow);
+      border: 1px solid var(--shell-border);
     }}
 
     .label {{
@@ -65,7 +120,7 @@ pub fn html(theme: &UiConfig) -> String {
     }}
 
     .label strong {{
-      color: color-mix(in srgb, var(--text) 88%, white);
+      color: var(--label-strong);
       font-weight: 700;
     }}
 
@@ -73,9 +128,9 @@ pub fn html(theme: &UiConfig) -> String {
       position: relative;
       border-radius: 18px;
       padding: 14px 18px;
-      background: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,240,230,0.9));
-      border: 1px solid rgba(140, 102, 67, 0.14);
-      box-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+      background: var(--input-bg);
+      border: 1px solid var(--input-border);
+      box-shadow: var(--input-shadow);
     }}
 
     input {{
@@ -89,10 +144,11 @@ pub fn html(theme: &UiConfig) -> String {
       font-weight: 600;
       letter-spacing: -0.03em;
       font-family: var(--font);
+      caret-color: var(--accent);
     }}
 
     input::placeholder {{
-      color: color-mix(in srgb, var(--muted) 78%, white);
+      color: var(--placeholder);
     }}
 
     .results {{
@@ -110,7 +166,7 @@ pub fn html(theme: &UiConfig) -> String {
     }}
 
     .results::-webkit-scrollbar-thumb {{
-      background: rgba(134, 98, 66, 0.18);
+      background: var(--scrollbar);
       border-radius: 999px;
     }}
 
@@ -123,7 +179,7 @@ pub fn html(theme: &UiConfig) -> String {
       padding: 13px 14px;
       border: 0;
       border-radius: 18px;
-      background: rgba(255,255,255,0.45);
+      background: var(--item-bg);
       cursor: pointer;
       transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
       text-align: left;
@@ -133,14 +189,12 @@ pub fn html(theme: &UiConfig) -> String {
 
     .item:hover {{
       transform: translateY(-1px);
-      background: rgba(255,255,255,0.86);
+      background: var(--item-hover);
     }}
 
     .item.selected {{
-      background: linear-gradient(135deg, rgba(199, 123, 73, 0.15), rgba(255,255,255,0.94));
-      box-shadow:
-        0 18px 44px rgba(139, 87, 46, 0.14),
-        inset 0 0 0 1px rgba(199, 123, 73, 0.22);
+      background: var(--item-selected-bg);
+      box-shadow: var(--item-selected-shadow);
     }}
 
     .badge {{
@@ -148,14 +202,14 @@ pub fn html(theme: &UiConfig) -> String {
       height: 46px;
       padding: 0 12px;
       border-radius: 14px;
-      background: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, white), rgba(255,255,255,0.95));
-      border: 1px solid rgba(199, 123, 73, 0.18);
+      background: var(--badge-bg);
+      border: 1px solid var(--badge-border);
       display: grid;
       place-items: center;
       font-size: 11px;
       font-weight: 700;
       letter-spacing: 0.18em;
-      color: color-mix(in srgb, var(--accent) 72%, black);
+      color: var(--badge-text);
     }}
 
     .copy {{
@@ -181,13 +235,13 @@ pub fn html(theme: &UiConfig) -> String {
     }}
 
     .accelerator {{
-      color: color-mix(in srgb, var(--muted) 80%, white);
+      color: var(--chip-text);
       font-size: 12px;
       font-weight: 600;
       padding: 6px 9px;
       border-radius: 999px;
-      background: rgba(255,255,255,0.68);
-      border: 1px solid rgba(140, 102, 67, 0.12);
+      background: var(--chip-bg);
+      border: 1px solid var(--chip-border);
     }}
 
     .footer {{
@@ -201,7 +255,7 @@ pub fn html(theme: &UiConfig) -> String {
     }}
 
     .status.error {{
-      color: #9c4420;
+      color: var(--status-error);
     }}
   </style>
 </head>
