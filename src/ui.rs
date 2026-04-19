@@ -181,14 +181,13 @@ pub fn html(theme: &UiConfig) -> String {
       border-radius: 18px;
       background: var(--item-bg);
       cursor: pointer;
-      transition: transform 120ms ease, background 120ms ease, box-shadow 120ms ease;
+      transition: background 120ms ease, box-shadow 120ms ease;
       text-align: left;
       color: inherit;
       font: inherit;
     }}
 
     .item:hover {{
-      transform: translateY(-1px);
       background: var(--item-hover);
     }}
 
@@ -327,6 +326,9 @@ pub fn html(theme: &UiConfig) -> String {
           <div class="accelerator">${{item.accelerator ? escapeHtml(item.accelerator) : ""}}</div>
         `;
         row.addEventListener("mouseenter", () => {{
+          if (state.selectedIndex === index) {{
+            return;
+          }}
           state.selectedIndex = index;
           render();
         }});
