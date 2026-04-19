@@ -7,6 +7,8 @@ APP_BUNDLE_ID="dev.runx.launcher"
 PROFILE="release"
 OUT_DIR="$ROOT_DIR/dist"
 PASS_RANK_BIN="${RUNX_PASS_RANK_BIN:-}"
+APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
+TRAY_ICON_SOURCE="$ROOT_DIR/assets/runx-status-template.svg"
 
 usage() {
   cat <<'EOF'
@@ -69,6 +71,44 @@ resolve_pass_rank_bin() {
   exit 1
 }
 
+render_png() {
+  local source="$1"
+  local output="$2"
+  local size="$3"
+  sips -Z "$size" -s format png "$source" --out "$output" >/dev/null
+}
+
+build_app_icon() {
+  local resources_path="$1"
+  local work_dir
+  work_dir="$(mktemp -d)"
+  trap 'rm -rf "$work_dir"' RETURN
+
+  local master_png="$work_dir/runx-app-icon.png"
+  render_png "$APP_ICON_SOURCE" "$master_png" 1024
+
+  local iconset="$work_dir/Runx.iconset"
+  mkdir -p "$iconset"
+
+  sips -z 16 16     "$master_png" --out "$iconset/icon_16x16.png" >/dev/null
+  sips -z 32 32     "$master_png" --out "$iconset/icon_16x16@2x.png" >/dev/null
+  sips -z 32 32     "$master_png" --out "$iconset/icon_32x32.png" >/dev/null
+  sips -z 64 64     "$master_png" --out "$iconset/icon_32x32@2x.png" >/dev/null
+  sips -z 128 128   "$master_png" --out "$iconset/icon_128x128.png" >/dev/null
+  sips -z 256 256   "$master_png" --out "$iconset/icon_128x128@2x.png" >/dev/null
+  sips -z 256 256   "$master_png" --out "$iconset/icon_256x256.png" >/dev/null
+  sips -z 512 512   "$master_png" --out "$iconset/icon_256x256@2x.png" >/dev/null
+  sips -z 512 512   "$master_png" --out "$iconset/icon_512x512.png" >/dev/null
+  cp "$master_png" "$iconset/icon_512x512@2x.png"
+
+  iconutil -c icns "$iconset" -o "$resources_path/Runx.icns"
+}
+
+build_tray_icon() {
+  local resources_path="$1"
+  render_png "$TRAY_ICON_SOURCE" "$resources_path/RunxStatusTemplate.png" 36
+}
+
 PASS_RANK_BIN="$(resolve_pass_rank_bin)"
 APP_VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 
@@ -94,6 +134,8 @@ chmod 755 "$MACOS_PATH/runx"
 cp "$ROOT_DIR/plugins/pass.lua" "$DEFAULTS_PATH/pass.lua"
 cp "$PASS_RANK_BIN" "$DEFAULTS_PATH/pass/pass_rank"
 chmod 755 "$DEFAULTS_PATH/pass/pass_rank"
+build_app_icon "$RESOURCES_PATH"
+build_tray_icon "$RESOURCES_PATH"
 
 cat > "$CONTENTS_PATH/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -106,6 +148,8 @@ cat > "$CONTENTS_PATH/Info.plist" <<EOF
   <string>${APP_NAME}</string>
   <key>CFBundleExecutable</key>
   <string>runx</string>
+  <key>CFBundleIconFile</key>
+  <string>Runx.icns</string>
   <key>CFBundleIdentifier</key>
   <string>${APP_BUNDLE_ID}</string>
   <key>CFBundleInfoDictionaryVersion</key>

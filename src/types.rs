@@ -42,6 +42,9 @@ pub enum AppEvent {
     StartSearch {
         token: u64,
     },
+    TrayToggle,
+    TrayOpen,
+    Quit,
     ProviderItems {
         generation: u64,
         provider: String,

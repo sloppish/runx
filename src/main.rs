@@ -1,10 +1,12 @@
 mod actions;
+mod assets;
 mod config;
 mod icons;
 mod macos;
 mod plugins;
 mod providers;
 mod scoring;
+mod tray;
 mod types;
 mod ui;
 
@@ -22,7 +24,7 @@ use providers::ProviderSet;
 use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS, WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
     dpi::{LogicalSize, PhysicalPosition},
-    event::{Event, WindowEvent},
+    event::{Event, StartCause, WindowEvent},
     event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
     window::{Window, WindowBuilder},
 };
@@ -100,6 +102,11 @@ fn run() -> Result<()> {
         }
 
         match event {
+            Event::NewEvents(StartCause::Init) => {
+                if let Err(error) = app.ensure_tray() {
+                    app.set_error(error.to_string());
+                }
+            }
             Event::WindowEvent { event, .. } => {
                 if let Err(error) = app.handle_window_event(event) {
                     app.set_error(error.to_string());
@@ -135,6 +142,7 @@ struct LauncherApp {
     previous_app: Option<macos::FrontmostApp>,
     render_scheduled: bool,
     search_token: u64,
+    tray: Option<tray::TrayState>,
 }
 
 impl LauncherApp {
@@ -188,6 +196,7 @@ impl LauncherApp {
             previous_app: None,
             render_scheduled: false,
             search_token: 0,
+            tray: None,
         })
     }
 
@@ -222,6 +231,16 @@ impl LauncherApp {
         self.start_search_now();
         self.focus_input()?;
         Ok(())
+    }
+
+    fn show_or_focus(&mut self) -> Result<()> {
+        if self.visible {
+            self.window.set_focus();
+            self.focus_input()?;
+            return Ok(());
+        }
+
+        self.show()
     }
 
     fn hide(&mut self) -> Result<()> {
@@ -262,6 +281,9 @@ impl LauncherApp {
 
     fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
+            AppEvent::TrayToggle => self.toggle()?,
+            AppEvent::TrayOpen => self.show_or_focus()?,
+            AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
             AppEvent::Render => {
                 self.render_scheduled = false;
@@ -304,6 +326,13 @@ impl LauncherApp {
                 });
                 self.request_render(RENDER_COALESCE);
             }
+        }
+        Ok(())
+    }
+
+    fn ensure_tray(&mut self) -> Result<()> {
+        if self.tray.is_none() {
+            self.tray = Some(tray::TrayState::install(self.proxy.clone())?);
         }
         Ok(())
     }
