@@ -52,7 +52,6 @@ const DEFAULT_PASS_RANK_RESOURCE: &str = "defaults/pass/pass_rank";
 
 pub struct LoadedConfig {
     pub config: Config,
-    pub config_path: PathBuf,
     pub plugin_dirs: Vec<PathBuf>,
 }
 
@@ -156,7 +155,6 @@ impl LoadedConfig {
 
         Ok(Self {
             config,
-            config_path,
             plugin_dirs,
         })
     }

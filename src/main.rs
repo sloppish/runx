@@ -220,14 +220,11 @@ impl LauncherApp {
                 None
             }
         };
+        self.reset_session_state();
+        self.render()?;
         self.center_window();
         self.window.set_visible(true);
         self.window.set_focus();
-        self.current_query.clear();
-        self.status = Some(StatusLine {
-            kind: "info",
-            message: format!("Config: {}", self.loaded.config_path.display()),
-        });
         self.start_search_now();
         self.focus_input()?;
         Ok(())
@@ -247,13 +244,22 @@ impl LauncherApp {
         self.visible = false;
         self.shown_at = None;
         self.focused_since_show = false;
+        self.previous_app = None;
         self.window.set_visible(false);
-        self.current_query.clear();
-        self.provider_items.clear();
-        self.pending_providers = 0;
-        self.search_token = self.search_token.wrapping_add(1);
+        self.reset_session_state();
         self.render()?;
         Ok(())
+    }
+
+    fn reset_session_state(&mut self) {
+        self.current_generation = self.current_generation.wrapping_add(1);
+        self.search_token = self.search_token.wrapping_add(1);
+        self.current_query.clear();
+        self.provider_items.clear();
+        self.rendered_items.clear();
+        self.pending_providers = 0;
+        self.status = None;
+        self.render_scheduled = false;
     }
 
     fn handle_window_event(&mut self, event: WindowEvent) -> Result<()> {
@@ -387,8 +393,10 @@ impl LauncherApp {
         let context = PluginExecutionContext {
             previous_app: self.previous_app.clone(),
         };
-        self.visible = false;
-        self.window.set_visible(false);
+        if let Err(error) = self.hide() {
+            self.set_error(error.to_string());
+            return;
+        }
         self.runtime.handle().spawn_blocking(move || {
             let result = execute_action(&item.action, &plugins, &context);
             let (message, is_error) = match result {
