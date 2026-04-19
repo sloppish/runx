@@ -6,12 +6,12 @@ mod macos;
 mod plugins;
 mod providers;
 mod scoring;
+mod state;
 mod tray;
 mod types;
 mod ui;
 
 use std::{
-    collections::HashMap,
     sync::Arc,
     time::{Duration, Instant},
 };
@@ -20,8 +20,11 @@ use anyhow::{Context, Result};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use icons::IconCache;
 use providers::ProviderSet;
+use state::AppState;
 #[cfg(target_os = "macos")]
-use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS, WindowBuilderExtMacOS, WindowExtMacOS};
+use tao::platform::macos::{
+    ActivationPolicy, EventLoopExtMacOS, WindowBuilderExtMacOS, WindowExtMacOS,
+};
 use tao::{
     dpi::{LogicalSize, PhysicalPosition},
     event::{Event, StartCause, WindowEvent},
@@ -29,12 +32,12 @@ use tao::{
     window::{Window, WindowBuilder},
 };
 use tokio::runtime::{Builder, Runtime};
-use types::{AppEvent, FrontendCommand, SearchItem, StatusLine, ViewItem, ViewState};
+use types::{AppEvent, FrontendCommand, StatusLine};
 use wry::{WebView, WebViewBuilder};
 
 use crate::{
     actions::execute_action, config::LoadedConfig, macos::capture_frontmost_app,
-    plugins::PluginExecutionContext, scoring::sort_and_trim,
+    plugins::PluginExecutionContext,
 };
 
 const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
@@ -130,18 +133,10 @@ struct LauncherApp {
     proxy: EventLoopProxy<AppEvent>,
     window: Window,
     webview: WebView,
-    visible: bool,
-    current_query: String,
-    current_generation: u64,
-    provider_items: HashMap<String, Vec<SearchItem>>,
-    rendered_items: Vec<SearchItem>,
-    pending_providers: usize,
-    status: Option<StatusLine>,
+    state: AppState,
     shown_at: Option<Instant>,
-    focused_since_show: bool,
     previous_app: Option<macos::FrontmostApp>,
     render_scheduled: bool,
-    search_token: u64,
     tray: Option<tray::TrayState>,
 }
 
@@ -181,27 +176,16 @@ impl LauncherApp {
             proxy,
             window,
             webview,
-            visible: false,
-            current_query: String::new(),
-            current_generation: 0,
-            provider_items: HashMap::new(),
-            rendered_items: Vec::new(),
-            pending_providers: 0,
-            status: Some(StatusLine {
-                kind: "info",
-                message: "Type to search. Arrow keys, Enter, click, or ⌥1-9.".to_owned(),
-            }),
+            state: AppState::new(),
             shown_at: None,
-            focused_since_show: false,
             previous_app: None,
             render_scheduled: false,
-            search_token: 0,
             tray: None,
         })
     }
 
     fn toggle(&mut self) -> Result<()> {
-        if self.visible {
+        if self.state.is_visible() {
             self.hide()?;
         } else {
             self.show()?;
@@ -210,9 +194,8 @@ impl LauncherApp {
     }
 
     fn show(&mut self) -> Result<()> {
-        self.visible = true;
+        self.state.show();
         self.shown_at = Some(Instant::now());
-        self.focused_since_show = false;
         self.previous_app = match capture_frontmost_app() {
             Ok(app) => app,
             Err(error) => {
@@ -220,7 +203,6 @@ impl LauncherApp {
                 None
             }
         };
-        self.reset_session_state();
         self.render()?;
         self.center_window();
         self.window.set_visible(true);
@@ -231,7 +213,7 @@ impl LauncherApp {
     }
 
     fn show_or_focus(&mut self) -> Result<()> {
-        if self.visible {
+        if self.state.is_visible() {
             self.window.set_focus();
             self.focus_input()?;
             return Ok(());
@@ -241,32 +223,20 @@ impl LauncherApp {
     }
 
     fn hide(&mut self) -> Result<()> {
-        self.visible = false;
+        self.state.hide();
         self.shown_at = None;
-        self.focused_since_show = false;
         self.previous_app = None;
         self.window.set_visible(false);
-        self.reset_session_state();
+        self.render_scheduled = false;
         self.render()?;
         Ok(())
-    }
-
-    fn reset_session_state(&mut self) {
-        self.current_generation = self.current_generation.wrapping_add(1);
-        self.search_token = self.search_token.wrapping_add(1);
-        self.current_query.clear();
-        self.provider_items.clear();
-        self.rendered_items.clear();
-        self.pending_providers = 0;
-        self.status = None;
-        self.render_scheduled = false;
     }
 
     fn handle_window_event(&mut self, event: WindowEvent) -> Result<()> {
         match event {
             WindowEvent::CloseRequested => self.hide()?,
-            WindowEvent::Focused(true) if self.visible => {
-                self.focused_since_show = true;
+            WindowEvent::Focused(true) => {
+                self.state.note_window_focused();
             }
             WindowEvent::Focused(false) if self.should_hide_on_blur() => {
                 self.hide()?;
@@ -278,11 +248,11 @@ impl LauncherApp {
 
     fn should_hide_on_blur(&self) -> bool {
         self.loaded.config.window.hide_on_blur
-            && self.visible
+            && self.state.is_visible()
             && self
                 .shown_at
                 .is_none_or(|shown_at| shown_at.elapsed() > INITIAL_BLUR_GUARD)
-            && self.focused_since_show
+            && self.state.focused_since_show()
     }
 
     fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
@@ -296,7 +266,7 @@ impl LauncherApp {
                 self.render()?;
             }
             AppEvent::StartSearch { token } => {
-                if token == self.search_token {
+                if token == self.state.session().search_token() {
                     self.start_search_now();
                 }
             }
@@ -305,9 +275,11 @@ impl LauncherApp {
                 provider,
                 items,
             } => {
-                if generation == self.current_generation {
-                    self.pending_providers = self.pending_providers.saturating_sub(1);
-                    self.provider_items.insert(provider, items);
+                if self
+                    .state
+                    .session_mut()
+                    .apply_provider_items(generation, provider, items)
+                {
                     self.request_render(RENDER_COALESCE);
                 }
             }
@@ -316,20 +288,19 @@ impl LauncherApp {
                 provider,
                 message,
             } => {
-                if generation == self.current_generation {
-                    self.pending_providers = self.pending_providers.saturating_sub(1);
-                    self.status = Some(StatusLine {
-                        kind: "error",
-                        message: format!("{provider}: {message}"),
-                    });
+                if self
+                    .state
+                    .session_mut()
+                    .apply_provider_error(generation, &provider, message)
+                {
                     self.request_render(RENDER_COALESCE);
                 }
             }
             AppEvent::ActionOutcome { message, is_error } => {
-                self.status = Some(StatusLine {
+                self.state.session_mut().set_status(Some(StatusLine {
                     kind: if is_error { "error" } else { "info" },
                     message,
-                });
+                }));
                 self.request_render(RENDER_COALESCE);
             }
         }
@@ -354,9 +325,7 @@ impl LauncherApp {
     }
 
     fn schedule_search(&mut self, query: String) {
-        self.current_query = query;
-        self.search_token = self.search_token.wrapping_add(1);
-        let token = self.search_token;
+        let token = self.state.session_mut().set_query(query);
         let proxy = self.proxy.clone();
         self.runtime.handle().spawn(async move {
             tokio::time::sleep(SEARCH_DEBOUNCE).await;
@@ -365,27 +334,19 @@ impl LauncherApp {
     }
 
     fn start_search_now(&mut self) {
-        self.current_generation += 1;
-        self.pending_providers = self.providers.provider_count();
-        self.status = Some(StatusLine {
-            kind: "info",
-            message: if self.current_query.trim().is_empty() {
-                "Showing open windows. Type to search apps, settings, Spotlight, or `pass`."
-                    .to_owned()
-            } else {
-                format!("Searching for “{}”…", self.current_query)
-            },
-        });
-        let generation = self.current_generation;
+        let generation = self
+            .state
+            .session_mut()
+            .begin_search(self.providers.provider_count());
         self.providers.spawn_search(
             self.proxy.clone(),
             generation,
-            self.current_query.clone(),
+            self.state.session().query().to_owned(),
         );
     }
 
     fn activate(&mut self, index: usize) {
-        let Some(item) = self.rendered_items.get(index).cloned() else {
+        let Some(item) = self.state.session().rendered_item(index).cloned() else {
             return;
         };
         let proxy = self.proxy.clone();
@@ -409,37 +370,13 @@ impl LauncherApp {
     }
 
     fn render(&mut self) -> Result<()> {
-        let all_items = self
-            .provider_items
-            .values()
-            .flat_map(|items| items.clone())
-            .collect::<Vec<_>>();
-        let next_items = sort_and_trim(all_items, &self.loaded.config.ranking);
-        let keep_previous_items =
-            self.pending_providers > 0 && next_items.is_empty() && !self.rendered_items.is_empty();
-        if !keep_previous_items {
-            self.rendered_items = next_items;
-        }
-
-        let items = self
-            .rendered_items
-            .iter()
-            .enumerate()
-            .map(|(index, item)| ViewItem {
-                title: item.title.clone(),
-                subtitle: item.subtitle.clone(),
-                badge: item.badge.clone(),
-                icon: item.icon.clone(),
-                accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
-            })
-            .collect();
-
-        let state = ViewState {
-            query: self.current_query.clone(),
-            items,
-            status: self.status.clone(),
-        };
-        let script = format!("window.__RUNX_RENDER({});", serde_json::to_string(&state)?);
+        self.state
+            .session_mut()
+            .refresh_rendered_items(&self.loaded.config.ranking);
+        let script = format!(
+            "window.__RUNX_RENDER({});",
+            serde_json::to_string(&self.state.session().view_state())?
+        );
         self.webview
             .evaluate_script(&script)
             .context("failed to render the launcher UI")?;
@@ -487,10 +424,10 @@ impl LauncherApp {
     }
 
     fn set_error(&mut self, message: String) {
-        self.status = Some(StatusLine {
+        self.state.session_mut().set_status(Some(StatusLine {
             kind: "error",
             message,
-        });
+        }));
         self.request_render(RENDER_COALESCE);
     }
 }

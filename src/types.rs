@@ -1,5 +1,5 @@
 use serde::{Deserialize, Serialize};
-use serde_json::Value as JsonValue;
+use serde_json::{Map as JsonMap, Value as JsonValue};
 
 #[derive(Debug, Clone)]
 pub struct SearchItem {
@@ -11,6 +11,21 @@ pub struct SearchItem {
     pub subtitle: String,
     pub raw_score: i64,
     pub action: Action,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PluginActionPayload {
+    pub kind: String,
+    #[serde(flatten)]
+    pub fields: JsonMap<String, JsonValue>,
+}
+
+impl PluginActionPayload {
+    pub fn as_json(&self) -> JsonValue {
+        let mut object = self.fields.clone();
+        object.insert("kind".to_owned(), JsonValue::String(self.kind.clone()));
+        JsonValue::Object(object)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -31,7 +46,7 @@ pub enum Action {
     },
     Plugin {
         plugin_id: String,
-        payload: JsonValue,
+        payload: PluginActionPayload,
     },
 }
 
@@ -90,4 +105,36 @@ pub struct ViewItem {
 pub struct StatusLine {
     pub kind: &'static str,
     pub message: String,
+}
+
+#[cfg(test)]
+mod tests {
+    use super::PluginActionPayload;
+
+    #[test]
+    fn plugin_action_payload_requires_kind() {
+        let error = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "entry": "mail/example"
+        }))
+        .expect_err("payload without kind should fail");
+
+        assert!(error.to_string().contains("kind"));
+    }
+
+    #[test]
+    fn plugin_action_payload_preserves_extra_fields() {
+        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "kind": "copy_password",
+            "entry": "mail/example",
+            "count": 2
+        }))
+        .expect("valid payload");
+
+        assert_eq!(payload.kind, "copy_password");
+        assert_eq!(
+            payload.fields.get("entry"),
+            Some(&serde_json::json!("mail/example"))
+        );
+        assert_eq!(payload.fields.get("count"), Some(&serde_json::json!(2)));
+    }
 }

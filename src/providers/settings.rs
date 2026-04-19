@@ -185,15 +185,16 @@ fn scan_bundle_metadata() -> Result<HashMap<String, BundleMetadata>> {
 fn is_settings_bundle(dict: &plist::Dictionary, path: &Path) -> bool {
     match path.extension().and_then(|value| value.to_str()) {
         Some("prefPane") => true,
-        Some("appex") => dict
-            .get("EXAppExtensionAttributes")
-            .and_then(Value::as_dictionary)
-            .and_then(|attributes| {
-                attributes
-                    .get("EXExtensionPointIdentifier")
-                    .and_then(Value::as_string)
-            })
-            == Some("com.apple.Settings.extension.ui"),
+        Some("appex") => {
+            dict.get("EXAppExtensionAttributes")
+                .and_then(Value::as_dictionary)
+                .and_then(|attributes| {
+                    attributes
+                        .get("EXExtensionPointIdentifier")
+                        .and_then(Value::as_string)
+                })
+                == Some("com.apple.Settings.extension.ui")
+        }
         _ => false,
     }
 }
@@ -263,7 +264,9 @@ fn make_record(raw_id: &str, bundles: &HashMap<String, BundleMetadata>) -> Setti
         id: raw_id.to_owned(),
         title,
         subtitle: "System Settings".to_owned(),
-        bundle_path: bundles.get(base_id).map(|bundle| bundle.bundle_path.clone()),
+        bundle_path: bundles
+            .get(base_id)
+            .map(|bundle| bundle.bundle_path.clone()),
     }
 }
 

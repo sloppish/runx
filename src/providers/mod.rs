@@ -79,18 +79,14 @@ impl ProviderSet {
         Self::PROVIDER_COUNT
     }
 
-    pub fn spawn_search(
-        &self,
-        proxy: EventLoopProxy<AppEvent>,
-        generation: u64,
-        query: String,
-    ) {
+    pub fn spawn_search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
         self.windows
             .search(proxy.clone(), generation, query.clone());
         self.apps.search(proxy.clone(), generation, query.clone());
         self.settings
             .search(proxy.clone(), generation, query.clone());
-        self.plugins.search(proxy.clone(), generation, query.clone());
+        self.plugins
+            .search(proxy.clone(), generation, query.clone());
         self.spotlight.search(proxy, generation, query);
     }
 }

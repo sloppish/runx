@@ -1,0 +1,297 @@
+use std::collections::HashMap;
+
+use crate::{
+    config::RankingConfig,
+    scoring::sort_and_trim,
+    types::{SearchItem, StatusLine, ViewItem, ViewState},
+};
+
+#[derive(Default)]
+pub struct AppState {
+    visible: bool,
+    focused_since_show: bool,
+    session: SearchSession,
+}
+
+impl AppState {
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    pub fn show(&mut self) {
+        self.visible = true;
+        self.focused_since_show = false;
+        self.session.reset();
+    }
+
+    pub fn hide(&mut self) {
+        self.visible = false;
+        self.focused_since_show = false;
+        self.session.reset();
+    }
+
+    pub fn is_visible(&self) -> bool {
+        self.visible
+    }
+
+    pub fn focused_since_show(&self) -> bool {
+        self.focused_since_show
+    }
+
+    pub fn note_window_focused(&mut self) {
+        if self.visible {
+            self.focused_since_show = true;
+        }
+    }
+
+    pub fn session(&self) -> &SearchSession {
+        &self.session
+    }
+
+    pub fn session_mut(&mut self) -> &mut SearchSession {
+        &mut self.session
+    }
+}
+
+#[derive(Default)]
+pub struct SearchSession {
+    query: String,
+    generation: u64,
+    search_token: u64,
+    provider_items: HashMap<String, Vec<SearchItem>>,
+    rendered_items: Vec<SearchItem>,
+    pending_providers: usize,
+    status: Option<StatusLine>,
+}
+
+impl SearchSession {
+    pub fn reset(&mut self) {
+        self.generation = self.generation.wrapping_add(1);
+        self.search_token = self.search_token.wrapping_add(1);
+        self.query.clear();
+        self.provider_items.clear();
+        self.rendered_items.clear();
+        self.pending_providers = 0;
+        self.status = None;
+    }
+
+    pub fn query(&self) -> &str {
+        &self.query
+    }
+
+    pub fn set_query(&mut self, query: String) -> u64 {
+        self.query = query;
+        self.search_token = self.search_token.wrapping_add(1);
+        self.search_token
+    }
+
+    pub fn search_token(&self) -> u64 {
+        self.search_token
+    }
+
+    pub fn begin_search(&mut self, provider_count: usize) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.pending_providers = provider_count;
+        self.status = Some(StatusLine {
+            kind: "info",
+            message: if self.query.trim().is_empty() {
+                "Showing open windows. Type to search apps, settings, Spotlight, or `pass`."
+                    .to_owned()
+            } else {
+                format!("Searching for “{}”…", self.query)
+            },
+        });
+        self.generation
+    }
+
+    pub fn apply_provider_items(
+        &mut self,
+        generation: u64,
+        provider: String,
+        items: Vec<SearchItem>,
+    ) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+
+        self.pending_providers = self.pending_providers.saturating_sub(1);
+        self.provider_items.insert(provider, items);
+        true
+    }
+
+    pub fn apply_provider_error(
+        &mut self,
+        generation: u64,
+        provider: &str,
+        message: String,
+    ) -> bool {
+        if generation != self.generation {
+            return false;
+        }
+
+        self.pending_providers = self.pending_providers.saturating_sub(1);
+        self.status = Some(StatusLine {
+            kind: "error",
+            message: format!("{provider}: {message}"),
+        });
+        true
+    }
+
+    pub fn set_status(&mut self, status: Option<StatusLine>) {
+        self.status = status;
+    }
+
+    pub fn rendered_item(&self, index: usize) -> Option<&SearchItem> {
+        self.rendered_items.get(index)
+    }
+
+    pub fn refresh_rendered_items(&mut self, ranking: &RankingConfig) {
+        let all_items = self
+            .provider_items
+            .values()
+            .flat_map(|items| items.clone())
+            .collect::<Vec<_>>();
+        let next_items = sort_and_trim(all_items, ranking);
+        let keep_previous_items =
+            self.pending_providers > 0 && next_items.is_empty() && !self.rendered_items.is_empty();
+        if !keep_previous_items {
+            self.rendered_items = next_items;
+        }
+    }
+
+    pub fn view_state(&self) -> ViewState {
+        let items = self
+            .rendered_items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| ViewItem {
+                title: item.title.clone(),
+                subtitle: item.subtitle.clone(),
+                badge: item.badge.clone(),
+                icon: item.icon.clone(),
+                accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
+            })
+            .collect();
+
+        ViewState {
+            query: self.query.clone(),
+            items,
+            status: self.status.clone(),
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::AppState;
+    use crate::{
+        config::RankingConfig,
+        types::{Action, SearchItem},
+    };
+
+    #[test]
+    fn hide_clears_session_state() {
+        let mut state = AppState::new();
+        state.show();
+        populate(&mut state, "alpha");
+
+        state.hide();
+
+        assert!(!state.is_visible());
+        assert_eq!(state.session().query(), "");
+        assert!(state.session().rendered_item(0).is_none());
+    }
+
+    #[test]
+    fn activate_then_show_reopens_clean() {
+        let mut state = AppState::new();
+        state.show();
+        populate(&mut state, "alpha");
+
+        state.hide();
+        state.show();
+
+        assert!(state.is_visible());
+        assert_eq!(state.session().query(), "");
+        assert!(state.session().rendered_item(0).is_none());
+    }
+
+    #[test]
+    fn stale_provider_results_are_ignored_after_reset() {
+        let mut state = AppState::new();
+        state.show();
+        let generation = state.session_mut().begin_search(1);
+
+        state.hide();
+
+        assert!(!state.session_mut().apply_provider_items(
+            generation,
+            "windows".to_owned(),
+            vec![item("stale", 10)],
+        ));
+        state
+            .session_mut()
+            .refresh_rendered_items(&default_ranking());
+        assert!(state.session().rendered_item(0).is_none());
+    }
+
+    #[test]
+    fn stale_provider_results_are_ignored_after_new_search_generation() {
+        let mut state = AppState::new();
+        state.show();
+        let old_generation = state.session_mut().begin_search(1);
+        populate(&mut state, "alpha");
+
+        state.session_mut().set_query("beta".to_owned());
+        let new_generation = state.session_mut().begin_search(1);
+
+        assert_ne!(old_generation, new_generation);
+        assert!(!state.session_mut().apply_provider_items(
+            old_generation,
+            "windows".to_owned(),
+            vec![item("stale", 100)],
+        ));
+    }
+
+    fn populate(state: &mut AppState, query: &str) {
+        state.session_mut().set_query(query.to_owned());
+        let generation = state.session_mut().begin_search(1);
+        assert!(state.session_mut().apply_provider_items(
+            generation,
+            "windows".to_owned(),
+            vec![item(query, 100)],
+        ));
+        state
+            .session_mut()
+            .refresh_rendered_items(&default_ranking());
+    }
+
+    fn default_ranking() -> RankingConfig {
+        RankingConfig {
+            tie_threshold: 120,
+            provider_order: vec![
+                "windows".to_owned(),
+                "apps".to_owned(),
+                "settings".to_owned(),
+                "plugins".to_owned(),
+                "spotlight".to_owned(),
+            ],
+            result_limit: 24,
+        }
+    }
+
+    fn item(id: &str, raw_score: i64) -> SearchItem {
+        SearchItem {
+            id: id.to_owned(),
+            provider: "windows".to_owned(),
+            badge: "WIN".to_owned(),
+            icon: None,
+            title: id.to_owned(),
+            subtitle: "test".to_owned(),
+            raw_score,
+            action: Action::OpenPath {
+                path: format!("/tmp/{id}"),
+            },
+        }
+    }
+}

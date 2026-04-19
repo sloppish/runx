@@ -1,0 +1,250 @@
+:root {
+  --accent: __ACCENT__;
+  --bg: __BACKGROUND__;
+  --panel: __PANEL__;
+  --text: __TEXT__;
+  --muted: __MUTED__;
+  --font: __FONT_FAMILY__;
+  --shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(252, 246, 238, 0.98));
+  --shell-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
+  --shell-border: rgba(140, 102, 67, 0.16);
+  --label-strong: color-mix(in srgb, var(--text) 88%, white);
+  --input-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,240,230,0.9));
+  --input-border: rgba(140, 102, 67, 0.14);
+  --input-shadow: inset 0 1px 0 rgba(255,255,255,0.72);
+  --placeholder: color-mix(in srgb, var(--muted) 78%, white);
+  --scrollbar: rgba(134, 98, 66, 0.18);
+  --item-bg: rgba(255,255,255,0.45);
+  --item-hover: rgba(255,255,255,0.86);
+  --item-selected-bg: linear-gradient(135deg, rgba(199, 123, 73, 0.15), rgba(255,255,255,0.94));
+  --item-selected-shadow:
+    0 18px 44px rgba(139, 87, 46, 0.14),
+    inset 0 0 0 1px rgba(199, 123, 73, 0.22);
+  --badge-bg: linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, white), rgba(255,255,255,0.95));
+  --badge-border: rgba(199, 123, 73, 0.18);
+  --badge-text: color-mix(in srgb, var(--accent) 72%, black);
+  --chip-text: color-mix(in srgb, var(--muted) 80%, white);
+  --chip-bg: rgba(255,255,255,0.68);
+  --chip-border: rgba(140, 102, 67, 0.12);
+  --status-error: #9c4420;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    --accent: #d7a17b;
+    --bg: #10151d;
+    --panel: #18202b;
+    --text: #eef2fb;
+    --muted: #99a6bc;
+    --shell-bg: linear-gradient(180deg, rgba(28, 37, 50, 0.96), rgba(16, 22, 31, 0.985));
+    --shell-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
+    --shell-border: rgba(128, 164, 214, 0.18);
+    --label-strong: color-mix(in srgb, var(--text) 94%, white);
+    --input-bg: linear-gradient(180deg, rgba(24, 31, 43, 0.98), rgba(18, 25, 35, 0.98));
+    --input-border: rgba(128, 164, 214, 0.14);
+    --input-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
+    --placeholder: color-mix(in srgb, var(--muted) 88%, black);
+    --scrollbar: rgba(128, 164, 214, 0.26);
+    --item-bg: rgba(180, 206, 244, 0.035);
+    --item-hover: rgba(162, 195, 242, 0.08);
+    --item-selected-bg: linear-gradient(135deg, rgba(103, 148, 210, 0.24), rgba(31, 41, 56, 0.98));
+    --item-selected-shadow:
+      0 18px 44px rgba(0, 0, 0, 0.22),
+      inset 0 0 0 1px rgba(117, 160, 222, 0.24);
+    --badge-bg: linear-gradient(180deg, rgba(118, 154, 206, 0.18), rgba(255,255,255,0.02));
+    --badge-border: rgba(128, 164, 214, 0.18);
+    --badge-text: color-mix(in srgb, #b9d4f4 86%, white);
+    --chip-text: color-mix(in srgb, var(--muted) 86%, white);
+    --chip-bg: rgba(150, 182, 230, 0.05);
+    --chip-border: rgba(128, 164, 214, 0.14);
+    --status-error: #ff9b7a;
+  }
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html, body {
+  width: 100%;
+  height: 100%;
+  margin: 0;
+  overflow: hidden;
+  background: transparent;
+  color: var(--text);
+  font-family: var(--font);
+  color-scheme: light dark;
+  -webkit-font-smoothing: antialiased;
+  user-select: none;
+}
+
+body {
+  padding: 18px;
+}
+
+.shell {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  padding: 18px;
+  border-radius: 24px;
+  overflow: hidden;
+  background: var(--shell-bg);
+  box-shadow: var(--shell-shadow);
+  border: 1px solid var(--shell-border);
+}
+
+.label {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  text-transform: uppercase;
+  letter-spacing: 0.14em;
+  font-size: 10px;
+  color: var(--muted);
+}
+
+.label strong {
+  color: var(--label-strong);
+  font-weight: 700;
+}
+
+.input-wrap {
+  position: relative;
+  border-radius: 18px;
+  padding: 14px 18px;
+  background: var(--input-bg);
+  border: 1px solid var(--input-border);
+  box-shadow: var(--input-shadow);
+}
+
+input {
+  width: 100%;
+  border: 0;
+  outline: none;
+  padding: 0;
+  background: transparent;
+  color: var(--text);
+  font-size: 30px;
+  font-weight: 600;
+  letter-spacing: -0.03em;
+  font-family: var(--font);
+  caret-color: var(--accent);
+}
+
+input::placeholder {
+  color: var(--placeholder);
+}
+
+.results {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  overflow: auto;
+  padding-right: 4px;
+}
+
+.results::-webkit-scrollbar {
+  width: 8px;
+}
+
+.results::-webkit-scrollbar-thumb {
+  background: var(--scrollbar);
+  border-radius: 999px;
+}
+
+.item {
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 14px;
+  align-items: center;
+  width: 100%;
+  padding: 13px 14px;
+  border: 0;
+  border-radius: 18px;
+  background: var(--item-bg);
+  cursor: pointer;
+  transition: background 120ms ease, box-shadow 120ms ease;
+  text-align: left;
+  color: inherit;
+  font: inherit;
+}
+
+.item:hover {
+  background: var(--item-hover);
+}
+
+.results.hover-suspended .item:not(.selected):hover {
+  background: var(--item-bg);
+}
+
+.item.selected {
+  background: var(--item-selected-bg);
+  box-shadow: var(--item-selected-shadow);
+}
+
+.badge {
+  min-width: 46px;
+  height: 46px;
+  padding: 0 12px;
+  border-radius: 14px;
+  background: var(--badge-bg);
+  border: 1px solid var(--badge-border);
+  display: grid;
+  place-items: center;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.18em;
+  color: var(--badge-text);
+  overflow: hidden;
+}
+
+.badge.has-icon {
+  min-width: 46px;
+  width: 46px;
+  padding: 0;
+  background: rgba(255,255,255,0.66);
+}
+
+.icon-image {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  display: block;
+  border-radius: 14px;
+}
+
+.copy {
+  min-width: 0;
+}
+
+.title {
+  font-size: 16px;
+  font-weight: 650;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.subtitle {
+  margin-top: 4px;
+  font-size: 12px;
+  color: var(--muted);
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.accelerator {
+  color: var(--chip-text);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 6px 9px;
+  border-radius: 999px;
+  background: var(--chip-bg);
+  border: 1px solid var(--chip-border);
+}

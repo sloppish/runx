@@ -192,12 +192,15 @@ fn install_resource_if_available(resource: &str, destination: &Path) -> Result<b
     })?;
 
     #[cfg(unix)]
-    if source.extension().and_then(|value| value.to_str()).is_none() {
+    if source
+        .extension()
+        .and_then(|value| value.to_str())
+        .is_none()
+    {
         use std::os::unix::fs::PermissionsExt;
 
-        fs::set_permissions(destination, fs::Permissions::from_mode(0o755)).with_context(
-            || format!("failed to mark {} executable", destination.display()),
-        )?;
+        fs::set_permissions(destination, fs::Permissions::from_mode(0o755))
+            .with_context(|| format!("failed to mark {} executable", destination.display()))?;
     }
 
     Ok(true)

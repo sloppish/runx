@@ -15,7 +15,7 @@ use crate::{
         open_accessibility_settings, open_automation_settings, reactivate_previous_app,
     },
     scoring::fuzzy_score,
-    types::{Action, SearchItem},
+    types::{Action, PluginActionPayload, SearchItem},
 };
 
 #[derive(Clone, Default)]
@@ -47,7 +47,7 @@ struct PluginItem {
     subtitle: Option<String>,
     score: Option<i64>,
     badge: Option<String>,
-    action: JsonValue,
+    action: PluginActionPayload,
 }
 
 #[derive(Debug, Clone, Default)]
@@ -96,7 +96,7 @@ impl PluginHost {
     pub fn run(
         &self,
         plugin_id: &str,
-        payload: &JsonValue,
+        payload: &PluginActionPayload,
         context: &PluginExecutionContext,
     ) -> Result<Option<String>> {
         let plugin = self
@@ -180,7 +180,7 @@ fn run_search(
 
 fn run_action(
     plugin: &LuaPlugin,
-    payload: &JsonValue,
+    payload: &PluginActionPayload,
     context: &PluginExecutionContext,
     plugin_config: JsonValue,
 ) -> Result<Option<String>> {
@@ -189,7 +189,7 @@ fn run_action(
     let run: Function = table
         .get::<Option<Function>>("run")?
         .ok_or_else(|| anyhow!("plugin `{}` does not export a `run` function", plugin.id))?;
-    let value = lua.to_value(payload)?;
+    let value = lua.to_value(&payload.as_json())?;
     let result = run.call::<mlua::Value>(value)?;
 
     if matches!(result, mlua::Value::Nil) {

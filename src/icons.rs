@@ -50,7 +50,10 @@ impl IconCache {
 
     pub fn icon_for_pid(&self, pid: i64) -> Option<String> {
         let bundle_path = {
-            let cache = self.process_bundles.lock().expect("process icon cache poisoned");
+            let cache = self
+                .process_bundles
+                .lock()
+                .expect("process icon cache poisoned");
             cache.get(&pid).cloned()
         };
 
@@ -58,7 +61,10 @@ impl IconCache {
             Some(path) => path,
             None => {
                 let resolved = process_bundle_path(pid);
-                let mut cache = self.process_bundles.lock().expect("process icon cache poisoned");
+                let mut cache = self
+                    .process_bundles
+                    .lock()
+                    .expect("process icon cache poisoned");
                 cache.insert(pid, resolved.clone());
                 resolved
             }
@@ -95,8 +101,8 @@ impl IconCache {
             render_png_icon(&icon_source, &png_path)?;
         }
 
-        let bytes =
-            fs::read(&png_path).with_context(|| format!("failed to read {}", png_path.display()))?;
+        let bytes = fs::read(&png_path)
+            .with_context(|| format!("failed to read {}", png_path.display()))?;
         Ok(Some(format!(
             "data:image/png;base64,{}",
             STANDARD.encode(bytes)
