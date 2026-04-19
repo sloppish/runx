@@ -5,7 +5,6 @@ ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Runx"
 APP_DIR="/Applications"
 ENABLE_LOGIN_ITEM=0
-PASS_RANK_BIN="${RUNX_PASS_RANK_BIN:-}"
 DRY_RUN=0
 
 usage() {
@@ -16,7 +15,6 @@ Options:
   --app-dir PATH         Install destination directory (default: /Applications)
   --user-apps            Shortcut for --app-dir "$HOME/Applications"
   --login-item           Add Runx to macOS Login Items after install
-  --pass-rank-bin PATH   Compiled pass_rank binary to bundle
   --dry-run              Print the actions without installing
   -h, --help             Show this help
 EOF
@@ -35,10 +33,6 @@ while [[ $# -gt 0 ]]; do
     --login-item)
       ENABLE_LOGIN_ITEM=1
       shift
-      ;;
-    --pass-rank-bin)
-      PASS_RANK_BIN="$2"
-      shift 2
       ;;
     --dry-run)
       DRY_RUN=1
@@ -59,11 +53,7 @@ done
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "Would package Runx.app into $APP_DIR"
 else
-  package_args=()
-  if [[ -n "$PASS_RANK_BIN" ]]; then
-    package_args+=(--pass-rank-bin "$PASS_RANK_BIN")
-  fi
-  "$ROOT_DIR/scripts/package-macos.sh" "${package_args[@]}"
+  "$ROOT_DIR/scripts/package-macos.sh"
 fi
 
 SOURCE_APP="$ROOT_DIR/dist/${APP_NAME}.app"

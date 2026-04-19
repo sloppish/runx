@@ -6,7 +6,6 @@ APP_NAME="Runx"
 APP_BUNDLE_ID="dev.runx.launcher"
 PROFILE="release"
 OUT_DIR="$ROOT_DIR/dist"
-PASS_RANK_BIN="${RUNX_PASS_RANK_BIN:-}"
 APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
 TRAY_ICON_SOURCE="$ROOT_DIR/assets/runx-status-template.svg"
 
@@ -16,7 +15,6 @@ Usage: scripts/package-macos.sh [options]
 
 Options:
   --out-dir PATH         Bundle output directory (default: ./dist)
-  --pass-rank-bin PATH   Compiled pass_rank binary to bundle
   --debug                Build with the debug profile instead of release
   -h, --help             Show this help
 EOF
@@ -26,10 +24,6 @@ while [[ $# -gt 0 ]]; do
   case "$1" in
     --out-dir)
       OUT_DIR="$2"
-      shift 2
-      ;;
-    --pass-rank-bin)
-      PASS_RANK_BIN="$2"
       shift 2
       ;;
     --debug)
@@ -47,29 +41,6 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
-
-resolve_pass_rank_bin() {
-  local candidates=()
-  if [[ -n "${PASS_RANK_BIN}" ]]; then
-    candidates+=("${PASS_RANK_BIN}")
-  fi
-
-  candidates+=(
-    "$HOME/Library/Application Support/runx/plugins/pass/pass_rank"
-    "$ROOT_DIR/../alfred_pass/pass_rank/pass_rank"
-  )
-
-  local candidate
-  for candidate in "${candidates[@]}"; do
-    if [[ -x "${candidate}" ]]; then
-      printf '%s\n' "${candidate}"
-      return 0
-    fi
-  done
-
-  echo "Could not find a compiled pass_rank binary. Provide --pass-rank-bin PATH." >&2
-  exit 1
-}
 
 render_png() {
   local source="$1"
@@ -109,7 +80,6 @@ build_tray_icon() {
   render_png "$TRAY_ICON_SOURCE" "$resources_path/RunxStatusTemplate.png" 36
 }
 
-PASS_RANK_BIN="$(resolve_pass_rank_bin)"
 APP_VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 
 if [[ "${PROFILE}" == "release" ]]; then
@@ -124,16 +94,12 @@ BUNDLE_PATH="$OUT_DIR/${APP_NAME}.app"
 CONTENTS_PATH="$BUNDLE_PATH/Contents"
 MACOS_PATH="$CONTENTS_PATH/MacOS"
 RESOURCES_PATH="$CONTENTS_PATH/Resources"
-DEFAULTS_PATH="$RESOURCES_PATH/defaults"
 
 rm -rf "$BUNDLE_PATH"
-mkdir -p "$MACOS_PATH" "$DEFAULTS_PATH/pass"
+mkdir -p "$MACOS_PATH"
 
 cp "$BIN_PATH" "$MACOS_PATH/runx"
 chmod 755 "$MACOS_PATH/runx"
-cp "$ROOT_DIR/plugins/pass.lua" "$DEFAULTS_PATH/pass.lua"
-cp "$PASS_RANK_BIN" "$DEFAULTS_PATH/pass/pass_rank"
-chmod 755 "$DEFAULTS_PATH/pass/pass_rank"
 build_app_icon "$RESOURCES_PATH"
 build_tray_icon "$RESOURCES_PATH"
 
