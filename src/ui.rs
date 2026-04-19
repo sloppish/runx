@@ -259,35 +259,17 @@ pub fn html(theme: &UiConfig) -> String {
       border: 1px solid var(--chip-border);
     }}
 
-    .footer {{
-      display: flex;
-      justify-content: space-between;
-      align-items: center;
-      gap: 10px;
-      font-size: 12px;
-      color: var(--muted);
-      min-height: 18px;
-    }}
-
-    .status.error {{
-      color: var(--status-error);
-    }}
   </style>
 </head>
 <body>
   <main class="shell">
     <div class="label">
       <strong>Runx</strong>
-      <span>spotlight, windows, settings, plugins</span>
     </div>
     <div class="input-wrap">
       <input id="query" type="text" autocomplete="off" spellcheck="false" placeholder="Search apps, windows, settings, or use pass ..." />
     </div>
     <section id="results" class="results" aria-live="polite"></section>
-    <footer class="footer">
-      <div id="status" class="status">Type to search. Arrow keys, Enter, click, or ⌥1-9.</div>
-      <div>Esc closes</div>
-    </footer>
   </main>
   <script>
     const state = {{
@@ -299,8 +281,6 @@ pub fn html(theme: &UiConfig) -> String {
 
     const resultsEl = document.getElementById("results");
     const inputEl = document.getElementById("query");
-    const statusEl = document.getElementById("status");
-
     const send = (payload) => window.ipc.postMessage(JSON.stringify(payload));
 
     const setHoverSuspended = (value) => {{
@@ -394,8 +374,6 @@ pub fn html(theme: &UiConfig) -> String {
       if (typeof payload.query === "string" && inputEl.value !== payload.query) {{
         inputEl.value = payload.query;
       }}
-      statusEl.textContent = payload.status?.message || "Type to search. Arrow keys, Enter, click, or ⌥1-9.";
-      statusEl.className = "status" + (payload.status?.kind === "error" ? " error" : "");
       render();
     }};
 

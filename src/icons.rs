@@ -13,6 +13,7 @@ use directories::BaseDirs;
 use plist::{Dictionary, Value};
 
 const SYSTEM_SETTINGS_APP: &str = "/System/Applications/System Settings.app";
+const ICON_RENDER_SIZE: u32 = 128;
 
 pub struct IconCache {
     cache_dir: PathBuf,
@@ -85,7 +86,11 @@ impl IconCache {
             return Ok(None);
         };
 
-        let png_path = self.cache_dir.join(format!("{}.png", stable_hash(bundle_path)));
+        let png_path = self.cache_dir.join(format!(
+            "{}-{}px.png",
+            stable_hash(bundle_path),
+            ICON_RENDER_SIZE
+        ));
         if !png_path.exists() {
             render_png_icon(&icon_source, &png_path)?;
         }
@@ -205,10 +210,11 @@ fn icon_file_candidates(resources_dir: &Path, icon_name: &str) -> Vec<PathBuf> {
 }
 
 fn render_png_icon(icon_source: &Path, png_path: &Path) -> Result<()> {
+    let size = ICON_RENDER_SIZE.to_string();
     let output = Command::new("sips")
         .args([
             "-Z",
-            "64",
+            &size,
             "-s",
             "format",
             "png",
