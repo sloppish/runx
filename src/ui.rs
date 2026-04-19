@@ -274,6 +274,7 @@ pub fn html(theme: &UiConfig) -> String {
       query: "",
       items: [],
       selectedIndex: 0,
+      hoverSuspended: false,
     }};
 
     const resultsEl = document.getElementById("results");
@@ -288,6 +289,15 @@ pub fn html(theme: &UiConfig) -> String {
         return;
       }}
       state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.items.length - 1));
+    }};
+
+    const moveSelection = (delta) => {{
+      if (state.items.length === 0) {{
+        return;
+      }}
+      state.selectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.items.length - 1));
+      state.hoverSuspended = true;
+      render();
     }};
 
     const render = () => {{
@@ -321,8 +331,8 @@ pub fn html(theme: &UiConfig) -> String {
           </div>
           <div class="accelerator">${{item.accelerator ? escapeHtml(item.accelerator) : ""}}</div>
         `;
-        row.addEventListener("mouseenter", () => {{
-          if (state.selectedIndex === index) {{
+        row.addEventListener("mousemove", () => {{
+          if (state.hoverSuspended || state.selectedIndex === index) {{
             return;
           }}
           state.selectedIndex = index;
@@ -364,24 +374,22 @@ pub fn html(theme: &UiConfig) -> String {
       send({{ type: "query_changed", query: inputEl.value }});
     }});
 
+    resultsEl.addEventListener("mousemove", () => {{
+      state.hoverSuspended = false;
+    }});
+
     inputEl.addEventListener("keydown", (event) => {{
       const ctrlDown = event.ctrlKey && !event.metaKey && !event.altKey;
 
       if (event.key === "ArrowDown" || (ctrlDown && event.key.toLowerCase() === "n")) {{
         event.preventDefault();
-        if (state.items.length > 0) {{
-          state.selectedIndex = Math.min(state.selectedIndex + 1, state.items.length - 1);
-          render();
-        }}
+        moveSelection(1);
         return;
       }}
 
       if (event.key === "ArrowUp" || (ctrlDown && event.key.toLowerCase() === "p")) {{
         event.preventDefault();
-        if (state.items.length > 0) {{
-          state.selectedIndex = Math.max(state.selectedIndex - 1, 0);
-          render();
-        }}
+        moveSelection(-1);
         return;
       }}
 
