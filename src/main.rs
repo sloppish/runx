@@ -44,13 +44,17 @@ fn main() {
 
 fn run() -> Result<()> {
     let loaded = LoadedConfig::load()?;
+    let plugin_config = loaded.config.plugin_config()?;
     let runtime = Builder::new_multi_thread()
         .enable_all()
         .build()
         .context("failed to build the async runtime")?;
 
     let config = Arc::new(loaded.config.clone());
-    let plugins = Arc::new(plugins::PluginHost::load(&loaded.plugin_dirs));
+    let plugins = Arc::new(plugins::PluginHost::load(
+        &loaded.plugin_dirs,
+        plugin_config,
+    ));
     let providers = ProviderSet::new(config.clone(), plugins.clone())?;
 
     let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();

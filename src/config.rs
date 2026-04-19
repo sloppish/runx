@@ -1,5 +1,5 @@
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
 };
@@ -8,6 +8,8 @@ use anyhow::{Context, Result, bail};
 use directories::BaseDirs;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use serde::Deserialize;
+use serde_json::Value as JsonValue;
+use toml::Table;
 
 const DEFAULT_CONFIG: &str = r##"# Runx configuration
 #
@@ -32,6 +34,11 @@ result_limit = 24
 [plugins]
 directories = []
 
+# Per-plugin configuration can live under `[plugin.<id>]`.
+# Example:
+# [plugin.pass]
+# pass_rank_bin = "/absolute/path/to/pass_rank"
+#
 [ui]
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 accent = "#c77b49"
@@ -54,6 +61,7 @@ pub struct Config {
     pub window: WindowConfig,
     pub ranking: RankingConfig,
     pub plugins: PluginsConfig,
+    pub plugin: HashMap<String, Table>,
     pub ui: UiConfig,
 }
 
@@ -146,6 +154,17 @@ impl Config {
     pub fn hotkey(&self) -> Result<HotKey> {
         self.hotkey.to_hotkey()
     }
+
+    pub fn plugin_config(&self) -> Result<HashMap<String, JsonValue>> {
+        self.plugin
+            .iter()
+            .map(|(id, table)| {
+                let value = serde_json::to_value(table)
+                    .with_context(|| format!("failed to serialize plugin config for `{id}`"))?;
+                Ok((id.clone(), value))
+            })
+            .collect()
+    }
 }
 
 impl Default for Config {
@@ -155,6 +174,7 @@ impl Default for Config {
             window: WindowConfig::default(),
             ranking: RankingConfig::default(),
             plugins: PluginsConfig::default(),
+            plugin: HashMap::default(),
             ui: UiConfig::default(),
         }
     }

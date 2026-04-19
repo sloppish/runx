@@ -21,6 +21,7 @@ use crate::{
 #[derive(Clone, Default)]
 pub struct PluginHost {
     plugins: Vec<LuaPlugin>,
+    config: std::collections::HashMap<String, JsonValue>,
 }
 
 #[derive(Clone)]
@@ -55,7 +56,10 @@ pub struct PluginExecutionContext {
 }
 
 impl PluginHost {
-    pub fn load(directories: &[PathBuf]) -> Self {
+    pub fn load(
+        directories: &[PathBuf],
+        config: std::collections::HashMap<String, JsonValue>,
+    ) -> Self {
         let mut plugins = Vec::new();
 
         for directory in directories {
@@ -76,13 +80,13 @@ impl PluginHost {
         }
 
         plugins.sort_by(|left, right| left.name.cmp(&right.name));
-        Self { plugins }
+        Self { plugins, config }
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<SearchItem>> {
         let mut items = Vec::new();
         for plugin in &self.plugins {
-            let plugin_items = run_search(plugin, query)
+            let plugin_items = run_search(plugin, query, self.plugin_config(&plugin.id))
                 .with_context(|| format!("plugin `{}` search failed", plugin.id))?;
             items.extend(plugin_items);
         }
@@ -100,14 +104,21 @@ impl PluginHost {
             .iter()
             .find(|plugin| plugin.id == plugin_id)
             .with_context(|| format!("unknown plugin `{plugin_id}`"))?;
-        run_action(plugin, payload, context)
+        run_action(plugin, payload, context, self.plugin_config(plugin_id))
+    }
+
+    fn plugin_config(&self, plugin_id: &str) -> JsonValue {
+        self.config
+            .get(plugin_id)
+            .cloned()
+            .unwrap_or_else(empty_plugin_config)
     }
 }
 
 fn load_plugin(path: &Path) -> Result<LuaPlugin> {
     let source = fs::read_to_string(path)
         .with_context(|| format!("failed to read plugin {}", path.display()))?;
-    let (lua, table) = load_table(path, &source)?;
+    let (lua, table) = load_table(path, &source, &empty_plugin_config())?;
     let metadata = extract_metadata(&lua, &table)?;
 
     let fallback_id = path
@@ -134,8 +145,12 @@ fn extract_metadata(lua: &Lua, table: &Table) -> Result<PluginMetadata> {
     })
 }
 
-fn run_search(plugin: &LuaPlugin, query: &str) -> Result<Vec<SearchItem>> {
-    let (lua, table) = load_table(&plugin.path, &plugin.source)?;
+fn run_search(
+    plugin: &LuaPlugin,
+    query: &str,
+    plugin_config: JsonValue,
+) -> Result<Vec<SearchItem>> {
+    let (lua, table) = load_table(&plugin.path, &plugin.source, &plugin_config)?;
     let search: Function = match table.get::<Option<Function>>("search")? {
         Some(function) => function,
         None => return Ok(Vec::new()),
@@ -166,8 +181,10 @@ fn run_action(
     plugin: &LuaPlugin,
     payload: &JsonValue,
     context: &PluginExecutionContext,
+    plugin_config: JsonValue,
 ) -> Result<Option<String>> {
-    let (lua, table) = load_table_with_context(&plugin.path, &plugin.source, context)?;
+    let (lua, table) =
+        load_table_with_context(&plugin.path, &plugin.source, context, &plugin_config)?;
     let run: Function = table
         .get::<Option<Function>>("run")?
         .ok_or_else(|| anyhow!("plugin `{}` does not export a `run` function", plugin.id))?;
@@ -194,17 +211,23 @@ fn run_action(
     Ok(outcome.message)
 }
 
-fn load_table(path: &Path, source: &str) -> Result<(Lua, Table)> {
-    load_table_with_context(path, source, &PluginExecutionContext::default())
+fn load_table(path: &Path, source: &str, plugin_config: &JsonValue) -> Result<(Lua, Table)> {
+    load_table_with_context(
+        path,
+        source,
+        &PluginExecutionContext::default(),
+        plugin_config,
+    )
 }
 
 fn load_table_with_context(
     path: &Path,
     source: &str,
     context: &PluginExecutionContext,
+    plugin_config: &JsonValue,
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
-    install_runtime(&lua, context)?;
+    install_runtime(&lua, context, plugin_config)?;
     let table: Table = lua
         .load(source)
         .set_name(path.to_string_lossy().as_ref())
@@ -213,7 +236,11 @@ fn load_table_with_context(
     Ok((lua, table))
 }
 
-fn install_runtime(lua: &Lua, context: &PluginExecutionContext) -> Result<()> {
+fn install_runtime(
+    lua: &Lua,
+    context: &PluginExecutionContext,
+    plugin_config: &JsonValue,
+) -> Result<()> {
     let runtime = lua.create_table()?;
 
     runtime.set(
@@ -257,6 +284,15 @@ fn install_runtime(lua: &Lua, context: &PluginExecutionContext) -> Result<()> {
     )?;
 
     runtime.set(
+        "exec_json",
+        lua.create_function(|lua, (program, args): (String, Vec<String>)| {
+            let output = exec_capture(&program, &args, false).map_err(mlua::Error::external)?;
+            let json = serde_json::from_str::<JsonValue>(&output).map_err(mlua::Error::external)?;
+            lua.to_value(&json)
+        })?,
+    )?;
+
+    runtime.set(
         "copy_text",
         lua.create_function(|_, text: String| {
             let mut child = Command::new("pbcopy")
@@ -297,8 +333,14 @@ fn install_runtime(lua: &Lua, context: &PluginExecutionContext) -> Result<()> {
         })?,
     )?;
 
+    runtime.set("plugin_config", lua.to_value(plugin_config)?)?;
+
     lua.globals().set("runx", runtime)?;
     Ok(())
+}
+
+fn empty_plugin_config() -> JsonValue {
+    JsonValue::Object(Default::default())
 }
 
 fn type_text(text: &str, previous_app: Option<&FrontmostApp>) -> Result<String> {

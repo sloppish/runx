@@ -27,6 +27,15 @@ local function password_store_dir()
   return runx.getenv("PASSWORD_STORE_DIR") or (runx.home_dir() .. "/.password-store")
 end
 
+local function pass_rank_binary()
+  local config = runx.plugin_config or {}
+  local path = config.pass_rank_bin or runx.getenv("RUNX_PASS_RANK_BIN")
+  if not path or path == "" then
+    error("configure [plugin.pass].pass_rank_bin in config.toml")
+  end
+  return path
+end
+
 local function list_password_store()
   local root = password_store_dir()
   local entries = {}
@@ -39,6 +48,17 @@ local function list_password_store()
 
   table.sort(entries)
   return entries
+end
+
+local function ranked_password_store(query)
+  local payload = runx.exec_json(pass_rank_binary(), { query })
+  local ranked = {}
+
+  for _, item in ipairs(payload.items or {}) do
+    table.insert(ranked, item.arg or item.title)
+  end
+
+  return ranked
 end
 
 local function pass_show(entry)
@@ -146,33 +166,24 @@ local function match_command(query)
 end
 
 local function score_entries(query, command)
-  local entries = list_password_store()
   local items = {}
   local trimmed = trim(query)
+  local entries = trimmed == "" and list_password_store() or ranked_password_store(trimmed)
+  local total = #entries
 
-  for _, entry in ipairs(entries) do
-    local score = trimmed == "" and 1 or runx.fuzzy_score(entry, trimmed)
-    if score > 0 then
-      table.insert(items, {
-        id = command.action .. ":" .. entry,
-        title = entry,
-        subtitle = command.subtitle,
-        badge = command.badge,
-        score = score,
-        action = {
-          kind = command.action,
-          entry = entry,
-        },
-      })
-    end
+  for index, entry in ipairs(entries) do
+    table.insert(items, {
+      id = command.action .. ":" .. entry,
+      title = entry,
+      subtitle = command.subtitle,
+      badge = command.badge,
+      score = trimmed == "" and 1 or (total - index + 1),
+      action = {
+        kind = command.action,
+        entry = entry,
+      },
+    })
   end
-
-  table.sort(items, function(left, right)
-    if left.score == right.score then
-      return left.title < right.title
-    end
-    return left.score > right.score
-  end)
 
   return items
 end
