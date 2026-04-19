@@ -38,6 +38,18 @@ impl FrontmostApp {
     }
 }
 
+pub fn open_application(path: &str) -> Result<()> {
+    run_quiet("open", &[path])
+}
+
+pub fn open_path(path: &str) -> Result<()> {
+    run_quiet("open", &[path])
+}
+
+pub fn open_settings(url: &str) -> Result<()> {
+    run_quiet("open", &[url])
+}
+
 pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     let output = run_capture("lsappinfo", &["front"])?;
     let Some(asn) = output
@@ -61,7 +73,95 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     Ok(Some(app))
 }
 
-pub fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
+pub fn focus_window(app_name: &str, window_title: &str) -> Result<Option<String>> {
+    let script = r#"
+on run argv
+    set targetApp to item 1 of argv
+    set targetWindow to item 2 of argv
+    tell application "System Events"
+        tell application process targetApp
+            set frontmost to true
+            try
+                perform action "AXRaise" of first window whose name is targetWindow
+            end try
+        end tell
+    end tell
+end run
+"#;
+
+    let output = run_output("osascript", &["-e", script, "--", app_name, window_title])
+        .with_context(|| format!("failed to raise window {window_title}"))?;
+
+    if output.status.success() {
+        return Ok(Some(format!("Focused {}", window_title)));
+    }
+
+    open_named_application(app_name).with_context(|| {
+        format!("failed to focus window {window_title} and also failed to activate {app_name}")
+    })?;
+
+    if output.stderr.is_empty() {
+        Ok(Some(format!(
+            "Activated {} (window focus requires Accessibility permission)",
+            app_name
+        )))
+    } else {
+        Ok(Some(format!(
+            "Activated {} (direct window focus unavailable: {})",
+            app_name, output.stderr
+        )))
+    }
+}
+
+pub fn type_text_into_previous_app(
+    text: &str,
+    previous_app: Option<&FrontmostApp>,
+) -> Result<String> {
+    if !ensure_accessibility_trusted(true) {
+        open_accessibility_settings();
+        bail!(
+            "Runx needs Accessibility permission to type into other apps. Approve the system prompt or enable your terminal/runx in System Settings > Privacy & Security > Accessibility, then retry."
+        );
+    }
+
+    reactivate_previous_app(previous_app)?;
+
+    let script = r#"
+on run argv
+    tell application "System Events"
+        keystroke item 1 of argv
+    end tell
+end run
+"#;
+    let output = run_output("osascript", &["-e", script, "--", text])
+        .context("failed to launch osascript for text typing")?;
+
+    if output.status.success() {
+        return Ok("Typed into the previous app".to_owned());
+    }
+
+    if automation_denied(&output.stderr) {
+        open_automation_settings();
+        bail!(
+            "macOS blocked Apple Events to System Events. Allow your terminal/runx under System Settings > Privacy & Security > Automation, then retry."
+        );
+    }
+
+    if accessibility_denied(&output.stderr) {
+        open_accessibility_settings();
+        bail!(
+            "macOS blocked assistive access while typing. Enable your terminal/runx in Privacy & Security > Accessibility, then retry."
+        );
+    }
+
+    if output.stderr.is_empty() {
+        bail!("typing failed for an unknown macOS reason");
+    }
+
+    bail!("{}", output.stderr);
+}
+
+fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
     let Some(app) = app else {
         return Ok(());
     };
@@ -102,22 +202,22 @@ pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) != 0 }
 }
 
-pub fn open_accessibility_settings() {
+fn open_accessibility_settings() {
     open_privacy_settings(PRIVACY_ACCESSIBILITY);
 }
 
-pub fn open_automation_settings() {
+fn open_automation_settings() {
     open_privacy_settings(PRIVACY_AUTOMATION);
 }
 
-pub fn automation_denied(stderr: &str) -> bool {
+fn automation_denied(stderr: &str) -> bool {
     let lower = stderr.to_ascii_lowercase();
     lower.contains("-1743")
         || lower.contains("not authorized to send apple events")
         || lower.contains("not authorised to send apple events")
 }
 
-pub fn accessibility_denied(stderr: &str) -> bool {
+fn accessibility_denied(stderr: &str) -> bool {
     let lower = stderr.to_ascii_lowercase();
     lower.contains("assistive access")
         || lower.contains("accessibility")
@@ -134,6 +234,10 @@ fn lsappinfo_field(asn: &str, selector: &str, key: &str) -> Result<Option<String
     Ok(parse_lsappinfo_field(&output, key))
 }
 
+fn open_named_application(name: &str) -> Result<()> {
+    run_quiet("open", &["-a", name])
+}
+
 fn parse_lsappinfo_field(output: &str, key: &str) -> Option<String> {
     output.lines().find_map(|line| {
         let (left, right) = line.split_once('=')?;
@@ -145,21 +249,16 @@ fn parse_lsappinfo_field(output: &str, key: &str) -> Option<String> {
 }
 
 fn run_capture(program: &str, args: &[&str]) -> Result<String> {
-    let output = Command::new(program)
-        .args(args)
-        .stdin(Stdio::null())
-        .output()
-        .with_context(|| format!("failed to run `{program}`"))?;
+    let output = run_output(program, args)?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        if stderr.is_empty() {
+        if output.stderr.is_empty() {
             bail!("`{program}` exited with status {}", output.status);
         }
-        bail!("{stderr}");
+        bail!("{}", output.stderr);
     }
 
-    String::from_utf8(output.stdout).context("command output was not UTF-8")
+    Ok(output.stdout)
 }
 
 fn run_quiet(program: &str, args: &[&str]) -> Result<()> {
@@ -176,6 +275,26 @@ fn run_quiet(program: &str, args: &[&str]) -> Result<()> {
     }
 
     bail!("`{program}` exited with status {status}");
+}
+
+struct CommandOutput {
+    status: std::process::ExitStatus,
+    stdout: String,
+    stderr: String,
+}
+
+fn run_output(program: &str, args: &[&str]) -> Result<CommandOutput> {
+    let output = Command::new(program)
+        .args(args)
+        .stdin(Stdio::null())
+        .output()
+        .with_context(|| format!("failed to run `{program}`"))?;
+
+    Ok(CommandOutput {
+        status: output.status,
+        stdout: String::from_utf8(output.stdout).context("command output was not UTF-8")?,
+        stderr: String::from_utf8_lossy(&output.stderr).trim().to_owned(),
+    })
 }
 
 #[cfg(test)]

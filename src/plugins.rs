@@ -10,10 +10,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    macos::{
-        FrontmostApp, accessibility_denied, automation_denied, ensure_accessibility_trusted,
-        open_accessibility_settings, open_automation_settings, reactivate_previous_app,
-    },
+    macos::{FrontmostApp, type_text_into_previous_app},
     scoring::fuzzy_score,
     types::{Action, PluginActionPayload, SearchItem},
 };
@@ -322,7 +319,7 @@ fn install_runtime(
     runtime.set("type_text", {
         let previous_app = context.previous_app.clone();
         lua.create_function(move |_, text: String| {
-            type_text(&text, previous_app.as_ref()).map_err(mlua::Error::external)
+            type_text_into_previous_app(&text, previous_app.as_ref()).map_err(mlua::Error::external)
         })?
     })?;
 
@@ -342,54 +339,6 @@ fn install_runtime(
 
 fn empty_plugin_config() -> JsonValue {
     JsonValue::Object(Default::default())
-}
-
-fn type_text(text: &str, previous_app: Option<&FrontmostApp>) -> Result<String> {
-    if !ensure_accessibility_trusted(true) {
-        open_accessibility_settings();
-        bail!(
-            "Runx needs Accessibility permission to type into other apps. Approve the system prompt or enable your terminal/runx in System Settings > Privacy & Security > Accessibility, then retry."
-        );
-    }
-
-    reactivate_previous_app(previous_app)?;
-
-    let script = r#"
-on run argv
-    tell application "System Events"
-        keystroke item 1 of argv
-    end tell
-end run
-"#;
-    let output = Command::new("osascript")
-        .args(["-e", script, "--", text])
-        .output()
-        .context("failed to launch osascript for text typing")?;
-
-    if output.status.success() {
-        return Ok("Typed into the previous app".to_owned());
-    }
-
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    if automation_denied(&stderr) {
-        open_automation_settings();
-        bail!(
-            "macOS blocked Apple Events to System Events. Allow your terminal/runx under System Settings > Privacy & Security > Automation, then retry."
-        );
-    }
-
-    if accessibility_denied(&stderr) {
-        open_accessibility_settings();
-        bail!(
-            "macOS blocked assistive access while typing. Enable your terminal/runx in Privacy & Security > Accessibility, then retry."
-        );
-    }
-
-    if stderr.is_empty() {
-        bail!("typing failed for an unknown macOS reason");
-    }
-
-    bail!("{stderr}");
 }
 
 fn walk_files(root: &Path) -> Result<Vec<String>> {
