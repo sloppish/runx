@@ -267,7 +267,7 @@ pub fn html(theme: &UiConfig) -> String {
       <strong>Runx</strong>
     </div>
     <div class="input-wrap">
-      <input id="query" type="text" autocomplete="off" spellcheck="false" placeholder="Search apps, windows, settings, or use pass ..." />
+      <input id="query" type="text" autocomplete="off" spellcheck="false" placeholder="" />
     </div>
     <section id="results" class="results" aria-live="polite"></section>
   </main>
@@ -325,17 +325,6 @@ pub fn html(theme: &UiConfig) -> String {
       resultsEl.innerHTML = "";
 
       if (state.items.length === 0) {{
-        const empty = document.createElement("div");
-        empty.className = "item selected";
-        empty.innerHTML = `
-          <div class="badge">RUN</div>
-          <div class="copy">
-            <div class="title">No results yet</div>
-            <div class="subtitle">Try an app name, a settings pane, or a plugin trigger like <code>pass</code>.</div>
-          </div>
-          <div class="accelerator">⌥Space</div>
-        `;
-        resultsEl.appendChild(empty);
         return;
       }}
 
