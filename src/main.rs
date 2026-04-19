@@ -36,6 +36,8 @@ use crate::{
 };
 
 const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
+const RENDER_COALESCE: Duration = Duration::from_millis(16);
+const SEARCH_DEBOUNCE: Duration = Duration::from_millis(24);
 
 fn main() {
     if let Err(error) = run() {
@@ -126,6 +128,8 @@ struct LauncherApp {
     shown_at: Option<Instant>,
     focused_since_show: bool,
     previous_app: Option<macos::FrontmostApp>,
+    render_scheduled: bool,
+    search_token: u64,
 }
 
 impl LauncherApp {
@@ -177,6 +181,8 @@ impl LauncherApp {
             shown_at: None,
             focused_since_show: false,
             previous_app: None,
+            render_scheduled: false,
+            search_token: 0,
         })
     }
 
@@ -208,7 +214,7 @@ impl LauncherApp {
             kind: "info",
             message: format!("Config: {}", self.loaded.config_path.display()),
         });
-        self.start_search(String::new());
+        self.start_search_now();
         self.focus_input()?;
         Ok(())
     }
@@ -221,6 +227,7 @@ impl LauncherApp {
         self.current_query.clear();
         self.provider_items.clear();
         self.pending_providers = 0;
+        self.search_token = self.search_token.wrapping_add(1);
         self.render()?;
         Ok(())
     }
@@ -251,6 +258,15 @@ impl LauncherApp {
     fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
+            AppEvent::Render => {
+                self.render_scheduled = false;
+                self.render()?;
+            }
+            AppEvent::StartSearch { token } => {
+                if token == self.search_token {
+                    self.start_search_now();
+                }
+            }
             AppEvent::ProviderItems {
                 generation,
                 provider,
@@ -259,7 +275,7 @@ impl LauncherApp {
                 if generation == self.current_generation {
                     self.pending_providers = self.pending_providers.saturating_sub(1);
                     self.provider_items.insert(provider, items);
-                    self.render()?;
+                    self.request_render(RENDER_COALESCE);
                 }
             }
             AppEvent::ProviderError {
@@ -273,7 +289,7 @@ impl LauncherApp {
                         kind: "error",
                         message: format!("{provider}: {message}"),
                     });
-                    self.render()?;
+                    self.request_render(RENDER_COALESCE);
                 }
             }
             AppEvent::ActionOutcome { message, is_error } => {
@@ -281,7 +297,7 @@ impl LauncherApp {
                     kind: if is_error { "error" } else { "info" },
                     message,
                 });
-                self.render()?;
+                self.request_render(RENDER_COALESCE);
             }
         }
         Ok(())
@@ -290,16 +306,26 @@ impl LauncherApp {
     fn handle_frontend(&mut self, command: FrontendCommand) -> Result<()> {
         match command {
             FrontendCommand::Ready => self.render()?,
-            FrontendCommand::QueryChanged { query } => self.start_search(query),
+            FrontendCommand::QueryChanged { query } => self.schedule_search(query),
             FrontendCommand::Activate { index } => self.activate(index),
             FrontendCommand::Hide => self.hide()?,
         }
         Ok(())
     }
 
-    fn start_search(&mut self, query: String) {
-        self.current_generation += 1;
+    fn schedule_search(&mut self, query: String) {
         self.current_query = query;
+        self.search_token = self.search_token.wrapping_add(1);
+        let token = self.search_token;
+        let proxy = self.proxy.clone();
+        self.runtime.handle().spawn(async move {
+            tokio::time::sleep(SEARCH_DEBOUNCE).await;
+            let _ = proxy.send_event(AppEvent::StartSearch { token });
+        });
+    }
+
+    fn start_search_now(&mut self) {
+        self.current_generation += 1;
         self.pending_providers = self.providers.provider_count();
         self.status = Some(StatusLine {
             kind: "info",
@@ -312,12 +338,10 @@ impl LauncherApp {
         });
         let generation = self.current_generation;
         self.providers.spawn_search(
-            self.runtime.handle(),
             self.proxy.clone(),
             generation,
             self.current_query.clone(),
         );
-        let _ = self.render();
     }
 
     fn activate(&mut self, index: usize) {
@@ -380,6 +404,19 @@ impl LauncherApp {
         Ok(())
     }
 
+    fn request_render(&mut self, delay: Duration) {
+        if self.render_scheduled {
+            return;
+        }
+
+        self.render_scheduled = true;
+        let proxy = self.proxy.clone();
+        self.runtime.handle().spawn(async move {
+            tokio::time::sleep(delay).await;
+            let _ = proxy.send_event(AppEvent::Render);
+        });
+    }
+
     fn focus_input(&self) -> Result<()> {
         self.webview
             .evaluate_script("window.__RUNX_FOCUS && window.__RUNX_FOCUS();")
@@ -412,7 +449,7 @@ impl LauncherApp {
             kind: "error",
             message,
         });
-        let _ = self.render();
+        self.request_render(RENDER_COALESCE);
     }
 }
 

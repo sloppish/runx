@@ -9,7 +9,7 @@ use directories::BaseDirs;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use toml::Table;
+use toml::{Table, Value as TomlValue};
 
 const DEFAULT_CONFIG: &str = r##"# Runx configuration
 #
@@ -47,6 +47,8 @@ panel = "#fffaf3"
 text = "#1f1a16"
 muted = "#756759"
 "##;
+const DEFAULT_PASS_PLUGIN_RESOURCE: &str = "defaults/pass.lua";
+const DEFAULT_PASS_RANK_RESOURCE: &str = "defaults/pass/pass_rank";
 
 pub struct LoadedConfig {
     pub config: Config,
@@ -114,6 +116,9 @@ impl LoadedConfig {
         let plugin_dir = root_dir.join("plugins");
         fs::create_dir_all(&plugin_dir)
             .with_context(|| format!("failed to create {}", plugin_dir.display()))?;
+        let pass_asset_dir = plugin_dir.join("pass");
+        fs::create_dir_all(&pass_asset_dir)
+            .with_context(|| format!("failed to create {}", pass_asset_dir.display()))?;
 
         let config_path = root_dir.join("config.toml");
         if !config_path.exists() {
@@ -123,18 +128,25 @@ impl LoadedConfig {
 
         let default_plugin_path = plugin_dir.join("pass.lua");
         if !default_plugin_path.exists() {
-            fs::write(&default_plugin_path, include_str!("../plugins/pass.lua"))
+            write_default_plugin(&default_plugin_path)
                 .with_context(|| format!("failed to write {}", default_plugin_path.display()))?;
+        }
+
+        let pass_rank_path = pass_asset_dir.join("pass_rank");
+        if !pass_rank_path.exists() {
+            install_resource_if_available(DEFAULT_PASS_RANK_RESOURCE, &pass_rank_path)
+                .with_context(|| format!("failed to install {}", pass_rank_path.display()))?;
         }
 
         let raw = fs::read_to_string(&config_path)
             .with_context(|| format!("failed to read {}", config_path.display()))?;
-        let config: Config = toml::from_str(&raw).with_context(|| {
+        let mut config: Config = toml::from_str(&raw).with_context(|| {
             format!(
                 "failed to parse {}.\nCheck the TOML syntax and the documented field names.",
                 config_path.display()
             )
         })?;
+        inject_default_pass_config(&mut config, &pass_rank_path);
 
         let mut plugin_dirs = vec![plugin_dir];
         for configured in &config.plugins.directories {
@@ -148,6 +160,72 @@ impl LoadedConfig {
             plugin_dirs,
         })
     }
+}
+
+fn write_default_plugin(destination: &Path) -> Result<()> {
+    if install_resource_if_available(DEFAULT_PASS_PLUGIN_RESOURCE, destination)? {
+        return Ok(());
+    }
+
+    fs::write(destination, include_str!("../plugins/pass.lua")).with_context(|| {
+        format!(
+            "failed to write bundled pass plugin to {}",
+            destination.display()
+        )
+    })
+}
+
+fn install_resource_if_available(resource: &str, destination: &Path) -> Result<bool> {
+    let Some(source) = app_resource_path(resource) else {
+        return Ok(false);
+    };
+
+    if let Some(parent) = destination.parent() {
+        fs::create_dir_all(parent)
+            .with_context(|| format!("failed to create {}", parent.display()))?;
+    }
+
+    fs::copy(&source, destination).with_context(|| {
+        format!(
+            "failed to copy bundled resource {} to {}",
+            source.display(),
+            destination.display()
+        )
+    })?;
+
+    #[cfg(unix)]
+    if source.extension().and_then(|value| value.to_str()).is_none() {
+        use std::os::unix::fs::PermissionsExt;
+
+        fs::set_permissions(destination, fs::Permissions::from_mode(0o755)).with_context(
+            || format!("failed to mark {} executable", destination.display()),
+        )?;
+    }
+
+    Ok(true)
+}
+
+fn app_resource_path(relative: &str) -> Option<PathBuf> {
+    let executable = std::env::current_exe().ok()?;
+    let contents_dir = executable.parent()?.parent()?;
+    let resource_path = contents_dir.join("Resources").join(relative);
+    resource_path.exists().then_some(resource_path)
+}
+
+fn inject_default_pass_config(config: &mut Config, pass_rank_path: &Path) {
+    if !pass_rank_path.exists() {
+        return;
+    }
+
+    let plugin_table = config.plugin.entry("pass".to_owned()).or_default();
+    if plugin_table.contains_key("pass_rank_bin") {
+        return;
+    }
+
+    plugin_table.insert(
+        "pass_rank_bin".to_owned(),
+        TomlValue::String(pass_rank_path.to_string_lossy().to_string()),
+    );
 }
 
 impl Config {

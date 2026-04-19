@@ -38,6 +38,10 @@ pub enum Action {
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     Frontend(FrontendCommand),
+    Render,
+    StartSearch {
+        token: u64,
+    },
     ProviderItems {
         generation: u64,
         provider: String,

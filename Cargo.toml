@@ -16,7 +16,7 @@ plist = "1.7"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tao = "0.35"
-tokio = { version = "1.48", features = ["rt-multi-thread"] }
+tokio = { version = "1.48", features = ["rt-multi-thread", "time"] }
 toml = "0.8"
 walkdir = "2.5"
 wry = { version = "0.55", features = ["transparent"] }

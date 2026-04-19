@@ -305,6 +305,21 @@ pub fn html(theme: &UiConfig) -> String {
       render();
     }};
 
+    const syncSelection = (ensureVisible = true) => {{
+      Array.from(resultsEl.children).forEach((child, index) => {{
+        child.classList.toggle("selected", index === state.selectedIndex);
+      }});
+
+      if (!ensureVisible) {{
+        return;
+      }}
+
+      const selected = resultsEl.children[state.selectedIndex];
+      if (selected) {{
+        selected.scrollIntoView({{ block: "nearest" }});
+      }}
+    }};
+
     const render = () => {{
       clampSelection();
       resultsEl.innerHTML = "";
@@ -350,10 +365,7 @@ pub fn html(theme: &UiConfig) -> String {
         resultsEl.appendChild(row);
       }});
 
-      const selected = resultsEl.children[state.selectedIndex];
-      if (selected) {{
-        selected.scrollIntoView({{ block: "nearest" }});
-      }}
+      syncSelection();
     }};
 
     const escapeHtml = (value) =>
@@ -365,14 +377,21 @@ pub fn html(theme: &UiConfig) -> String {
     const escapeAttr = (value) => escapeHtml(value).replaceAll('"', "&quot;");
 
     window.__RUNX_RENDER = (payload) => {{
-      const queryChanged = state.query !== payload.query;
-      state.query = payload.query;
+      const payloadQuery = typeof payload.query === "string" ? payload.query : "";
+      const shouldSyncInput =
+        payloadQuery === "" ||
+        inputEl.value === payloadQuery ||
+        document.activeElement !== inputEl;
+      const queryChanged = state.query !== payloadQuery;
+      if (shouldSyncInput) {{
+        state.query = payloadQuery;
+      }}
       state.items = payload.items || [];
-      if (queryChanged) {{
+      if (queryChanged && shouldSyncInput) {{
         state.selectedIndex = 0;
       }}
-      if (typeof payload.query === "string" && inputEl.value !== payload.query) {{
-        inputEl.value = payload.query;
+      if (shouldSyncInput && inputEl.value !== payloadQuery) {{
+        inputEl.value = payloadQuery;
       }}
       render();
     }};
@@ -384,6 +403,9 @@ pub fn html(theme: &UiConfig) -> String {
 
     inputEl.addEventListener("input", () => {{
       setHoverSuspended(true);
+      state.query = inputEl.value;
+      state.selectedIndex = 0;
+      syncSelection(false);
       send({{ type: "query_changed", query: inputEl.value }});
     }});
 

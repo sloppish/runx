@@ -150,6 +150,10 @@ fn scan_bundle_metadata() -> Result<HashMap<String, BundleMetadata>> {
                 continue;
             };
 
+            if !is_settings_bundle(dict, &path) {
+                continue;
+            }
+
             let Some(identifier) = dict
                 .get("CFBundleIdentifier")
                 .and_then(Value::as_string)
@@ -176,6 +180,22 @@ fn scan_bundle_metadata() -> Result<HashMap<String, BundleMetadata>> {
     }
 
     Ok(bundles)
+}
+
+fn is_settings_bundle(dict: &plist::Dictionary, path: &Path) -> bool {
+    match path.extension().and_then(|value| value.to_str()) {
+        Some("prefPane") => true,
+        Some("appex") => dict
+            .get("EXAppExtensionAttributes")
+            .and_then(Value::as_dictionary)
+            .and_then(|attributes| {
+                attributes
+                    .get("EXExtensionPointIdentifier")
+                    .and_then(Value::as_string)
+            })
+            == Some("com.apple.Settings.extension.ui"),
+        _ => false,
+    }
 }
 
 fn read_sidebar_ids() -> Result<Vec<String>> {

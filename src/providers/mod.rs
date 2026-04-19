@@ -3,9 +3,13 @@ pub mod settings;
 pub mod spotlight;
 pub mod windows;
 
-use std::sync::Arc;
-
-use tokio::runtime::Handle;
+use std::{
+    sync::{
+        Arc,
+        mpsc::{self, Receiver, Sender},
+    },
+    thread,
+};
 
 use tao::event_loop::EventLoopProxy;
 
@@ -23,12 +27,11 @@ use self::{
 
 #[derive(Clone)]
 pub struct ProviderSet {
-    apps: Arc<AppProvider>,
-    settings: Arc<SettingsProvider>,
-    spotlight: Arc<SpotlightProvider>,
-    windows: Arc<WindowsProvider>,
-    plugins: Arc<PluginHost>,
-    config: Arc<Config>,
+    windows: ProviderWorker,
+    apps: ProviderWorker,
+    settings: ProviderWorker,
+    plugins: ProviderWorker,
+    spotlight: ProviderWorker,
 }
 
 impl ProviderSet {
@@ -39,13 +42,36 @@ impl ProviderSet {
         plugins: Arc<PluginHost>,
         icons: Arc<IconCache>,
     ) -> anyhow::Result<Self> {
+        let windows = Arc::new(WindowsProvider::new(icons.clone()));
+        let apps = Arc::new(AppProvider::new(icons.clone())?);
+        let settings = Arc::new(SettingsProvider::new(icons.clone())?);
+        let spotlight = Arc::new(SpotlightProvider::new(icons));
+
         Ok(Self {
-            apps: Arc::new(AppProvider::new(icons.clone())?),
-            settings: Arc::new(SettingsProvider::new(icons.clone())?),
-            spotlight: Arc::new(SpotlightProvider::new(icons.clone())),
-            windows: Arc::new(WindowsProvider::new(icons)),
-            plugins,
-            config,
+            windows: ProviderWorker::new("windows", {
+                let provider = windows;
+                let limit = config.ranking.result_limit;
+                move |query| provider.search(&query, limit)
+            })?,
+            apps: ProviderWorker::new("apps", {
+                let provider = apps;
+                let limit = config.ranking.result_limit;
+                move |query| provider.search(&query, limit)
+            })?,
+            settings: ProviderWorker::new("settings", {
+                let provider = settings;
+                let limit = config.ranking.result_limit;
+                move |query| provider.search(&query, limit)
+            })?,
+            plugins: ProviderWorker::new("plugins", {
+                let plugins = plugins;
+                move |query| plugins.search(&query)
+            })?,
+            spotlight: ProviderWorker::new("spotlight", {
+                let provider = spotlight;
+                let limit = config.ranking.result_limit;
+                move |query| provider.search(&query, limit)
+            })?,
         })
     }
 
@@ -55,88 +81,77 @@ impl ProviderSet {
 
     pub fn spawn_search(
         &self,
-        runtime: &Handle,
         proxy: EventLoopProxy<AppEvent>,
         generation: u64,
         query: String,
     ) {
-        self.spawn_provider(
-            runtime,
-            proxy.clone(),
-            generation,
-            "windows",
-            query.clone(),
-            {
-                let provider = self.windows.clone();
-                let limit = self.config.ranking.result_limit;
-                move |query| provider.search(&query, limit)
-            },
-        );
+        self.windows
+            .search(proxy.clone(), generation, query.clone());
+        self.apps.search(proxy.clone(), generation, query.clone());
+        self.settings
+            .search(proxy.clone(), generation, query.clone());
+        self.plugins.search(proxy.clone(), generation, query.clone());
+        self.spotlight.search(proxy, generation, query);
+    }
+}
 
-        self.spawn_provider(runtime, proxy.clone(), generation, "apps", query.clone(), {
-            let provider = self.apps.clone();
-            let limit = self.config.ranking.result_limit;
-            move |query| provider.search(&query, limit)
-        });
+#[derive(Clone)]
+struct ProviderWorker {
+    sender: Sender<SearchRequest>,
+}
 
-        self.spawn_provider(
-            runtime,
-            proxy.clone(),
-            generation,
-            "settings",
-            query.clone(),
-            {
-                let provider = self.settings.clone();
-                let limit = self.config.ranking.result_limit;
-                move |query| provider.search(&query, limit)
-            },
-        );
+struct SearchRequest {
+    generation: u64,
+    query: String,
+    proxy: EventLoopProxy<AppEvent>,
+}
 
-        self.spawn_provider(
-            runtime,
-            proxy.clone(),
-            generation,
-            "plugins",
-            query.clone(),
-            {
-                let plugins = self.plugins.clone();
-                move |query| plugins.search(&query)
-            },
-        );
-
-        self.spawn_provider(runtime, proxy, generation, "spotlight", query, {
-            let provider = self.spotlight.clone();
-            let limit = self.config.ranking.result_limit;
-            move |query| provider.search(&query, limit)
-        });
+impl ProviderWorker {
+    fn new<F>(name: &'static str, search: F) -> anyhow::Result<Self>
+    where
+        F: Fn(String) -> anyhow::Result<Vec<SearchItem>> + Send + 'static,
+    {
+        let (sender, receiver) = mpsc::channel();
+        thread::Builder::new()
+            .name(format!("runx-provider-{name}"))
+            .spawn(move || worker_loop(name, receiver, search))
+            .map_err(anyhow::Error::from)?;
+        Ok(Self { sender })
     }
 
-    fn spawn_provider<F>(
-        &self,
-        runtime: &Handle,
-        proxy: EventLoopProxy<AppEvent>,
-        generation: u64,
-        name: &'static str,
-        query: String,
-        search: F,
-    ) where
-        F: FnOnce(String) -> anyhow::Result<Vec<SearchItem>> + Send + 'static,
-    {
-        runtime.spawn_blocking(move || match search(query) {
+    fn search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
+        let _ = self.sender.send(SearchRequest {
+            generation,
+            query,
+            proxy,
+        });
+    }
+}
+
+fn worker_loop<F>(name: &'static str, receiver: Receiver<SearchRequest>, search: F)
+where
+    F: Fn(String) -> anyhow::Result<Vec<SearchItem>>,
+{
+    while let Ok(mut request) = receiver.recv() {
+        while let Ok(next) = receiver.try_recv() {
+            request = next;
+        }
+
+        match search(request.query) {
             Ok(items) => {
-                let _ = proxy.send_event(AppEvent::ProviderItems {
-                    generation,
+                let _ = request.proxy.send_event(AppEvent::ProviderItems {
+                    generation: request.generation,
                     provider: name.to_owned(),
                     items,
                 });
             }
             Err(error) => {
-                let _ = proxy.send_event(AppEvent::ProviderError {
-                    generation,
+                let _ = request.proxy.send_event(AppEvent::ProviderError {
+                    generation: request.generation,
                     provider: name.to_owned(),
                     message: error.to_string(),
                 });
             }
-        });
+        }
     }
 }
