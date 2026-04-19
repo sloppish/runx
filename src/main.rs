@@ -1,0 +1,397 @@
+mod actions;
+mod config;
+mod plugins;
+mod providers;
+mod scoring;
+mod types;
+mod ui;
+
+use std::{
+    collections::HashMap,
+    sync::Arc,
+    time::{Duration, Instant},
+};
+
+use anyhow::{Context, Result};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use providers::ProviderSet;
+use tao::{
+    dpi::{LogicalSize, PhysicalPosition},
+    event::{Event, WindowEvent},
+    event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy},
+    window::{Window, WindowBuilder},
+};
+use tokio::runtime::{Builder, Runtime};
+use types::{AppEvent, FrontendCommand, SearchItem, StatusLine, ViewItem, ViewState};
+use wry::{WebView, WebViewBuilder};
+
+use crate::{actions::execute_action, config::LoadedConfig, scoring::sort_and_trim};
+
+const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
+
+fn main() {
+    if let Err(error) = run() {
+        eprintln!("{error:#}");
+        std::process::exit(1);
+    }
+}
+
+fn run() -> Result<()> {
+    let loaded = LoadedConfig::load()?;
+    let runtime = Builder::new_multi_thread()
+        .enable_all()
+        .build()
+        .context("failed to build the async runtime")?;
+
+    let config = Arc::new(loaded.config.clone());
+    let plugins = Arc::new(plugins::PluginHost::load(&loaded.plugin_dirs));
+    let providers = ProviderSet::new(config.clone(), plugins.clone())?;
+
+    let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
+    let proxy = event_loop.create_proxy();
+    let mut app = LauncherApp::new(
+        loaded,
+        runtime,
+        providers,
+        plugins,
+        proxy.clone(),
+        build_window(&event_loop, &config)?,
+        config,
+        proxy,
+    )?;
+
+    let hotkey = app.loaded.config.hotkey()?;
+    let hotkey_id = hotkey.id();
+    let _hotkey_manager =
+        GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
+    _hotkey_manager
+        .register(hotkey)
+        .context("failed to register the global hotkey from config.toml")?;
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+
+        while let Ok(global_event) = GlobalHotKeyEvent::receiver().try_recv() {
+            if global_event.id == hotkey_id && global_event.state == HotKeyState::Pressed {
+                if let Err(error) = app.toggle() {
+                    app.set_error(error.to_string());
+                }
+            }
+        }
+
+        match event {
+            Event::WindowEvent { event, .. } => {
+                if let Err(error) = app.handle_window_event(event) {
+                    app.set_error(error.to_string());
+                }
+            }
+            Event::UserEvent(message) => {
+                if let Err(error) = app.handle_user_event(message) {
+                    app.set_error(error.to_string());
+                }
+            }
+            _ => {}
+        }
+    });
+}
+
+struct LauncherApp {
+    loaded: LoadedConfig,
+    runtime: Runtime,
+    providers: ProviderSet,
+    plugins: Arc<plugins::PluginHost>,
+    proxy: EventLoopProxy<AppEvent>,
+    window: Window,
+    webview: WebView,
+    visible: bool,
+    current_query: String,
+    current_generation: u64,
+    provider_items: HashMap<String, Vec<SearchItem>>,
+    rendered_items: Vec<SearchItem>,
+    status: Option<StatusLine>,
+    shown_at: Option<Instant>,
+    focused_since_show: bool,
+}
+
+impl LauncherApp {
+    fn new(
+        loaded: LoadedConfig,
+        runtime: Runtime,
+        providers: ProviderSet,
+        plugins: Arc<plugins::PluginHost>,
+        proxy: EventLoopProxy<AppEvent>,
+        window: Window,
+        config: Arc<config::Config>,
+        ipc_proxy: EventLoopProxy<AppEvent>,
+    ) -> Result<Self> {
+        let html = ui::html(&config.ui);
+        let webview = WebViewBuilder::new()
+            .with_html(&html)
+            .with_ipc_handler(move |request| {
+                let payload = request.body();
+                let event = serde_json::from_str::<FrontendCommand>(payload)
+                    .map(AppEvent::Frontend)
+                    .unwrap_or_else(|error| AppEvent::ActionOutcome {
+                        message: format!("UI IPC error: {error}"),
+                        is_error: true,
+                    });
+                let _ = ipc_proxy.send_event(event);
+            })
+            .build(&window)
+            .context("failed to build the launcher webview")?;
+
+        Ok(Self {
+            loaded,
+            runtime,
+            providers,
+            plugins,
+            proxy,
+            window,
+            webview,
+            visible: false,
+            current_query: String::new(),
+            current_generation: 0,
+            provider_items: HashMap::new(),
+            rendered_items: Vec::new(),
+            status: Some(StatusLine {
+                kind: "info",
+                message: "Type to search. Arrow keys, Enter, click, or ⌥1-9.".to_owned(),
+            }),
+            shown_at: None,
+            focused_since_show: false,
+        })
+    }
+
+    fn toggle(&mut self) -> Result<()> {
+        if self.visible {
+            self.hide()?;
+        } else {
+            self.show()?;
+        }
+        Ok(())
+    }
+
+    fn show(&mut self) -> Result<()> {
+        self.visible = true;
+        self.shown_at = Some(Instant::now());
+        self.focused_since_show = false;
+        self.center_window();
+        self.window.set_visible(true);
+        self.window.set_focus();
+        self.current_query.clear();
+        self.status = Some(StatusLine {
+            kind: "info",
+            message: format!("Config: {}", self.loaded.config_path.display()),
+        });
+        self.start_search(String::new());
+        self.focus_input()?;
+        Ok(())
+    }
+
+    fn hide(&mut self) -> Result<()> {
+        self.visible = false;
+        self.shown_at = None;
+        self.focused_since_show = false;
+        self.window.set_visible(false);
+        self.current_query.clear();
+        self.provider_items.clear();
+        self.render()?;
+        Ok(())
+    }
+
+    fn handle_window_event(&mut self, event: WindowEvent) -> Result<()> {
+        match event {
+            WindowEvent::CloseRequested => self.hide()?,
+            WindowEvent::Focused(true) if self.visible => {
+                self.focused_since_show = true;
+            }
+            WindowEvent::Focused(false) if self.should_hide_on_blur() => {
+                self.hide()?;
+            }
+            _ => {}
+        }
+        Ok(())
+    }
+
+    fn should_hide_on_blur(&self) -> bool {
+        self.loaded.config.window.hide_on_blur
+            && self.visible
+            && self
+                .shown_at
+                .is_none_or(|shown_at| shown_at.elapsed() > INITIAL_BLUR_GUARD)
+            && self.focused_since_show
+    }
+
+    fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
+        match event {
+            AppEvent::Frontend(command) => self.handle_frontend(command)?,
+            AppEvent::ProviderItems {
+                generation,
+                provider,
+                items,
+            } => {
+                if generation == self.current_generation {
+                    self.provider_items.insert(provider, items);
+                    self.render()?;
+                }
+            }
+            AppEvent::ProviderError {
+                generation,
+                provider,
+                message,
+            } => {
+                if generation == self.current_generation {
+                    self.status = Some(StatusLine {
+                        kind: "error",
+                        message: format!("{provider}: {message}"),
+                    });
+                    self.render()?;
+                }
+            }
+            AppEvent::ActionOutcome { message, is_error } => {
+                self.status = Some(StatusLine {
+                    kind: if is_error { "error" } else { "info" },
+                    message,
+                });
+                self.render()?;
+            }
+        }
+        Ok(())
+    }
+
+    fn handle_frontend(&mut self, command: FrontendCommand) -> Result<()> {
+        match command {
+            FrontendCommand::Ready => self.render()?,
+            FrontendCommand::QueryChanged { query } => self.start_search(query),
+            FrontendCommand::Activate { index } => self.activate(index),
+            FrontendCommand::Hide => self.hide()?,
+        }
+        Ok(())
+    }
+
+    fn start_search(&mut self, query: String) {
+        self.current_generation += 1;
+        self.current_query = query;
+        self.provider_items.clear();
+        self.rendered_items.clear();
+        self.status = Some(StatusLine {
+            kind: "info",
+            message: if self.current_query.trim().is_empty() {
+                "Showing open windows. Type to search apps, settings, Spotlight, or `pass`."
+                    .to_owned()
+            } else {
+                format!("Searching for “{}”…", self.current_query)
+            },
+        });
+        let generation = self.current_generation;
+        self.providers.spawn_search(
+            self.runtime.handle(),
+            self.proxy.clone(),
+            generation,
+            self.current_query.clone(),
+        );
+        let _ = self.render();
+    }
+
+    fn activate(&mut self, index: usize) {
+        let Some(item) = self.rendered_items.get(index).cloned() else {
+            return;
+        };
+        let proxy = self.proxy.clone();
+        let plugins = self.plugins.clone();
+        self.visible = false;
+        self.window.set_visible(false);
+        self.runtime.handle().spawn_blocking(move || {
+            let result = execute_action(&item.action, &plugins);
+            let (message, is_error) = match result {
+                Ok(Some(message)) => (message, false),
+                Ok(None) => ("Action completed".to_owned(), false),
+                Err(error) => (error.to_string(), true),
+            };
+            let _ = proxy.send_event(AppEvent::ActionOutcome { message, is_error });
+        });
+    }
+
+    fn render(&mut self) -> Result<()> {
+        let all_items = self
+            .provider_items
+            .values()
+            .flat_map(|items| items.clone())
+            .collect::<Vec<_>>();
+        self.rendered_items = sort_and_trim(all_items, &self.loaded.config.ranking);
+
+        let items = self
+            .rendered_items
+            .iter()
+            .enumerate()
+            .map(|(index, item)| ViewItem {
+                title: item.title.clone(),
+                subtitle: item.subtitle.clone(),
+                badge: item.badge.clone(),
+                accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
+            })
+            .collect();
+
+        let state = ViewState {
+            query: self.current_query.clone(),
+            items,
+            status: self.status.clone(),
+        };
+        let script = format!("window.__RUNX_RENDER({});", serde_json::to_string(&state)?);
+        self.webview
+            .evaluate_script(&script)
+            .context("failed to render the launcher UI")?;
+        Ok(())
+    }
+
+    fn focus_input(&self) -> Result<()> {
+        self.webview
+            .evaluate_script("window.__RUNX_FOCUS && window.__RUNX_FOCUS();")
+            .context("failed to focus the launcher input")
+    }
+
+    fn center_window(&self) {
+        let Some(monitor) = self
+            .window
+            .current_monitor()
+            .or_else(|| self.window.primary_monitor())
+        else {
+            return;
+        };
+
+        let scale = monitor.scale_factor();
+        let monitor_size = monitor.size();
+        let monitor_origin = monitor.position();
+        let window_width = self.loaded.config.window.width * scale;
+        let window_height = self.loaded.config.window.height * scale;
+        let x = monitor_origin.x as f64 + (monitor_size.width as f64 - window_width) / 2.0;
+        let y = monitor_origin.y as f64 + (monitor_size.height as f64 - window_height) / 3.2;
+
+        self.window
+            .set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+    }
+
+    fn set_error(&mut self, message: String) {
+        self.status = Some(StatusLine {
+            kind: "error",
+            message,
+        });
+        let _ = self.render();
+    }
+}
+
+fn build_window<T: 'static>(
+    event_loop: &tao::event_loop::EventLoopWindowTarget<T>,
+    config: &Arc<config::Config>,
+) -> Result<Window> {
+    let size = LogicalSize::new(config.window.width, config.window.height);
+    WindowBuilder::new()
+        .with_title("Runx")
+        .with_visible(false)
+        .with_decorations(false)
+        .with_resizable(false)
+        .with_inner_size(size)
+        .with_always_on_top(config.window.always_on_top)
+        .build(event_loop)
+        .context("failed to build the launcher window")
+}
