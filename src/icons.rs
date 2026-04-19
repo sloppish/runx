@@ -177,12 +177,11 @@ fn icon_name_candidates(dict: &Dictionary) -> Vec<String> {
         .and_then(Value::as_dictionary)
         .and_then(|icons| icons.get("CFBundlePrimaryIcon"))
         .and_then(Value::as_dictionary)
+        && let Some(icon_files) = primary.get("CFBundleIconFiles").and_then(Value::as_array)
     {
-        if let Some(icon_files) = primary.get("CFBundleIconFiles").and_then(Value::as_array) {
-            for value in icon_files.iter().rev() {
-                if let Some(name) = value.as_string() {
-                    candidates.push(name.to_owned());
-                }
+        for value in icon_files.iter().rev() {
+            if let Some(name) = value.as_string() {
+                candidates.push(name.to_owned());
             }
         }
     }

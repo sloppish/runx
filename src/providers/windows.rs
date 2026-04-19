@@ -91,10 +91,10 @@ impl WindowsProvider {
 
     fn snapshot(&self) -> Result<Vec<WindowRecord>> {
         let mut cache = self.cache.lock().expect("windows cache poisoned");
-        if let Some(updated_at) = cache.updated_at {
-            if updated_at.elapsed() < Duration::from_millis(900) {
-                return Ok(cache.items.clone());
-            }
+        if let Some(updated_at) = cache.updated_at
+            && updated_at.elapsed() < Duration::from_millis(900)
+        {
+            return Ok(cache.items.clone());
         }
 
         let fresh = read_windows();

@@ -53,10 +53,11 @@ fn run() -> Result<()> {
         *control_flow = ControlFlow::Wait;
 
         while let Ok(global_event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if global_event.id == hotkey_id && global_event.state == HotKeyState::Pressed {
-                if let Err(error) = launcher.toggle() {
-                    launcher.set_error(error.to_string());
-                }
+            if global_event.id == hotkey_id
+                && global_event.state == HotKeyState::Pressed
+                && let Err(error) = launcher.toggle()
+            {
+                launcher.set_error(error.to_string());
             }
         }
 

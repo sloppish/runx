@@ -55,7 +55,7 @@ pub struct LoadedConfig {
     pub plugin_dirs: Vec<PathBuf>,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
     pub hotkey: HotKeyConfig,
@@ -90,7 +90,7 @@ pub struct RankingConfig {
     pub result_limit: usize,
 }
 
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct PluginsConfig {
     pub directories: Vec<String>,
@@ -246,19 +246,6 @@ impl Config {
     }
 }
 
-impl Default for Config {
-    fn default() -> Self {
-        Self {
-            hotkey: HotKeyConfig::default(),
-            window: WindowConfig::default(),
-            ranking: RankingConfig::default(),
-            plugins: PluginsConfig::default(),
-            plugin: HashMap::default(),
-            ui: UiConfig::default(),
-        }
-    }
-}
-
 impl Default for HotKeyConfig {
     fn default() -> Self {
         Self {
@@ -312,14 +299,6 @@ impl RankingConfig {
             .iter()
             .position(|candidate| candidate == provider)
             .unwrap_or(self.provider_order.len() + 1)
-    }
-}
-
-impl Default for PluginsConfig {
-    fn default() -> Self {
-        Self {
-            directories: Vec::new(),
-        }
     }
 }
 

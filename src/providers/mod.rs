@@ -63,10 +63,7 @@ impl ProviderSet {
                 let limit = config.ranking.result_limit;
                 move |query| provider.search(&query, limit)
             })?,
-            plugins: ProviderWorker::new("plugins", {
-                let plugins = plugins;
-                move |query| plugins.search(&query)
-            })?,
+            plugins: ProviderWorker::new("plugins", move |query| plugins.search(&query))?,
             spotlight: ProviderWorker::new("spotlight", {
                 let provider = spotlight;
                 let limit = config.ranking.result_limit;

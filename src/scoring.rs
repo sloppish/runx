@@ -20,8 +20,8 @@ pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
 
     for query_char in query_chars {
         let mut found = None;
-        for index in cursor..candidate_chars.len() {
-            if candidate_chars[index] == query_char {
+        for (index, candidate_char) in candidate_chars.iter().enumerate().skip(cursor) {
+            if *candidate_char == query_char {
                 found = Some(index);
                 break;
             }
