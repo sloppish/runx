@@ -16,9 +16,21 @@ Usage: scripts/package-macos.sh [options]
 Options:
   --out-dir PATH         Bundle output directory (default: ./dist)
   --debug                Build with the debug profile instead of release
+  --sign-identity NAME   Code-signing identity to use
+                         (default: RUNX_CODESIGN_IDENTITY, then first Apple Development identity, then ad-hoc)
+  --ad-hoc-sign          Force ad-hoc signing even if a real identity is available
   -h, --help             Show this help
 EOF
 }
+
+pick_default_sign_identity() {
+  security find-identity -p codesigning -v 2>/dev/null \
+    | sed -n 's/.*"Apple Development: \(.*\)"/Apple Development: \1/p' \
+    | head -n 1
+}
+
+SIGN_IDENTITY="${RUNX_CODESIGN_IDENTITY:-}"
+FORCE_AD_HOC_SIGN=0
 
 while [[ $# -gt 0 ]]; do
   case "$1" in
@@ -28,6 +40,14 @@ while [[ $# -gt 0 ]]; do
       ;;
     --debug)
       PROFILE="debug"
+      shift
+      ;;
+    --sign-identity)
+      SIGN_IDENTITY="$2"
+      shift 2
+      ;;
+    --ad-hoc-sign)
+      FORCE_AD_HOC_SIGN=1
       shift
       ;;
     -h|--help)
@@ -41,6 +61,15 @@ while [[ $# -gt 0 ]]; do
       ;;
   esac
 done
+
+if [[ "$FORCE_AD_HOC_SIGN" -eq 1 ]]; then
+  SIGN_IDENTITY="-"
+elif [[ -z "$SIGN_IDENTITY" ]]; then
+  SIGN_IDENTITY="$(pick_default_sign_identity)"
+  if [[ -z "$SIGN_IDENTITY" ]]; then
+    SIGN_IDENTITY="-"
+  fi
+fi
 
 render_png() {
   local source="$1"
@@ -96,7 +125,7 @@ MACOS_PATH="$CONTENTS_PATH/MacOS"
 RESOURCES_PATH="$CONTENTS_PATH/Resources"
 
 rm -rf "$BUNDLE_PATH"
-mkdir -p "$MACOS_PATH"
+mkdir -p "$MACOS_PATH" "$RESOURCES_PATH"
 
 cp "$BIN_PATH" "$MACOS_PATH/runx"
 chmod 755 "$MACOS_PATH/runx"
@@ -138,4 +167,11 @@ cat > "$CONTENTS_PATH/Info.plist" <<EOF
 </plist>
 EOF
 
+codesign --force --deep --sign "$SIGN_IDENTITY" --identifier "$APP_BUNDLE_ID" "$BUNDLE_PATH" >/dev/null
+
 printf 'Created %s\n' "$BUNDLE_PATH"
+if [[ "$SIGN_IDENTITY" == "-" ]]; then
+  printf 'Signed with ad-hoc identity\n'
+else
+  printf 'Signed with %s\n' "$SIGN_IDENTITY"
+fi

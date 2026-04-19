@@ -6,6 +6,7 @@ APP_NAME="Runx"
 APP_DIR="/Applications"
 ENABLE_LOGIN_ITEM=0
 DRY_RUN=0
+SIGN_IDENTITY=""
 
 usage() {
   cat <<'EOF'
@@ -15,6 +16,7 @@ Options:
   --app-dir PATH         Install destination directory (default: /Applications)
   --user-apps            Shortcut for --app-dir "$HOME/Applications"
   --login-item           Add Runx to macOS Login Items after install
+  --sign-identity NAME   Code-signing identity to pass through to packaging
   --dry-run              Print the actions without installing
   -h, --help             Show this help
 EOF
@@ -33,6 +35,10 @@ while [[ $# -gt 0 ]]; do
     --login-item)
       ENABLE_LOGIN_ITEM=1
       shift
+      ;;
+    --sign-identity)
+      SIGN_IDENTITY="$2"
+      shift 2
       ;;
     --dry-run)
       DRY_RUN=1
@@ -53,7 +59,11 @@ done
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "Would package Runx.app into $APP_DIR"
 else
-  "$ROOT_DIR/scripts/package-macos.sh"
+  PACKAGE_ARGS=()
+  if [[ -n "$SIGN_IDENTITY" ]]; then
+    PACKAGE_ARGS+=(--sign-identity "$SIGN_IDENTITY")
+  fi
+  "$ROOT_DIR/scripts/package-macos.sh" "${PACKAGE_ARGS[@]}"
 fi
 
 SOURCE_APP="$ROOT_DIR/dist/${APP_NAME}.app"

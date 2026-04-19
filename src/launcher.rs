@@ -7,7 +7,7 @@ use crate::{
     actions::execute_action,
     config::{self, LoadedConfig},
     icons::IconCache,
-    macos::capture_frontmost_app,
+    macos::{capture_frontmost_app, ensure_accessibility_trusted},
     plugins::{self, PluginExecutionContext},
     providers::ProviderSet,
     state::AppState,
@@ -30,6 +30,7 @@ use wry::{WebView, WebViewBuilder};
 const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
 const RENDER_COALESCE: Duration = Duration::from_millis(16);
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(24);
+const RUNX_BUNDLE_ID: &str = "dev.runx.launcher";
 
 pub struct Launcher {
     loaded: LoadedConfig,
@@ -44,6 +45,16 @@ pub struct Launcher {
     previous_app: Option<crate::macos::FrontmostApp>,
     render_scheduled: bool,
     tray: Option<tray::TrayState>,
+}
+
+fn looks_like_runx(app: &crate::macos::FrontmostApp) -> bool {
+    app.bundle_id.as_deref() == Some(RUNX_BUNDLE_ID)
+        || app.name.as_deref() == Some("Runx")
+        || app
+            .path
+            .as_deref()
+            .map(|path: &str| path.ends_with("/Runx.app"))
+            == Some(true)
 }
 
 impl Launcher {
@@ -108,6 +119,7 @@ impl Launcher {
         if self.state.is_visible() {
             self.hide()?;
         } else {
+            self.capture_previous_app();
             self.show()?;
         }
         Ok(())
@@ -137,7 +149,10 @@ impl Launcher {
     pub fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::TrayToggle => self.toggle()?,
-            AppEvent::TrayOpen => self.show_or_focus()?,
+            AppEvent::TrayOpen => {
+                self.capture_previous_app();
+                self.show_or_focus()?;
+            }
             AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
             AppEvent::Render => {
@@ -197,13 +212,6 @@ impl Launcher {
     fn show(&mut self) -> Result<()> {
         self.state.show();
         self.shown_at = Some(Instant::now());
-        self.previous_app = match capture_frontmost_app() {
-            Ok(app) => app,
-            Err(error) => {
-                eprintln!("Failed to capture the frontmost app: {error:#}");
-                None
-            }
-        };
         self.render()?;
         self.center_window();
         self.window.set_visible(true);
@@ -221,6 +229,18 @@ impl Launcher {
         }
 
         self.show()
+    }
+
+    fn capture_previous_app(&mut self) {
+        match capture_frontmost_app() {
+            Ok(Some(app)) if !looks_like_runx(&app) => {
+                self.previous_app = Some(app);
+            }
+            Ok(_) => {}
+            Err(error) => {
+                eprintln!("Failed to capture the frontmost app: {error:#}");
+            }
+        }
     }
 
     fn hide(&mut self) -> Result<()> {
@@ -277,6 +297,10 @@ impl Launcher {
         let Some(item) = self.state.session().rendered_item(index).cloned() else {
             return;
         };
+        if item.action.likely_needs_accessibility() && !ensure_accessibility_trusted(true) {
+            self.set_error("Runx needs Accessibility permission to control other apps. Enable Runx in System Settings > Privacy & Security > Accessibility, then retry.".to_owned());
+            return;
+        }
         let proxy = self.proxy.clone();
         let plugins = self.plugins.clone();
         let context = PluginExecutionContext {

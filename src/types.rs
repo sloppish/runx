@@ -26,6 +26,14 @@ impl PluginActionPayload {
         object.insert("kind".to_owned(), JsonValue::String(self.kind.clone()));
         JsonValue::Object(object)
     }
+
+    pub fn likely_needs_accessibility(&self) -> bool {
+        let kind = self.kind.as_str();
+        kind == "type"
+            || kind.starts_with("type_")
+            || kind.ends_with("_type")
+            || kind.contains("keystroke")
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -48,6 +56,18 @@ pub enum Action {
         plugin_id: String,
         payload: PluginActionPayload,
     },
+}
+
+impl Action {
+    pub fn likely_needs_accessibility(&self) -> bool {
+        match self {
+            Self::FocusWindow { .. } => true,
+            Self::Plugin { payload, .. } => payload.likely_needs_accessibility(),
+            Self::OpenApplication { .. } | Self::OpenPath { .. } | Self::OpenSettings { .. } => {
+                false
+            }
+        }
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -110,7 +130,7 @@ pub struct StatusLine {
 
 #[cfg(test)]
 mod tests {
-    use super::PluginActionPayload;
+    use super::{Action, PluginActionPayload};
 
     #[test]
     fn plugin_action_payload_requires_kind() {
@@ -137,5 +157,32 @@ mod tests {
             Some(&serde_json::json!("mail/example"))
         );
         assert_eq!(payload.fields.get("count"), Some(&serde_json::json!(2)));
+    }
+
+    #[test]
+    fn plugin_action_payload_detects_typing_actions() {
+        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "kind": "type_otp",
+            "entry": "mail/example"
+        }))
+        .expect("valid payload");
+
+        assert!(payload.likely_needs_accessibility());
+    }
+
+    #[test]
+    fn action_detects_plugin_typing_preflight() {
+        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "kind": "generate_type",
+            "args": "mail/example 20"
+        }))
+        .expect("valid payload");
+
+        let action = Action::Plugin {
+            plugin_id: "pass".to_owned(),
+            payload,
+        };
+
+        assert!(action.likely_needs_accessibility());
     }
 }
