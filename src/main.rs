@@ -1,5 +1,6 @@
 mod actions;
 mod config;
+mod icons;
 mod macos;
 mod plugins;
 mod providers;
@@ -15,6 +16,7 @@ use std::{
 
 use anyhow::{Context, Result};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use icons::IconCache;
 use providers::ProviderSet;
 #[cfg(target_os = "macos")]
 use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
@@ -55,7 +57,8 @@ fn run() -> Result<()> {
         &loaded.plugin_dirs,
         plugin_config,
     ));
-    let providers = ProviderSet::new(config.clone(), plugins.clone())?;
+    let icons = Arc::new(IconCache::new()?);
+    let providers = ProviderSet::new(config.clone(), plugins.clone(), icons)?;
 
     let event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     let proxy = event_loop.create_proxy();
@@ -361,6 +364,7 @@ impl LauncherApp {
                 title: item.title.clone(),
                 subtitle: item.subtitle.clone(),
                 badge: item.badge.clone(),
+                icon: item.icon.clone(),
                 accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
             })
             .collect();

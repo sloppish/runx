@@ -205,6 +205,20 @@ pub fn html(theme: &UiConfig) -> String {
       font-weight: 700;
       letter-spacing: 0.18em;
       color: var(--badge-text);
+      overflow: hidden;
+    }}
+
+    .badge.has-icon {{
+      padding: 0;
+      background: rgba(255,255,255,0.66);
+    }}
+
+    .icon-image {{
+      width: 100%;
+      height: 100%;
+      object-fit: cover;
+      display: block;
+      border-radius: 14px;
     }}
 
     .copy {{
@@ -323,8 +337,11 @@ pub fn html(theme: &UiConfig) -> String {
         const row = document.createElement("button");
         row.type = "button";
         row.className = "item" + (index === state.selectedIndex ? " selected" : "");
+        const badgeMarkup = item.icon
+          ? `<div class="badge has-icon"><img class="icon-image" src="${{escapeAttr(item.icon)}}" alt="" /></div>`
+          : `<div class="badge">${{item.badge}}</div>`;
         row.innerHTML = `
-          <div class="badge">${{item.badge}}</div>
+          ${{badgeMarkup}}
           <div class="copy">
             <div class="title">${{escapeHtml(item.title)}}</div>
             <div class="subtitle">${{escapeHtml(item.subtitle)}}</div>
@@ -353,6 +370,8 @@ pub fn html(theme: &UiConfig) -> String {
         .replaceAll("&", "&amp;")
         .replaceAll("<", "&lt;")
         .replaceAll(">", "&gt;");
+
+    const escapeAttr = (value) => escapeHtml(value).replaceAll('"', "&quot;");
 
     window.__RUNX_RENDER = (payload) => {{
       state.query = payload.query;

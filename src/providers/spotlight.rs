@@ -1,17 +1,24 @@
 use std::path::Path;
 use std::process::Command;
+use std::sync::Arc;
 
 use anyhow::{Context, Result, bail};
 
 use crate::{
+    icons::IconCache,
     scoring::fuzzy_score,
     types::{Action, SearchItem},
 };
 
-#[derive(Default)]
-pub struct SpotlightProvider;
+pub struct SpotlightProvider {
+    icons: Arc<IconCache>,
+}
 
 impl SpotlightProvider {
+    pub fn new(icons: Arc<IconCache>) -> Self {
+        Self { icons }
+    }
+
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
         let trimmed = query.trim();
         if trimmed.len() < 2 {
@@ -44,7 +51,7 @@ impl SpotlightProvider {
                 break;
             }
 
-            let item = build_item(path, trimmed);
+            let item = build_item(path, trimmed, &self.icons);
             if let Some(item) = item {
                 items.push(item);
             }
@@ -54,7 +61,7 @@ impl SpotlightProvider {
     }
 }
 
-fn build_item(path: &str, query: &str) -> Option<SearchItem> {
+fn build_item(path: &str, query: &str, icons: &IconCache) -> Option<SearchItem> {
     let title = Path::new(path)
         .file_stem()
         .and_then(|value| value.to_str())
@@ -70,6 +77,7 @@ fn build_item(path: &str, query: &str) -> Option<SearchItem> {
             id: format!("spotlight:{}", path),
             provider: "spotlight".to_owned(),
             badge: "SPT".to_owned(),
+            icon: icons.icon_for_bundle(path),
             title,
             subtitle: "Spotlight application match".to_owned(),
             raw_score: score,
@@ -84,6 +92,7 @@ fn build_item(path: &str, query: &str) -> Option<SearchItem> {
             id: format!("spotlight:{}", path),
             provider: "spotlight".to_owned(),
             badge: "SPT".to_owned(),
+            icon: icons.system_settings_icon(),
             title,
             subtitle: "Spotlight preference pane".to_owned(),
             raw_score: score,

@@ -2,18 +2,21 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::{Context, Result};
 use plist::Value;
 
 use crate::{
+    icons::IconCache,
     scoring::fuzzy_score,
     types::{Action, SearchItem},
 };
 
 pub struct SettingsProvider {
     items: Vec<SettingRecord>,
+    icons: Arc<IconCache>,
 }
 
 #[derive(Clone)]
@@ -21,15 +24,17 @@ struct SettingRecord {
     id: String,
     title: String,
     subtitle: String,
+    bundle_path: Option<String>,
 }
 
 #[derive(Default)]
 struct BundleMetadata {
     name: String,
+    bundle_path: String,
 }
 
 impl SettingsProvider {
-    pub fn new() -> Result<Self> {
+    pub fn new(icons: Arc<IconCache>) -> Result<Self> {
         let bundle_map = scan_bundle_metadata()?;
         let ordered_ids = read_sidebar_ids()?;
 
@@ -50,10 +55,11 @@ impl SettingsProvider {
                 id,
                 title: metadata.name,
                 subtitle: "System Settings".to_owned(),
+                bundle_path: Some(metadata.bundle_path),
             });
         }
 
-        Ok(Self { items })
+        Ok(Self { items, icons })
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
@@ -68,24 +74,34 @@ impl SettingsProvider {
                 continue;
             }
 
-            let url = format!("x-apple.systempreferences:{}", setting.id);
-            items.push(SearchItem {
-                id: format!("settings:{}", setting.id),
-                provider: "settings".to_owned(),
-                badge: "SET".to_owned(),
-                title: setting.title.clone(),
-                subtitle: setting.subtitle.clone(),
-                raw_score: score,
-                action: Action::OpenSettings {
-                    url,
-                    title: setting.title.clone(),
-                },
-            });
+            items.push((score, setting.clone()));
         }
 
-        items.sort_by(|left, right| right.raw_score.cmp(&left.raw_score));
+        items.sort_by(|left, right| right.0.cmp(&left.0));
         items.truncate(limit);
-        Ok(items)
+        Ok(items
+            .into_iter()
+            .map(|(score, setting)| {
+                let url = format!("x-apple.systempreferences:{}", setting.id);
+                SearchItem {
+                    id: format!("settings:{}", setting.id),
+                    provider: "settings".to_owned(),
+                    badge: "SET".to_owned(),
+                    icon: setting
+                        .bundle_path
+                        .as_deref()
+                        .and_then(|path| self.icons.icon_for_bundle(path))
+                        .or_else(|| self.icons.system_settings_icon()),
+                    title: setting.title.clone(),
+                    subtitle: setting.subtitle.clone(),
+                    raw_score: score,
+                    action: Action::OpenSettings {
+                        url,
+                        title: setting.title,
+                    },
+                }
+            })
+            .collect())
     }
 }
 
@@ -131,7 +147,13 @@ fn scan_bundle_metadata() -> Result<HashMap<String, BundleMetadata>> {
                 .map(str::to_owned)
                 .unwrap_or_else(|| prettify_identifier(&identifier));
 
-            bundles.insert(identifier, BundleMetadata { name });
+            bundles.insert(
+                identifier,
+                BundleMetadata {
+                    name,
+                    bundle_path: path.to_string_lossy().to_string(),
+                },
+            );
         }
     }
 
@@ -203,6 +225,7 @@ fn make_record(raw_id: &str, bundles: &HashMap<String, BundleMetadata>) -> Setti
         id: raw_id.to_owned(),
         title,
         subtitle: "System Settings".to_owned(),
+        bundle_path: bundles.get(base_id).map(|bundle| bundle.bundle_path.clone()),
     }
 }
 

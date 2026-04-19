@@ -166,6 +166,7 @@ fn run_search(
                 .unwrap_or_else(|| format!("plugin:{}:{}", plugin.id, item.title)),
             provider: "plugins".to_owned(),
             badge: item.badge.unwrap_or_else(|| plugin.badge.clone()),
+            icon: None,
             title: item.title,
             subtitle: item.subtitle.unwrap_or_else(|| plugin.name.clone()),
             raw_score: item.score.unwrap_or(0),

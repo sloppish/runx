@@ -157,6 +157,7 @@ mod tests {
             id: id.to_owned(),
             provider: provider.to_owned(),
             badge: provider.to_ascii_uppercase(),
+            icon: None,
             title: title.to_owned(),
             subtitle: provider.to_owned(),
             raw_score,

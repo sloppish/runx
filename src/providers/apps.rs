@@ -1,6 +1,7 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
+    sync::Arc,
 };
 
 use anyhow::{Context, Result};
@@ -8,12 +9,14 @@ use directories::BaseDirs;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
+    icons::IconCache,
     scoring::fuzzy_score,
     types::{Action, SearchItem},
 };
 
 pub struct AppProvider {
     apps: Vec<AppRecord>,
+    icons: Arc<IconCache>,
 }
 
 #[derive(Clone)]
@@ -23,7 +26,7 @@ struct AppRecord {
 }
 
 impl AppProvider {
-    pub fn new() -> Result<Self> {
+    pub fn new(icons: Arc<IconCache>) -> Result<Self> {
         let base_dirs = BaseDirs::new().context("could not determine the home directory")?;
         let mut roots = vec![
             PathBuf::from("/Applications"),
@@ -72,7 +75,7 @@ impl AppProvider {
         }
 
         apps.sort_by(|left, right| left.name.cmp(&right.name));
-        Ok(Self { apps })
+        Ok(Self { apps, icons })
     }
 
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
@@ -87,22 +90,24 @@ impl AppProvider {
                 continue;
             }
 
-            matches.push(SearchItem {
+            matches.push((score, app.clone()));
+        }
+
+        matches.sort_by(|left, right| right.0.cmp(&left.0));
+        matches.truncate(limit);
+        Ok(matches
+            .into_iter()
+            .map(|(score, app)| SearchItem {
                 id: format!("app:{}", app.path),
                 provider: "apps".to_owned(),
                 badge: "APP".to_owned(),
-                title: app.name.clone(),
+                icon: self.icons.icon_for_bundle(&app.path),
+                title: app.name,
                 subtitle: app.path.clone(),
                 raw_score: score,
-                action: Action::OpenApplication {
-                    path: app.path.clone(),
-                },
-            });
-        }
-
-        matches.sort_by(|left, right| right.raw_score.cmp(&left.raw_score));
-        matches.truncate(limit);
-        Ok(matches)
+                action: Action::OpenApplication { path: app.path },
+            })
+            .collect())
     }
 }
 

@@ -11,6 +11,7 @@ use tao::event_loop::EventLoopProxy;
 
 use crate::{
     config::Config,
+    icons::IconCache,
     plugins::PluginHost,
     types::{AppEvent, SearchItem},
 };
@@ -33,12 +34,16 @@ pub struct ProviderSet {
 impl ProviderSet {
     pub const PROVIDER_COUNT: usize = 5;
 
-    pub fn new(config: Arc<Config>, plugins: Arc<PluginHost>) -> anyhow::Result<Self> {
+    pub fn new(
+        config: Arc<Config>,
+        plugins: Arc<PluginHost>,
+        icons: Arc<IconCache>,
+    ) -> anyhow::Result<Self> {
         Ok(Self {
-            apps: Arc::new(AppProvider::new()?),
-            settings: Arc::new(SettingsProvider::new()?),
-            spotlight: Arc::new(SpotlightProvider::default()),
-            windows: Arc::new(WindowsProvider::default()),
+            apps: Arc::new(AppProvider::new(icons.clone())?),
+            settings: Arc::new(SettingsProvider::new(icons.clone())?),
+            spotlight: Arc::new(SpotlightProvider::new(icons.clone())),
+            windows: Arc::new(WindowsProvider::new(icons)),
             plugins,
             config,
         })

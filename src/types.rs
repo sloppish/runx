@@ -6,6 +6,7 @@ pub struct SearchItem {
     pub id: String,
     pub provider: String,
     pub badge: String,
+    pub icon: Option<String>,
     pub title: String,
     pub subtitle: String,
     pub raw_score: i64,
@@ -74,6 +75,7 @@ pub struct ViewItem {
     pub title: String,
     pub subtitle: String,
     pub badge: String,
+    pub icon: Option<String>,
     pub accelerator: Option<String>,
 }
 

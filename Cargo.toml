@@ -5,6 +5,7 @@ edition = "2024"
 
 [dependencies]
 anyhow = "1.0"
+base64 = "0.22"
 core-foundation = "0.10"
 core-foundation-sys = "0.8"
 core-graphics = "0.25"

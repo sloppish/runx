@@ -1,4 +1,4 @@
-use std::time::{Duration, Instant};
+use std::{sync::Arc, time::{Duration, Instant}};
 
 use anyhow::Result;
 use core_foundation::{
@@ -14,12 +14,14 @@ use core_graphics::window::{
 };
 
 use crate::{
+    icons::IconCache,
     scoring::fuzzy_score,
     types::{Action, SearchItem},
 };
 
 pub struct WindowsProvider {
     cache: std::sync::Mutex<WindowCache>,
+    icons: Arc<IconCache>,
 }
 
 #[derive(Default)]
@@ -36,15 +38,14 @@ struct WindowRecord {
     z_index: usize,
 }
 
-impl Default for WindowsProvider {
-    fn default() -> Self {
+impl WindowsProvider {
+    pub fn new(icons: Arc<IconCache>) -> Self {
         Self {
             cache: std::sync::Mutex::new(WindowCache::default()),
+            icons,
         }
     }
-}
 
-impl WindowsProvider {
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
         let windows = self.snapshot()?;
         let query = query.trim();
@@ -62,23 +63,27 @@ impl WindowsProvider {
                 continue;
             }
 
-            items.push(SearchItem {
+            items.push((score, window.clone()));
+        }
+
+        items.sort_by(|left, right| right.0.cmp(&left.0));
+        items.truncate(limit);
+        Ok(items
+            .into_iter()
+            .map(|(score, window)| SearchItem {
                 id: format!("window:{}:{}:{}", window.pid, window.owner, window.title),
                 provider: "windows".to_owned(),
                 badge: "WIN".to_owned(),
+                icon: self.icons.icon_for_pid(window.pid),
                 title: window.title.clone(),
                 subtitle: window.owner.clone(),
                 raw_score: score,
                 action: Action::FocusWindow {
-                    app_name: window.owner.clone(),
-                    window_title: window.title.clone(),
+                    app_name: window.owner,
+                    window_title: window.title,
                 },
-            });
-        }
-
-        items.sort_by(|left, right| right.raw_score.cmp(&left.raw_score));
-        items.truncate(limit);
-        Ok(items)
+            })
+            .collect())
     }
 
     fn snapshot(&self) -> Result<Vec<WindowRecord>> {
