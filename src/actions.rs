@@ -2,10 +2,14 @@ use std::process::{Command, Stdio};
 
 use anyhow::{Context, Result, bail};
 
-use crate::plugins::PluginHost;
+use crate::plugins::{PluginExecutionContext, PluginHost};
 use crate::types::Action;
 
-pub fn execute_action(action: &Action, plugins: &PluginHost) -> Result<Option<String>> {
+pub fn execute_action(
+    action: &Action,
+    plugins: &PluginHost,
+    context: &PluginExecutionContext,
+) -> Result<Option<String>> {
     match action {
         Action::OpenApplication { path } => {
             run_command("open", &[path.as_str()])?;
@@ -23,7 +27,7 @@ pub fn execute_action(action: &Action, plugins: &PluginHost) -> Result<Option<St
             app_name,
             window_title,
         } => focus_window(app_name, window_title),
-        Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload),
+        Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload, context),
     }
 }
 

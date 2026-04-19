@@ -16,9 +16,7 @@ pub fn html(theme: &UiConfig) -> String {
       --muted: {muted};
       --font: {font_family};
       --shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(252, 246, 238, 0.98));
-      --shell-shadow:
-        0 32px 80px rgba(81, 55, 31, 0.16),
-        inset 0 1px 0 rgba(255, 255, 255, 0.72);
+      --shell-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
       --shell-border: rgba(140, 102, 67, 0.16);
       --label-strong: color-mix(in srgb, var(--text) 88%, white);
       --input-bg: linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,240,230,0.9));
@@ -49,9 +47,7 @@ pub fn html(theme: &UiConfig) -> String {
         --text: #f3eadf;
         --muted: #a99a8c;
         --shell-bg: linear-gradient(180deg, rgba(37, 30, 27, 0.96), rgba(24, 19, 17, 0.985));
-        --shell-shadow:
-          0 34px 90px rgba(0, 0, 0, 0.42),
-          inset 0 1px 0 rgba(255, 255, 255, 0.05);
+        --shell-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
         --shell-border: rgba(215, 161, 123, 0.16);
         --label-strong: color-mix(in srgb, var(--text) 94%, white);
         --input-bg: linear-gradient(180deg, rgba(33, 26, 23, 0.98), rgba(27, 21, 19, 0.98));

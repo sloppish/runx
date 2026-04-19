@@ -10,6 +10,10 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 use crate::{
+    macos::{
+        FrontmostApp, accessibility_denied, automation_denied, ensure_accessibility_trusted,
+        open_accessibility_settings, open_automation_settings, reactivate_previous_app,
+    },
     scoring::fuzzy_score,
     types::{Action, SearchItem},
 };
@@ -43,6 +47,11 @@ struct PluginItem {
     score: Option<i64>,
     badge: Option<String>,
     action: JsonValue,
+}
+
+#[derive(Debug, Clone, Default)]
+pub struct PluginExecutionContext {
+    pub previous_app: Option<FrontmostApp>,
 }
 
 impl PluginHost {
@@ -80,13 +89,18 @@ impl PluginHost {
         Ok(items)
     }
 
-    pub fn run(&self, plugin_id: &str, payload: &JsonValue) -> Result<Option<String>> {
+    pub fn run(
+        &self,
+        plugin_id: &str,
+        payload: &JsonValue,
+        context: &PluginExecutionContext,
+    ) -> Result<Option<String>> {
         let plugin = self
             .plugins
             .iter()
             .find(|plugin| plugin.id == plugin_id)
             .with_context(|| format!("unknown plugin `{plugin_id}`"))?;
-        run_action(plugin, payload)
+        run_action(plugin, payload, context)
     }
 }
 
@@ -148,8 +162,12 @@ fn run_search(plugin: &LuaPlugin, query: &str) -> Result<Vec<SearchItem>> {
         .collect())
 }
 
-fn run_action(plugin: &LuaPlugin, payload: &JsonValue) -> Result<Option<String>> {
-    let (lua, table) = load_table(&plugin.path, &plugin.source)?;
+fn run_action(
+    plugin: &LuaPlugin,
+    payload: &JsonValue,
+    context: &PluginExecutionContext,
+) -> Result<Option<String>> {
+    let (lua, table) = load_table_with_context(&plugin.path, &plugin.source, context)?;
     let run: Function = table
         .get::<Option<Function>>("run")?
         .ok_or_else(|| anyhow!("plugin `{}` does not export a `run` function", plugin.id))?;
@@ -177,8 +195,16 @@ fn run_action(plugin: &LuaPlugin, payload: &JsonValue) -> Result<Option<String>>
 }
 
 fn load_table(path: &Path, source: &str) -> Result<(Lua, Table)> {
+    load_table_with_context(path, source, &PluginExecutionContext::default())
+}
+
+fn load_table_with_context(
+    path: &Path,
+    source: &str,
+    context: &PluginExecutionContext,
+) -> Result<(Lua, Table)> {
     let lua = Lua::new();
-    install_runtime(&lua)?;
+    install_runtime(&lua, context)?;
     let table: Table = lua
         .load(source)
         .set_name(path.to_string_lossy().as_ref())
@@ -187,7 +213,7 @@ fn load_table(path: &Path, source: &str) -> Result<(Lua, Table)> {
     Ok((lua, table))
 }
 
-fn install_runtime(lua: &Lua) -> Result<()> {
+fn install_runtime(lua: &Lua, context: &PluginExecutionContext) -> Result<()> {
     let runtime = lua.create_table()?;
 
     runtime.set(
@@ -297,35 +323,12 @@ fn install_runtime(lua: &Lua) -> Result<()> {
         })?,
     )?;
 
-    runtime.set(
-        "type_text",
-        lua.create_function(|_, text: String| {
-            let script = r#"
-on run argv
-    tell application "System Events"
-        keystroke item 1 of argv
-    end tell
-end run
-"#;
-            let output = Command::new("osascript")
-                .args(["-e", script, "--", text.as_str()])
-                .output()
-                .map_err(mlua::Error::external)?;
-
-            if output.status.success() {
-                Ok("Typed into the focused app".to_owned())
-            } else {
-                let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-                if stderr.is_empty() {
-                    Err(mlua::Error::external(
-                        "typing failed; macOS may require Automation or Accessibility permission",
-                    ))
-                } else {
-                    Err(mlua::Error::external(stderr))
-                }
-            }
-        })?,
-    )?;
+    runtime.set("type_text", {
+        let previous_app = context.previous_app.clone();
+        lua.create_function(move |_, text: String| {
+            type_text(&text, previous_app.as_ref()).map_err(mlua::Error::external)
+        })?
+    })?;
 
     runtime.set(
         "home_dir",
@@ -337,6 +340,54 @@ end run
 
     lua.globals().set("runx", runtime)?;
     Ok(())
+}
+
+fn type_text(text: &str, previous_app: Option<&FrontmostApp>) -> Result<String> {
+    if !ensure_accessibility_trusted(true) {
+        open_accessibility_settings();
+        bail!(
+            "Runx needs Accessibility permission to type into other apps. Approve the system prompt or enable your terminal/runx in System Settings > Privacy & Security > Accessibility, then retry."
+        );
+    }
+
+    reactivate_previous_app(previous_app)?;
+
+    let script = r#"
+on run argv
+    tell application "System Events"
+        keystroke item 1 of argv
+    end tell
+end run
+"#;
+    let output = Command::new("osascript")
+        .args(["-e", script, "--", text])
+        .output()
+        .context("failed to launch osascript for text typing")?;
+
+    if output.status.success() {
+        return Ok("Typed into the previous app".to_owned());
+    }
+
+    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+    if automation_denied(&stderr) {
+        open_automation_settings();
+        bail!(
+            "macOS blocked Apple Events to System Events. Allow your terminal/runx under System Settings > Privacy & Security > Automation, then retry."
+        );
+    }
+
+    if accessibility_denied(&stderr) {
+        open_accessibility_settings();
+        bail!(
+            "macOS blocked assistive access while typing. Enable your terminal/runx in Privacy & Security > Accessibility, then retry."
+        );
+    }
+
+    if stderr.is_empty() {
+        bail!("typing failed for an unknown macOS reason");
+    }
+
+    bail!("{stderr}");
 }
 
 fn list_password_store() -> Result<Vec<String>> {

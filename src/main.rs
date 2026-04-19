@@ -1,5 +1,6 @@
 mod actions;
 mod config;
+mod macos;
 mod plugins;
 mod providers;
 mod scoring;
@@ -15,6 +16,8 @@ use std::{
 use anyhow::{Context, Result};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
 use providers::ProviderSet;
+#[cfg(target_os = "macos")]
+use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
     dpi::{LogicalSize, PhysicalPosition},
     event::{Event, WindowEvent},
@@ -25,7 +28,10 @@ use tokio::runtime::{Builder, Runtime};
 use types::{AppEvent, FrontendCommand, SearchItem, StatusLine, ViewItem, ViewState};
 use wry::{WebView, WebViewBuilder};
 
-use crate::{actions::execute_action, config::LoadedConfig, scoring::sort_and_trim};
+use crate::{
+    actions::execute_action, config::LoadedConfig, macos::capture_frontmost_app,
+    plugins::PluginExecutionContext, scoring::sort_and_trim,
+};
 
 const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
 
@@ -111,6 +117,7 @@ struct LauncherApp {
     status: Option<StatusLine>,
     shown_at: Option<Instant>,
     focused_since_show: bool,
+    previous_app: Option<macos::FrontmostApp>,
 }
 
 impl LauncherApp {
@@ -160,6 +167,7 @@ impl LauncherApp {
             }),
             shown_at: None,
             focused_since_show: false,
+            previous_app: None,
         })
     }
 
@@ -176,6 +184,13 @@ impl LauncherApp {
         self.visible = true;
         self.shown_at = Some(Instant::now());
         self.focused_since_show = false;
+        self.previous_app = match capture_frontmost_app() {
+            Ok(app) => app,
+            Err(error) => {
+                eprintln!("Failed to capture the frontmost app: {error:#}");
+                None
+            }
+        };
         self.center_window();
         self.window.set_visible(true);
         self.window.set_focus();
@@ -300,10 +315,13 @@ impl LauncherApp {
         };
         let proxy = self.proxy.clone();
         let plugins = self.plugins.clone();
+        let context = PluginExecutionContext {
+            previous_app: self.previous_app.clone(),
+        };
         self.visible = false;
         self.window.set_visible(false);
         self.runtime.handle().spawn_blocking(move || {
-            let result = execute_action(&item.action, &plugins);
+            let result = execute_action(&item.action, &plugins, &context);
             let (message, is_error) = match result {
                 Ok(Some(message)) => (message, false),
                 Ok(None) => ("Action completed".to_owned(), false),
@@ -386,14 +404,23 @@ fn build_window<T: 'static>(
     config: &Arc<config::Config>,
 ) -> Result<Window> {
     let size = LogicalSize::new(config.window.width, config.window.height);
-    WindowBuilder::new()
+    let builder = WindowBuilder::new()
         .with_title("Runx")
         .with_visible(false)
         .with_transparent(true)
         .with_decorations(false)
         .with_resizable(false)
         .with_inner_size(size)
-        .with_always_on_top(config.window.always_on_top)
+        .with_always_on_top(config.window.always_on_top);
+    #[cfg(target_os = "macos")]
+    let builder = builder.with_has_shadow(false);
+
+    let window = builder
         .build(event_loop)
-        .context("failed to build the launcher window")
+        .context("failed to build the launcher window")?;
+
+    #[cfg(target_os = "macos")]
+    window.set_has_shadow(false);
+
+    Ok(window)
 }
