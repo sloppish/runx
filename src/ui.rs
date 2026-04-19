@@ -187,6 +187,10 @@ pub fn html(theme: &UiConfig) -> String {
       background: var(--item-hover);
     }}
 
+    .results.hover-suspended .item:not(.selected):hover {{
+      background: var(--item-bg);
+    }}
+
     .item.selected {{
       background: var(--item-selected-bg);
       box-shadow: var(--item-selected-shadow);
@@ -299,6 +303,11 @@ pub fn html(theme: &UiConfig) -> String {
 
     const send = (payload) => window.ipc.postMessage(JSON.stringify(payload));
 
+    const setHoverSuspended = (value) => {{
+      state.hoverSuspended = value;
+      resultsEl.classList.toggle("hover-suspended", value);
+    }};
+
     const clampSelection = () => {{
       if (state.items.length === 0) {{
         state.selectedIndex = 0;
@@ -312,7 +321,7 @@ pub fn html(theme: &UiConfig) -> String {
         return;
       }}
       state.selectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.items.length - 1));
-      state.hoverSuspended = true;
+      setHoverSuspended(true);
       render();
     }};
 
@@ -376,8 +385,12 @@ pub fn html(theme: &UiConfig) -> String {
     const escapeAttr = (value) => escapeHtml(value).replaceAll('"', "&quot;");
 
     window.__RUNX_RENDER = (payload) => {{
+      const queryChanged = state.query !== payload.query;
       state.query = payload.query;
       state.items = payload.items || [];
+      if (queryChanged) {{
+        state.selectedIndex = 0;
+      }}
       if (typeof payload.query === "string" && inputEl.value !== payload.query) {{
         inputEl.value = payload.query;
       }}
@@ -392,11 +405,12 @@ pub fn html(theme: &UiConfig) -> String {
     }};
 
     inputEl.addEventListener("input", () => {{
+      setHoverSuspended(true);
       send({{ type: "query_changed", query: inputEl.value }});
     }});
 
     resultsEl.addEventListener("mousemove", () => {{
-      state.hoverSuspended = false;
+      setHoverSuspended(false);
     }});
 
     inputEl.addEventListener("keydown", (event) => {{
