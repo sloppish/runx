@@ -42,32 +42,32 @@ pub fn html(theme: &UiConfig) -> String {
     @media (prefers-color-scheme: dark) {{
       :root {{
         --accent: #d7a17b;
-        --bg: #16110f;
-        --panel: #211916;
-        --text: #f3eadf;
-        --muted: #a99a8c;
-        --shell-bg: linear-gradient(180deg, rgba(37, 30, 27, 0.96), rgba(24, 19, 17, 0.985));
+        --bg: #10151d;
+        --panel: #18202b;
+        --text: #eef2fb;
+        --muted: #99a6bc;
+        --shell-bg: linear-gradient(180deg, rgba(28, 37, 50, 0.96), rgba(16, 22, 31, 0.985));
         --shell-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.05);
-        --shell-border: rgba(215, 161, 123, 0.16);
+        --shell-border: rgba(128, 164, 214, 0.18);
         --label-strong: color-mix(in srgb, var(--text) 94%, white);
-        --input-bg: linear-gradient(180deg, rgba(33, 26, 23, 0.98), rgba(27, 21, 19, 0.98));
-        --input-border: rgba(215, 161, 123, 0.12);
+        --input-bg: linear-gradient(180deg, rgba(24, 31, 43, 0.98), rgba(18, 25, 35, 0.98));
+        --input-border: rgba(128, 164, 214, 0.14);
         --input-shadow: inset 0 1px 0 rgba(255,255,255,0.03);
         --placeholder: color-mix(in srgb, var(--muted) 88%, black);
-        --scrollbar: rgba(215, 161, 123, 0.24);
-        --item-bg: rgba(255,255,255,0.025);
-        --item-hover: rgba(255,255,255,0.06);
-        --item-selected-bg: linear-gradient(135deg, rgba(215, 161, 123, 0.16), rgba(41, 31, 27, 0.98));
+        --scrollbar: rgba(128, 164, 214, 0.26);
+        --item-bg: rgba(180, 206, 244, 0.035);
+        --item-hover: rgba(162, 195, 242, 0.08);
+        --item-selected-bg: linear-gradient(135deg, rgba(103, 148, 210, 0.24), rgba(31, 41, 56, 0.98));
         --item-selected-shadow:
           0 18px 44px rgba(0, 0, 0, 0.22),
-          inset 0 0 0 1px rgba(215, 161, 123, 0.2);
-        --badge-bg: linear-gradient(180deg, rgba(215, 161, 123, 0.14), rgba(255,255,255,0.02));
-        --badge-border: rgba(215, 161, 123, 0.16);
-        --badge-text: color-mix(in srgb, var(--accent) 82%, white);
+          inset 0 0 0 1px rgba(117, 160, 222, 0.24);
+        --badge-bg: linear-gradient(180deg, rgba(118, 154, 206, 0.18), rgba(255,255,255,0.02));
+        --badge-border: rgba(128, 164, 214, 0.18);
+        --badge-text: color-mix(in srgb, #b9d4f4 86%, white);
         --chip-text: color-mix(in srgb, var(--muted) 86%, white);
-        --chip-bg: rgba(255,255,255,0.03);
-        --chip-border: rgba(215, 161, 123, 0.12);
-        --status-error: #f18a63;
+        --chip-bg: rgba(150, 182, 230, 0.05);
+        --chip-border: rgba(128, 164, 214, 0.14);
+        --status-error: #ff9b7a;
       }}
     }}
 
