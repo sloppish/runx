@@ -6,6 +6,7 @@ use std::{
 use crate::{
     actions::execute_action,
     config::{self, LoadedConfig},
+    debug_log,
     icons::IconCache,
     macos::{capture_frontmost_app, ensure_accessibility_trusted},
     plugins::{self, PluginExecutionContext},
@@ -62,6 +63,7 @@ impl Launcher {
         event_loop: &EventLoopWindowTarget<AppEvent>,
         proxy: EventLoopProxy<AppEvent>,
     ) -> Result<Self> {
+        debug_log::append(format!("launcher bootstrap pid={}", std::process::id()));
         let loaded = LoadedConfig::load()?;
         let plugin_config = loaded.config.plugin_config()?;
         let runtime = Builder::new_multi_thread()
@@ -234,10 +236,23 @@ impl Launcher {
     fn capture_previous_app(&mut self) {
         match capture_frontmost_app() {
             Ok(Some(app)) if !looks_like_runx(&app) => {
+                debug_log::append(format!(
+                    "capture_previous_app accepted name={:?} bundle_id={:?} path={:?}",
+                    app.name, app.bundle_id, app.path
+                ));
                 self.previous_app = Some(app);
             }
-            Ok(_) => {}
+            Ok(Some(app)) => {
+                debug_log::append(format!(
+                    "capture_previous_app ignored runx-like app name={:?} bundle_id={:?} path={:?}",
+                    app.name, app.bundle_id, app.path
+                ));
+            }
+            Ok(None) => {
+                debug_log::append("capture_previous_app found no frontmost app");
+            }
             Err(error) => {
+                debug_log::append(format!("capture_previous_app error: {error:#}"));
                 eprintln!("Failed to capture the frontmost app: {error:#}");
             }
         }
@@ -295,9 +310,15 @@ impl Launcher {
 
     fn activate(&mut self, index: usize) {
         let Some(item) = self.state.session().rendered_item(index).cloned() else {
+            debug_log::append(format!("activate ignored missing index={index}"));
             return;
         };
+        debug_log::append(format!(
+            "activate index={index} title={:?} provider={} action={:?} previous_app={:?}",
+            item.title, item.provider, item.action, self.previous_app
+        ));
         if item.action.likely_needs_accessibility() && !ensure_accessibility_trusted(true) {
+            debug_log::append("activate blocked: accessibility preflight returned false");
             self.set_error("Runx needs Accessibility permission to control other apps. Enable Runx in System Settings > Privacy & Security > Accessibility, then retry.".to_owned());
             return;
         }
@@ -317,6 +338,10 @@ impl Launcher {
                 Ok(None) => ("Action completed".to_owned(), false),
                 Err(error) => (error.to_string(), true),
             };
+            debug_log::append(format!(
+                "activate outcome is_error={} message={:?}",
+                is_error, message
+            ));
             let _ = proxy.send_event(AppEvent::ActionOutcome { message, is_error });
         });
     }

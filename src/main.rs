@@ -1,6 +1,7 @@
 mod actions;
 mod assets;
 mod config;
+mod debug_log;
 mod icons;
 mod launcher;
 mod macos;

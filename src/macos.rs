@@ -10,6 +10,8 @@ use core_foundation::{
 };
 use core_foundation_sys::{base::Boolean, dictionary::CFDictionaryRef, string::CFStringRef};
 
+use crate::debug_log;
+
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const PRIVACY_AUTOMATION: &str = "Privacy_Automation";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
@@ -117,7 +119,13 @@ pub fn type_text_into_previous_app(
     text: &str,
     previous_app: Option<&FrontmostApp>,
 ) -> Result<String> {
+    debug_log::append(format!(
+        "type_text_into_previous_app start len={} previous_app={:?}",
+        text.chars().count(),
+        previous_app
+    ));
     if !ensure_accessibility_trusted(true) {
+        debug_log::append("type_text_into_previous_app accessibility preflight returned false");
         open_accessibility_settings();
         bail!(
             "Runx needs Accessibility permission to type into other apps. Approve the system prompt or enable your terminal/runx in System Settings > Privacy & Security > Accessibility, then retry."
@@ -125,6 +133,7 @@ pub fn type_text_into_previous_app(
     }
 
     reactivate_previous_app(previous_app)?;
+    debug_log::append("type_text_into_previous_app reactivated previous app");
 
     let script = r#"
 on run argv
@@ -135,6 +144,10 @@ end run
 "#;
     let output = run_output("osascript", &["-e", script, "--", text])
         .context("failed to launch osascript for text typing")?;
+    debug_log::append(format!(
+        "type_text_into_previous_app osascript status={} stderr={:?}",
+        output.status, output.stderr
+    ));
 
     if output.status.success() {
         return Ok("Typed into the previous app".to_owned());
@@ -163,12 +176,17 @@ end run
 
 fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
     let Some(app) = app else {
+        debug_log::append("reactivate_previous_app skipped: no previous app");
         return Ok(());
     };
 
     if let Some(bundle_id) = app.bundle_id.as_deref()
         && run_quiet("open", &["-b", bundle_id]).is_ok()
     {
+        debug_log::append(format!(
+            "reactivate_previous_app via bundle_id {:?}",
+            bundle_id
+        ));
         thread::sleep(APP_REACTIVATION_DELAY);
         return Ok(());
     }
@@ -176,6 +194,7 @@ fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
     if let Some(path) = app.path.as_deref()
         && run_quiet("open", &["-a", path]).is_ok()
     {
+        debug_log::append(format!("reactivate_previous_app via path {:?}", path));
         thread::sleep(APP_REACTIVATION_DELAY);
         return Ok(());
     }
@@ -183,10 +202,15 @@ fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
     if let Some(name) = app.name.as_deref()
         && run_quiet("open", &["-a", name]).is_ok()
     {
+        debug_log::append(format!("reactivate_previous_app via name {:?}", name));
         thread::sleep(APP_REACTIVATION_DELAY);
         return Ok(());
     }
 
+    debug_log::append(format!(
+        "reactivate_previous_app failed for name={:?} bundle_id={:?} path={:?}",
+        app.name, app.bundle_id, app.path
+    ));
     bail!("failed to reactivate {}", app.display_name());
 }
 
