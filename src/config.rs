@@ -4,7 +4,7 @@ use std::{
     path::{Path, PathBuf},
 };
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Context, Result, anyhow, bail};
 use directories::BaseDirs;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use serde::Deserialize;
@@ -38,6 +38,7 @@ search_paths = []
 # search_paths = ["/opt/homebrew/bin"]
 
 # Per-plugin configuration can live under `[plugin.<id>]`.
+# Command routing can be configured under `[plugin.<id>.commands]`.
 [ui]
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 accent = "#c77b49"
@@ -159,11 +160,53 @@ impl Config {
         self.plugin
             .iter()
             .map(|(id, table)| {
+                let mut table = table.clone();
+                table.remove("commands");
                 let value = serde_json::to_value(table)
                     .with_context(|| format!("failed to serialize plugin config for `{id}`"))?;
                 Ok((id.clone(), value))
             })
             .collect()
+    }
+
+    pub fn plugin_routes(&self) -> Result<HashMap<String, HashMap<String, String>>> {
+        let mut routes_by_plugin = HashMap::new();
+
+        for (plugin_id, table) in &self.plugin {
+            let Some(commands) = table.get("commands") else {
+                continue;
+            };
+
+            let commands = commands
+                .as_table()
+                .ok_or_else(|| anyhow!("`[plugin.{plugin_id}.commands]` must be a TOML table"))?;
+
+            let mut routes = HashMap::new();
+            for (command, handler_value) in commands {
+                let normalized_command = command.trim();
+                if normalized_command.is_empty() {
+                    bail!("`[plugin.{plugin_id}.commands]` contains an empty command name");
+                }
+
+                let handler = handler_value.as_str().ok_or_else(|| {
+                    anyhow!(
+                        "`[plugin.{plugin_id}.commands.{normalized_command}]` must be a string handler name"
+                    )
+                })?;
+                let normalized_handler = handler.trim();
+                if normalized_handler.is_empty() {
+                    bail!("`[plugin.{plugin_id}.commands.{normalized_command}]` must not be empty");
+                }
+
+                routes.insert(normalized_command.to_owned(), normalized_handler.to_owned());
+            }
+
+            if !routes.is_empty() {
+                routes_by_plugin.insert(plugin_id.clone(), routes);
+            }
+        }
+
+        Ok(routes_by_plugin)
     }
 }
 

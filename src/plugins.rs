@@ -1,4 +1,5 @@
 use std::{
+    collections::{HashMap, HashSet},
     env,
     ffi::OsString,
     fs,
@@ -23,7 +24,9 @@ const PLUGIN_API_VERSION: u32 = 1;
 pub struct PluginHost {
     plugins: Vec<LuaPlugin>,
     search_paths: Vec<PathBuf>,
-    config: std::collections::HashMap<String, JsonValue>,
+    config: HashMap<String, JsonValue>,
+    routes: Vec<PluginRoute>,
+    routed_plugin_ids: HashSet<String>,
 }
 
 #[derive(Clone)]
@@ -33,6 +36,13 @@ struct LuaPlugin {
     badge: String,
     path: PathBuf,
     source: String,
+}
+
+#[derive(Debug, Clone)]
+struct PluginRoute {
+    plugin_id: String,
+    command: String,
+    handler: String,
 }
 
 #[derive(Debug, Deserialize)]
@@ -71,7 +81,8 @@ impl PluginHost {
     pub fn load(
         directories: &[PathBuf],
         search_paths: &[PathBuf],
-        config: std::collections::HashMap<String, JsonValue>,
+        config: HashMap<String, JsonValue>,
+        route_config: HashMap<String, HashMap<String, String>>,
     ) -> Self {
         let mut plugins = Vec::new();
 
@@ -93,16 +104,56 @@ impl PluginHost {
         }
 
         plugins.sort_by(|left, right| left.name.cmp(&right.name));
+        let mut routes = build_routes(route_config);
+        routes.sort_by(|left, right| {
+            right
+                .command
+                .len()
+                .cmp(&left.command.len())
+                .then_with(|| left.command.cmp(&right.command))
+                .then_with(|| left.plugin_id.cmp(&right.plugin_id))
+        });
+        let routed_plugin_ids = routes
+            .iter()
+            .map(|route| route.plugin_id.clone())
+            .collect::<HashSet<_>>();
         Self {
             plugins,
             search_paths: search_paths.to_vec(),
             config,
+            routes,
+            routed_plugin_ids,
         }
     }
 
     pub fn search(&self, query: &str) -> Result<Vec<SearchItem>> {
+        if let Some((route, args)) = self.match_route(query) {
+            let plugin = self
+                .plugins
+                .iter()
+                .find(|plugin| plugin.id == route.plugin_id)
+                .with_context(|| format!("unknown plugin `{}`", route.plugin_id))?;
+
+            return run_search_handler(
+                plugin,
+                &route.handler,
+                args,
+                self.plugin_config(&plugin.id),
+                &self.search_paths,
+            )
+            .with_context(|| {
+                format!(
+                    "plugin `{}` handler `{}` search failed",
+                    route.plugin_id, route.handler
+                )
+            });
+        }
+
         let mut items = Vec::new();
         for plugin in &self.plugins {
+            if self.routed_plugin_ids.contains(&plugin.id) {
+                continue;
+            }
             let plugin_items = run_search(
                 plugin,
                 query,
@@ -141,6 +192,38 @@ impl PluginHost {
             .cloned()
             .unwrap_or_else(empty_plugin_config)
     }
+
+    fn match_route<'a>(&'a self, query: &'a str) -> Option<(&'a PluginRoute, &'a str)> {
+        self.routes
+            .iter()
+            .find_map(|route| match_command(query, &route.command).map(|args| (route, args)))
+    }
+}
+
+fn build_routes(route_config: HashMap<String, HashMap<String, String>>) -> Vec<PluginRoute> {
+    let mut routes = Vec::new();
+
+    for (plugin_id, commands) in route_config {
+        for (command, handler) in commands {
+            routes.push(PluginRoute {
+                plugin_id: plugin_id.clone(),
+                command,
+                handler,
+            });
+        }
+    }
+
+    routes
+}
+
+fn match_command<'a>(query: &'a str, command: &str) -> Option<&'a str> {
+    if query == command {
+        return Some("");
+    }
+
+    query
+        .strip_prefix(command)
+        .and_then(|suffix| suffix.strip_prefix(' '))
 }
 
 fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
@@ -185,6 +268,42 @@ fn run_search(
         None => return Ok(Vec::new()),
     };
     let result = search.call::<mlua::Value>(query.to_owned())?;
+    let raw_items: Vec<PluginItemWire> = lua.from_value(result)?;
+
+    Ok(raw_items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| validate_plugin_item(plugin, index, item))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|item| SearchItem {
+            id: item.id,
+            provider: "plugins".to_owned(),
+            badge: item.badge,
+            icon: None,
+            title: item.title,
+            subtitle: item.subtitle,
+            raw_score: item.score,
+            action: Action::Plugin {
+                plugin_id: plugin.id.clone(),
+                payload: item.action,
+            },
+        })
+        .collect())
+}
+
+fn run_search_handler(
+    plugin: &LuaPlugin,
+    handler_name: &str,
+    args: &str,
+    plugin_config: JsonValue,
+    search_paths: &[PathBuf],
+) -> Result<Vec<SearchItem>> {
+    let (lua, table) = load_table(&plugin.path, &plugin.source, &plugin_config, search_paths)?;
+    let search: Function = table
+        .get::<Option<Function>>(handler_name)?
+        .ok_or_else(|| anyhow!("plugin `{}` does not export `{}`", plugin.id, handler_name))?;
+    let result = search.call::<mlua::Value>(args.to_owned())?;
     let raw_items: Vec<PluginItemWire> = lua.from_value(result)?;
 
     Ok(raw_items
@@ -588,12 +707,16 @@ impl BaseHome {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::env;
     use std::path::PathBuf;
 
     use serde_json::json;
 
-    use super::{LuaPlugin, PluginItemWire, plugin_search_path, validate_plugin_item};
+    use super::{
+        LuaPlugin, PluginItemWire, build_routes, match_command, plugin_search_path,
+        validate_plugin_item,
+    };
 
     #[test]
     fn plugin_search_path_includes_configured_paths() {
@@ -671,5 +794,25 @@ mod tests {
         assert_eq!(item.id, "plugin:test:Copy secret");
         assert_eq!(item.badge, "TST");
         assert_eq!(item.subtitle, "Test Plugin");
+    }
+
+    #[test]
+    fn match_command_supports_exact_and_spaced_forms() {
+        assert_eq!(match_command("calc", "calc"), Some(""));
+        assert_eq!(match_command("calc 2+2", "calc"), Some("2+2"));
+        assert_eq!(match_command("calculator", "calc"), None);
+    }
+
+    #[test]
+    fn build_routes_preserves_plugin_and_handler() {
+        let routes = build_routes(HashMap::from([(
+            "calc".to_owned(),
+            HashMap::from([("calc".to_owned(), "search_calc".to_owned())]),
+        )]));
+
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].plugin_id, "calc");
+        assert_eq!(routes[0].command, "calc");
+        assert_eq!(routes[0].handler, "search_calc");
     }
 }

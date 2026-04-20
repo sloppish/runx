@@ -18,6 +18,7 @@ A plugin file must evaluate to a Lua table. Supported top-level fields:
 - `name: string?`
 - `badge: string?`
 - `search(query): table?`
+- `<handler>(args): table?`
 - `run(action): string|table|nil?`
 
 `id`, `name`, and `badge` are optional metadata. If omitted:
@@ -26,9 +27,26 @@ A plugin file must evaluate to a Lua table. Supported top-level fields:
 - `name` falls back to `id`
 - `badge` falls back to `"PLG"`
 
-## `search(query)`
+## Search Entry Points
 
 `search(query)` is optional. If present, it should return an array-like Lua table of result items.
+
+Runx also supports config-routed search handlers. In `config.toml`, you can map a command prefix to a function name inside the plugin:
+
+```toml
+[plugin.calc.commands]
+calc = "search_calc"
+```
+
+When the user types `calc 2+2`, Runx strips the command prefix and calls:
+
+```lua
+search_calc("2+2")
+```
+
+This lets plugin code focus on the arguments instead of manually checking command prefixes and slicing strings itself.
+
+If a plugin has configured commands, Runx routes matching queries to those handlers and does not call the plugin’s legacy `search(query)` fallback for that plugin.
 
 Each item must match this schema:
 
@@ -112,6 +130,13 @@ Plugin-specific config lives under:
 example = "value"
 ```
 
+Command routing for a plugin lives under:
+
+```toml
+[plugin.my_plugin.commands]
+hello = "search_hello"
+```
+
 Extra executable lookup paths for plugin subprocesses live under:
 
 ```toml
@@ -131,14 +156,11 @@ return {
   name = "Hello",
   badge = "HI",
 
-  search = function(query)
-    if query ~= "hello" then
-      return {}
-    end
-
+  search_hello = function(args)
     return {
       {
         title = "Say hello",
+        subtitle = args,
         action = {
           kind = "hello",
         },

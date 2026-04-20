@@ -66,6 +66,7 @@ impl Launcher {
         debug_log::append(format!("launcher bootstrap pid={}", std::process::id()));
         let loaded = LoadedConfig::load()?;
         let plugin_config = loaded.config.plugin_config()?;
+        let plugin_routes = loaded.config.plugin_routes()?;
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -76,6 +77,7 @@ impl Launcher {
             &loaded.plugin_dirs,
             &loaded.plugin_search_paths,
             plugin_config,
+            plugin_routes,
         ));
         let icons = Arc::new(IconCache::new()?);
         let providers = ProviderSet::new(config.clone(), plugins.clone(), icons)?;
