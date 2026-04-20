@@ -148,7 +148,6 @@ pub enum FrontendCommand {
 pub struct ViewState {
     pub query: String,
     pub items: Vec<ViewItem>,
-    pub status: Option<StatusLine>,
 }
 
 /// One visible row in the launcher result list.
@@ -160,13 +159,6 @@ pub struct ViewItem {
     pub icon: Option<String>,
     pub accelerator: Option<String>,
     pub compact: bool,
-}
-
-/// Short status line shown under the result list.
-#[derive(Debug, Clone, Serialize)]
-pub struct StatusLine {
-    pub kind: &'static str,
-    pub message: String,
 }
 
 #[cfg(test)]

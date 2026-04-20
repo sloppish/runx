@@ -13,7 +13,7 @@ use crate::{
     config::RankingConfig,
     providers::ProviderSet,
     state::AppState,
-    types::{AppEvent, SearchItem, StatusLine},
+    types::{AppEvent, SearchItem},
 };
 
 const RENDER_COALESCE: Duration = Duration::from_millis(16);
@@ -91,37 +91,6 @@ impl SearchController {
         {
             self.request_render(runtime, proxy, RENDER_COALESCE);
         }
-    }
-
-    /// Pushes an info/error outcome message into the session and schedules rerender.
-    pub(crate) fn handle_action_outcome(
-        &mut self,
-        state: &mut AppState,
-        message: String,
-        is_error: bool,
-        runtime: &Runtime,
-        proxy: tao::event_loop::EventLoopProxy<AppEvent>,
-    ) {
-        state.session_mut().set_status(Some(StatusLine {
-            kind: if is_error { "error" } else { "info" },
-            message,
-        }));
-        self.request_render(runtime, proxy, RENDER_COALESCE);
-    }
-
-    /// Pushes an immediate error into the UI status line.
-    pub(crate) fn set_error(
-        &mut self,
-        state: &mut AppState,
-        message: String,
-        runtime: &Runtime,
-        proxy: tao::event_loop::EventLoopProxy<AppEvent>,
-    ) {
-        state.session_mut().set_status(Some(StatusLine {
-            kind: "error",
-            message,
-        }));
-        self.request_render(runtime, proxy, RENDER_COALESCE);
     }
 
     /// Recomputes the visible result list and pushes a new view state into the webview.

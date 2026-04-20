@@ -176,11 +176,3 @@ fn plist_truthy(value: &Value) -> bool {
         _ => false,
     }
 }
-
-#[allow(dead_code)]
-fn display_name(path: &Path) -> String {
-    path.file_stem()
-        .and_then(|value| value.to_str())
-        .unwrap_or("Application")
-        .to_owned()
-}

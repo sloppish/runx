@@ -208,21 +208,16 @@ impl Launcher {
                 &self.runtime,
                 self.proxy.clone(),
             ),
-            AppEvent::ActionOutcome { message, is_error } => self.search.handle_action_outcome(
-                &mut self.state,
-                message,
-                is_error,
-                &self.runtime,
-                self.proxy.clone(),
-            ),
+            AppEvent::ActionOutcome { message, is_error } => {
+                self.log_outcome(message, is_error);
+            }
         }
         Ok(())
     }
 
-    /// Pushes an error message into the UI status line.
+    /// Reports an error outside the UI, since the launcher no longer renders a footer/status row.
     pub fn set_error(&mut self, message: String) {
-        self.search
-            .set_error(&mut self.state, message, &self.runtime, self.proxy.clone());
+        self.log_outcome(message, true);
     }
 
     fn show(&mut self) -> Result<()> {
@@ -309,6 +304,17 @@ impl Launcher {
 
         self.actions
             .spawn(&self.runtime, self.proxy.clone(), item, context);
+    }
+}
+
+impl Launcher {
+    fn log_outcome(&self, message: String, is_error: bool) {
+        if is_error {
+            eprintln!("{message}");
+            debug_log::append(format!("error: {message}"));
+        } else {
+            debug_log::append(format!("info: {message}"));
+        }
     }
 }
 

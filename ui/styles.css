@@ -26,7 +26,6 @@
   --chip-text: color-mix(in srgb, var(--muted) 80%, white);
   --chip-bg: rgba(255,255,255,0.68);
   --chip-border: rgba(140, 102, 67, 0.12);
-  --status-error: #9c4420;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -57,7 +56,6 @@
     --chip-text: color-mix(in srgb, var(--muted) 86%, white);
     --chip-bg: rgba(150, 182, 230, 0.05);
     --chip-border: rgba(128, 164, 214, 0.14);
-    --status-error: #ff9b7a;
   }
 }
 

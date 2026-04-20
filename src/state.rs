@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::{
     config::RankingConfig,
     scoring::sort_and_trim,
-    types::{SearchItem, StatusLine, ViewItem, ViewState},
+    types::{SearchItem, ViewItem, ViewState},
 };
 
 /// Top-level visibility and search-session state for the launcher.
@@ -77,7 +77,6 @@ pub struct SearchSession {
     provider_items: HashMap<String, Vec<SearchItem>>,
     rendered_items: Vec<SearchItem>,
     pending_providers: usize,
-    status: Option<StatusLine>,
 }
 
 impl SearchSession {
@@ -89,7 +88,6 @@ impl SearchSession {
         self.provider_items.clear();
         self.rendered_items.clear();
         self.pending_providers = 0;
-        self.status = None;
     }
 
     /// Returns the user-visible query string.
@@ -109,19 +107,10 @@ impl SearchSession {
         self.search_token
     }
 
-    /// Starts a new provider search generation and updates the status line.
+    /// Starts a new provider search generation.
     pub fn begin_search(&mut self, provider_count: usize) -> u64 {
         self.generation = self.generation.wrapping_add(1);
         self.pending_providers = provider_count;
-        self.status = Some(StatusLine {
-            kind: "info",
-            message: if self.query.trim().is_empty() {
-                "Showing open windows. Type to search apps, settings, Spotlight, or `pass`."
-                    .to_owned()
-            } else {
-                format!("Searching for “{}”…", self.query)
-            },
-        });
         self.generation
     }
 
@@ -145,24 +134,15 @@ impl SearchSession {
     pub fn apply_provider_error(
         &mut self,
         generation: u64,
-        provider: &str,
-        message: String,
+        _provider: &str,
+        _message: String,
     ) -> bool {
         if generation != self.generation {
             return false;
         }
 
         self.pending_providers = self.pending_providers.saturating_sub(1);
-        self.status = Some(StatusLine {
-            kind: "error",
-            message: format!("{provider}: {message}"),
-        });
         true
-    }
-
-    /// Overrides the current status line.
-    pub fn set_status(&mut self, status: Option<StatusLine>) {
-        self.status = status;
     }
 
     /// Returns the rendered item at the given visible list index.
@@ -205,7 +185,6 @@ impl SearchSession {
         ViewState {
             query: self.query.clone(),
             items,
-            status: self.status.clone(),
         }
     }
 }
