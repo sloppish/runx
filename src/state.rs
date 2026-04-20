@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::{
     config::RankingConfig,
     scoring::sort_and_trim,
-    types::{SearchItem, ViewItem, ViewState},
+    types::{Action, SearchItem, ViewItem, ViewState},
 };
 
 /// Top-level visibility and search-session state for the launcher.
@@ -134,14 +134,18 @@ impl SearchSession {
     pub fn apply_provider_error(
         &mut self,
         generation: u64,
-        _provider: &str,
-        _message: String,
+        provider: &str,
+        message: String,
     ) -> bool {
         if generation != self.generation {
             return false;
         }
 
         self.pending_providers = self.pending_providers.saturating_sub(1);
+        self.provider_items.insert(
+            provider.to_owned(),
+            vec![provider_error_item(provider, message, generation)],
+        );
         true
     }
 
@@ -186,6 +190,30 @@ impl SearchSession {
             query: self.query.clone(),
             items,
         }
+    }
+}
+
+fn provider_error_item(provider: &str, message: String, generation: u64) -> SearchItem {
+    SearchItem {
+        id: format!("error:{provider}:{generation}"),
+        provider: "system".to_owned(),
+        badge: "ERR".to_owned(),
+        icon: None,
+        title: provider_error_title(provider),
+        subtitle: message,
+        raw_score: 1_000_000,
+        action: Action::Noop,
+    }
+}
+
+fn provider_error_title(provider: &str) -> String {
+    match provider {
+        "plugins" => "Plugin query error".to_owned(),
+        "spotlight" => "Spotlight query error".to_owned(),
+        "settings" => "Settings query error".to_owned(),
+        "apps" => "App query error".to_owned(),
+        "windows" => "Window query error".to_owned(),
+        other => format!("{other} query error"),
     }
 }
 
@@ -261,6 +289,40 @@ mod tests {
         ));
     }
 
+    #[test]
+    fn provider_error_replaces_previous_results_with_error_item() {
+        let mut state = AppState::new();
+        state.show();
+        state.session_mut().set_query("pass 'tg".to_owned());
+        let generation = state.session_mut().begin_search(1);
+        assert!(state.session_mut().apply_provider_items(
+            generation,
+            "plugins".to_owned(),
+            vec![plugin_item("old result", 100)],
+        ));
+
+        assert!(state.session_mut().apply_provider_error(
+            generation,
+            "plugins",
+            "unterminated single-quoted string in command arguments".to_owned(),
+        ));
+
+        state
+            .session_mut()
+            .refresh_rendered_items(&default_ranking());
+
+        let rendered = state
+            .session()
+            .rendered_item(0)
+            .expect("error row should render");
+        assert_eq!(rendered.title, "Plugin query error");
+        assert!(
+            rendered
+                .subtitle
+                .contains("unterminated single-quoted string")
+        );
+    }
+
     fn populate(state: &mut AppState, query: &str) {
         state.session_mut().set_query(query.to_owned());
         let generation = state.session_mut().begin_search(1);
@@ -300,6 +362,19 @@ mod tests {
             action: Action::OpenPath {
                 path: format!("/tmp/{id}"),
             },
+        }
+    }
+
+    fn plugin_item(id: &str, raw_score: i64) -> SearchItem {
+        SearchItem {
+            id: id.to_owned(),
+            provider: "plugins".to_owned(),
+            badge: "PLG".to_owned(),
+            icon: None,
+            title: id.to_owned(),
+            subtitle: "test".to_owned(),
+            raw_score,
+            action: Action::Noop,
         }
     }
 }

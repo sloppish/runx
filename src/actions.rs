@@ -16,6 +16,7 @@ pub fn execute_action(
     context: &PluginExecutionContext,
 ) -> Result<Option<String>> {
     match action {
+        Action::Noop => Ok(None),
         Action::OpenApplication { path } => {
             macos::open_application(path)?;
             Ok(Some(format!("Opened {}", display_name(path))))

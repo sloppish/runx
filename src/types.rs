@@ -73,6 +73,7 @@ impl PluginActionPayload {
 /// Actions that Runx can execute after a search result is activated.
 #[derive(Debug, Clone)]
 pub enum Action {
+    Noop,
     OpenApplication {
         path: String,
     },
@@ -97,6 +98,7 @@ impl Action {
     /// Returns whether executing this action is likely to require Accessibility.
     pub fn likely_needs_accessibility(&self) -> bool {
         match self {
+            Self::Noop => false,
             Self::FocusWindow { .. } => true,
             Self::Plugin { payload, .. } => payload.likely_needs_accessibility(),
             Self::OpenApplication { .. } | Self::OpenPath { .. } | Self::OpenSettings { .. } => {
