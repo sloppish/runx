@@ -181,7 +181,14 @@ cat > "$CONTENTS_PATH/Info.plist" <<EOF
 </plist>
 EOF
 
-codesign --force --deep --sign "$SIGN_IDENTITY" --identifier "$APP_BUNDLE_ID" "$BUNDLE_PATH" >/dev/null
+codesign \
+  --force \
+  --deep \
+  --options runtime \
+  --timestamp \
+  --sign "$SIGN_IDENTITY" \
+  --identifier "$APP_BUNDLE_ID" \
+  "$BUNDLE_PATH" >/dev/null
 
 printf 'Created %s\n' "$BUNDLE_PATH"
 if [[ "$SIGN_IDENTITY" == "-" ]]; then

@@ -154,7 +154,7 @@ hdiutil create \
   "$DMG_PATH" >/dev/null
 
 if [[ "$SIGN_IDENTITY" != "-" ]]; then
-  codesign --force --sign "$SIGN_IDENTITY" "$DMG_PATH" >/dev/null
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH" >/dev/null
 fi
 
 if [[ "$NOTARIZE" -eq 1 ]]; then
@@ -167,11 +167,36 @@ if [[ "$NOTARIZE" -eq 1 ]]; then
     exit 1
   fi
 
-  xcrun notarytool submit "$DMG_PATH" \
-    --apple-id "$NOTARY_APPLE_ID" \
-    --password "$NOTARY_PASSWORD" \
-    --team-id "$NOTARY_TEAM_ID" \
-    --wait
+  set +e
+  notary_output="$(
+    xcrun notarytool submit "$DMG_PATH" \
+      --apple-id "$NOTARY_APPLE_ID" \
+      --password "$NOTARY_PASSWORD" \
+      --team-id "$NOTARY_TEAM_ID" \
+      --wait \
+      --output-format json 2>&1
+  )"
+  notary_status=$?
+  set -e
+
+  printf '%s\n' "$notary_output"
+
+  if [[ "$notary_status" -ne 0 ]]; then
+    submission_id="$(
+      printf '%s\n' "$notary_output" \
+        | sed -n 's/.*"id"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' \
+        | head -n 1
+    )"
+    if [[ -n "$submission_id" ]]; then
+      printf '\nFetching notary log for submission %s\n' "$submission_id" >&2
+      xcrun notarytool log "$submission_id" \
+        --apple-id "$NOTARY_APPLE_ID" \
+        --password "$NOTARY_PASSWORD" \
+        --team-id "$NOTARY_TEAM_ID" || true
+    fi
+    exit "$notary_status"
+  fi
+
   xcrun stapler staple "$DMG_PATH" >/dev/null
 fi
 
