@@ -1,7 +1,7 @@
 //! Provider for currently open on-screen windows.
 
 use std::{
-    sync::Arc,
+    sync::{Arc, Mutex, MutexGuard},
     time::{Duration, Instant},
 };
 
@@ -26,7 +26,7 @@ use crate::{
 
 /// Searches the current on-screen window list with a short-lived cache.
 pub struct WindowsProvider {
-    cache: std::sync::Mutex<WindowCache>,
+    cache: Mutex<WindowCache>,
     icons: Arc<IconCache>,
 }
 
@@ -48,7 +48,7 @@ impl WindowsProvider {
     /// Creates a window provider backed by the shared icon cache.
     pub fn new(icons: Arc<IconCache>) -> Self {
         Self {
-            cache: std::sync::Mutex::new(WindowCache::default()),
+            cache: Mutex::new(WindowCache::default()),
             icons,
         }
     }
@@ -95,7 +95,7 @@ impl WindowsProvider {
     }
 
     fn snapshot(&self) -> Result<Vec<WindowRecord>> {
-        let mut cache = self.cache.lock().expect("windows cache poisoned");
+        let mut cache = lock_or_recover(&self.cache);
         if let Some(updated_at) = cache.updated_at
             && updated_at.elapsed() < Duration::from_millis(900)
         {
@@ -107,6 +107,10 @@ impl WindowsProvider {
         cache.items = fresh.clone();
         Ok(fresh)
     }
+}
+
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 fn read_windows() -> Vec<WindowRecord> {

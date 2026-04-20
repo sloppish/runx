@@ -13,6 +13,8 @@
 //! `main.rs` itself stays deliberately small so that `cargo doc` starts from a
 //! high-level map of the codebase and then points you at the specialized
 //! modules.
+#![deny(rustdoc::broken_intra_doc_links)]
+#![cfg_attr(not(test), deny(clippy::unwrap_used, clippy::expect_used))]
 
 mod actions;
 mod assets;

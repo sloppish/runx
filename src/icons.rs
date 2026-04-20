@@ -9,7 +9,7 @@ use std::{
     hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Mutex,
+    sync::{Mutex, MutexGuard},
 };
 
 use anyhow::{Context, Result};
@@ -59,10 +59,7 @@ impl IconCache {
     /// Resolves an icon for the owning app of a process id.
     pub fn icon_for_pid(&self, pid: i64) -> Option<String> {
         let bundle_path = {
-            let cache = self
-                .process_bundles
-                .lock()
-                .expect("process icon cache poisoned");
+            let cache = lock_or_recover(&self.process_bundles);
             cache.get(&pid).cloned()
         };
 
@@ -70,10 +67,7 @@ impl IconCache {
             Some(path) => path,
             None => {
                 let resolved = process_bundle_path(pid);
-                let mut cache = self
-                    .process_bundles
-                    .lock()
-                    .expect("process icon cache poisoned");
+                let mut cache = lock_or_recover(&self.process_bundles);
                 cache.insert(pid, resolved.clone());
                 resolved
             }
@@ -88,12 +82,12 @@ impl IconCache {
     }
 
     fn cached_icon(&self, key: &str) -> Option<Option<String>> {
-        let cache = self.icons.lock().expect("icon cache poisoned");
+        let cache = lock_or_recover(&self.icons);
         cache.get(key).cloned()
     }
 
     fn store_icon(&self, key: String, value: Option<String>) {
-        let mut cache = self.icons.lock().expect("icon cache poisoned");
+        let mut cache = lock_or_recover(&self.icons);
         cache.insert(key, value);
     }
 
@@ -118,6 +112,10 @@ impl IconCache {
             STANDARD.encode(bytes)
         )))
     }
+}
+
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 fn process_bundle_path(pid: i64) -> Option<PathBuf> {

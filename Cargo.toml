@@ -22,3 +22,10 @@ toml = "0.8"
 tray-icon = "0.21"
 walkdir = "2.5"
 wry = { version = "0.55", features = ["transparent"] }
+
+[lints.rustdoc]
+broken_intra_doc_links = "deny"
+
+[lints.clippy]
+dbg_macro = "deny"
+todo = "deny"

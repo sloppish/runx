@@ -175,7 +175,8 @@ impl SearchSession {
         let all_items = self
             .provider_items
             .values()
-            .flat_map(|items| items.clone())
+            .flatten()
+            .cloned()
             .collect::<Vec<_>>();
         let next_items = sort_and_trim(all_items, ranking);
         let keep_previous_items =

@@ -330,7 +330,9 @@ fn parse_modifier(value: &str) -> Result<Modifiers> {
 fn parse_key(value: &str) -> Result<Code> {
     let normalized = value.trim().to_ascii_uppercase();
     if normalized.len() == 1 {
-        let ch = normalized.chars().next().unwrap();
+        let Some(ch) = normalized.chars().next() else {
+            bail!("hotkey key must not be empty in config.toml");
+        };
         return match ch {
             'A' => Ok(Code::KeyA),
             'B' => Ok(Code::KeyB),
@@ -383,5 +385,36 @@ fn parse_key(value: &str) -> Result<Code> {
         "LEFT" => Ok(Code::ArrowLeft),
         "RIGHT" => Ok(Code::ArrowRight),
         other => bail!("unsupported hotkey key `{other}` in config.toml"),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{parse_key, parse_modifier};
+    use global_hotkey::hotkey::{Code, Modifiers};
+
+    mod parse_key_tests {
+        use super::{Code, parse_key};
+
+        #[test]
+        fn accepts_single_letter_keys() {
+            assert!(matches!(parse_key("a"), Ok(Code::KeyA)));
+        }
+
+        #[test]
+        fn rejects_empty_keys() {
+            let error = parse_key("").expect_err("empty key should fail");
+            assert!(error.to_string().contains("unsupported hotkey key"));
+        }
+    }
+
+    mod parse_modifier_tests {
+        use super::{Modifiers, parse_modifier};
+
+        #[test]
+        fn accepts_common_aliases() {
+            assert!(matches!(parse_modifier("option"), Ok(Modifiers::ALT)));
+            assert!(matches!(parse_modifier("cmd"), Ok(Modifiers::META)));
+        }
     }
 }
