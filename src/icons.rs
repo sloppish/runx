@@ -15,6 +15,7 @@ use std::{
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use directories::BaseDirs;
+use objc2_app_kit::NSRunningApplication;
 use plist::{Dictionary, Value};
 
 const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
@@ -128,19 +129,17 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn process_bundle_path(pid: i64) -> Option<PathBuf> {
-    let output = Command::new("ps")
-        .args(["-p", &pid.to_string(), "-o", "comm="])
-        .stdin(Stdio::null())
-        .output()
-        .ok()?;
-
-    if !output.status.success() {
-        return None;
+    let app = NSRunningApplication::runningApplicationWithProcessIdentifier(pid as _)?;
+    if let Some(bundle_url) = app.bundleURL()
+        && let Some(path) = bundle_url.path()
+    {
+        return Some(PathBuf::from(path.to_string()));
     }
 
-    let command_path = String::from_utf8(output.stdout).ok()?;
-    let command_path = PathBuf::from(command_path.trim());
-    bundle_root_from_executable(&command_path)
+    let executable_url = app.executableURL()?;
+    let executable_path = executable_url.path()?;
+    let executable_path = PathBuf::from(executable_path.to_string());
+    bundle_root_from_executable(&executable_path)
 }
 
 fn bundle_root_from_executable(path: &Path) -> Option<PathBuf> {
@@ -297,10 +296,10 @@ mod tests {
 
     #[test]
     fn finds_app_bundle_from_executable_path() {
-        let path = Path::new("/Applications/Alacritty.app/Contents/MacOS/alacritty");
+        let path = Path::new("/Applications/SampleApp.app/Contents/MacOS/sample-app");
         assert_eq!(
             bundle_root_from_executable(path).as_deref(),
-            Some(Path::new("/Applications/Alacritty.app"))
+            Some(Path::new("/Applications/SampleApp.app"))
         );
     }
 

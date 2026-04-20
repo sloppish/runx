@@ -12,8 +12,8 @@ core-graphics = "0.25"
 directories = "6.0"
 global-hotkey = "0.7"
 mlua = { version = "0.11.6", features = ["lua54", "send", "serde", "vendored"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard"] }
-objc2-foundation = { version = "0.3.2", features = ["NSString"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
+objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL"] }
 plist = "1.7"
 png = "0.17"
 serde = { version = "1.0", features = ["derive"] }
