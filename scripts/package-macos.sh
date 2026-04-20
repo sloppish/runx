@@ -24,7 +24,21 @@ EOF
 }
 
 pick_default_sign_identity() {
-  security find-identity -p codesigning -v 2>/dev/null \
+  local identities
+  local identity
+  identities="$(security find-identity -p codesigning -v 2>/dev/null || true)"
+
+  identity="$(
+    printf '%s\n' "$identities" \
+      | sed -n 's/.*"Developer ID Application: \(.*\)"/Developer ID Application: \1/p' \
+      | head -n 1
+  )"
+  if [[ -n "$identity" ]]; then
+    printf '%s\n' "$identity"
+    return 0
+  fi
+
+  printf '%s\n' "$identities" \
     | sed -n 's/.*"Apple Development: \(.*\)"/Apple Development: \1/p' \
     | head -n 1
 }

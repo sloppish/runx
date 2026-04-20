@@ -1,0 +1,107 @@
+name: build-macos-dmg
+
+on:
+  push:
+    branches:
+      - master
+    tags:
+      - "v*"
+  pull_request:
+  workflow_dispatch:
+  release:
+    types:
+      - published
+
+permissions:
+  contents: write
+
+jobs:
+  dmg:
+    runs-on: macos-14
+    env:
+      MACOS_CERTIFICATE_P12_BASE64: ${{ secrets.MACOS_CERTIFICATE_P12_BASE64 }}
+      MACOS_CERTIFICATE_PASSWORD: ${{ secrets.MACOS_CERTIFICATE_PASSWORD }}
+      MACOS_SIGN_IDENTITY: ${{ secrets.MACOS_SIGN_IDENTITY }}
+      RUNX_NOTARY_APPLE_ID: ${{ secrets.RUNX_NOTARY_APPLE_ID }}
+      RUNX_NOTARY_PASSWORD: ${{ secrets.RUNX_NOTARY_PASSWORD }}
+      RUNX_NOTARY_TEAM_ID: ${{ secrets.RUNX_NOTARY_TEAM_ID }}
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v4
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Cache Rust artifacts
+        uses: Swatinem/rust-cache@v2
+
+      - name: Import signing certificate
+        if: ${{ env.MACOS_CERTIFICATE_P12_BASE64 != '' && env.MACOS_CERTIFICATE_PASSWORD != '' }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          KEYCHAIN_PATH="$RUNNER_TEMP/runx-build.keychain-db"
+          CERT_PATH="$RUNNER_TEMP/runx-signing-cert.p12"
+          KEYCHAIN_PASSWORD="$(openssl rand -base64 24)"
+
+          echo "$MACOS_CERTIFICATE_P12_BASE64" | base64 --decode > "$CERT_PATH"
+
+          security create-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security set-keychain-settings -lut 21600 "$KEYCHAIN_PATH"
+          security unlock-keychain -p "$KEYCHAIN_PASSWORD" "$KEYCHAIN_PATH"
+          security import "$CERT_PATH" \
+            -k "$KEYCHAIN_PATH" \
+            -P "$MACOS_CERTIFICATE_PASSWORD" \
+            -T /usr/bin/codesign \
+            -T /usr/bin/security \
+            -T /usr/bin/xcrun
+          security set-key-partition-list \
+            -S apple-tool:,apple:,codesign: \
+            -s \
+            -k "$KEYCHAIN_PASSWORD" \
+            "$KEYCHAIN_PATH"
+          security list-keychains -d user -s "$KEYCHAIN_PATH" login.keychain-db
+          security default-keychain -d user -s "$KEYCHAIN_PATH"
+
+          {
+            echo "RUNX_CODESIGN_IDENTITY=${MACOS_SIGN_IDENTITY}"
+            echo "RUNX_BUILD_KEYCHAIN=$KEYCHAIN_PATH"
+            echo "RUNX_HAS_CODESIGN_CERT=1"
+          } >> "$GITHUB_ENV"
+
+      - name: Build DMG
+        shell: bash
+        run: |
+          set -euo pipefail
+          args=(--out-dir dist)
+
+          if [[ -n "${RUNX_HAS_CODESIGN_CERT:-}" ]]; then
+            if [[ -n "${RUNX_CODESIGN_IDENTITY:-}" ]]; then
+              args+=(--sign-identity "$RUNX_CODESIGN_IDENTITY")
+            fi
+          else
+            args+=(--ad-hoc-sign)
+          fi
+
+          if [[ -n "${RUNX_NOTARY_APPLE_ID:-}" && -n "${RUNX_NOTARY_PASSWORD:-}" && -n "${RUNX_NOTARY_TEAM_ID:-}" ]]; then
+            if [[ -n "${RUNX_HAS_CODESIGN_CERT:-}" ]]; then
+              args+=(--notarize)
+            else
+              echo "Skipping notarization because no signing certificate was imported." >&2
+            fi
+          fi
+
+          ./scripts/build-dmg-macos.sh "${args[@]}"
+
+      - name: Upload DMG artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: runx-macos-dmg
+          path: dist/*.dmg
+          if-no-files-found: error
+
+      - name: Attach DMG to GitHub release
+        if: ${{ github.event_name == 'release' }}
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/*.dmg
