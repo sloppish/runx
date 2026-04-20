@@ -19,7 +19,7 @@ use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
 use crate::{
-    macos::{FrontmostApp, type_text_into_previous_app},
+    macos::{FrontmostApp, copy_text_to_clipboard, type_text_into_previous_app},
     scoring::fuzzy_score,
     types::{Action, PluginActionPayload, SearchItem},
 };
@@ -560,30 +560,10 @@ fn install_runtime(
         })?,
     )?;
 
-    let copy_text_paths = search_paths.clone();
     runtime.set(
         "copy_text",
         lua.create_function(move |_, text: String| {
-            let mut child = command_for_plugin("pbcopy", &copy_text_paths)
-                .stdin(Stdio::piped())
-                .stdout(Stdio::null())
-                .stderr(Stdio::null())
-                .spawn()
-                .map_err(mlua::Error::external)?;
-
-            if let Some(stdin) = child.stdin.as_mut() {
-                use std::io::Write;
-                stdin
-                    .write_all(text.as_bytes())
-                    .map_err(mlua::Error::external)?;
-            }
-
-            let status = child.wait().map_err(mlua::Error::external)?;
-            if !status.success() {
-                return Err(mlua::Error::external("pbcopy failed"));
-            }
-
-            Ok("Copied to clipboard".to_owned())
+            copy_text_to_clipboard(&text).map_err(mlua::Error::external)
         })?,
     )?;
 

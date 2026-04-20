@@ -66,6 +66,12 @@ pub fn open_settings(url: &str) -> Result<()> {
     run_quiet("open", &[url])
 }
 
+/// Writes plain text to the macOS clipboard using the native pasteboard API.
+pub fn copy_text_to_clipboard(text: &str) -> Result<String> {
+    write_clipboard_text(text)?;
+    Ok("Copied to clipboard".to_owned())
+}
+
 /// Captures the app currently considered frontmost by macOS.
 pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     let output = run_capture("lsappinfo", &["front"])?;
