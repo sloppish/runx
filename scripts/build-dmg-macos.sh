@@ -10,6 +10,7 @@ DMG_NAME=""
 SIGN_IDENTITY="${RUNX_CODESIGN_IDENTITY:-}"
 FORCE_AD_HOC_SIGN=0
 NOTARIZE=0
+UNIVERSAL=0
 NOTARY_APPLE_ID="${RUNX_NOTARY_APPLE_ID:-}"
 NOTARY_PASSWORD="${RUNX_NOTARY_PASSWORD:-}"
 NOTARY_TEAM_ID="${RUNX_NOTARY_TEAM_ID:-}"
@@ -21,6 +22,7 @@ Usage: scripts/build-dmg-macos.sh [options]
 Options:
   --out-dir PATH         Output directory for the app bundle and DMG (default: ./dist)
   --debug                Build with the debug profile instead of release
+  --universal            Build a universal app bundle before creating the DMG
   --volume-name NAME     Finder volume name inside the DMG (default: Runx)
   --dmg-name NAME        DMG file name (default: Runx-<version>-macos.dmg)
   --sign-identity NAME   Code-signing identity to use
@@ -62,6 +64,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --debug)
       PROFILE="debug"
+      shift
+      ;;
+    --universal)
+      UNIVERSAL=1
       shift
       ;;
     --volume-name)
@@ -125,6 +131,9 @@ fi
 PACKAGE_ARGS=("--out-dir" "$OUT_DIR")
 if [[ "$PROFILE" == "debug" ]]; then
   PACKAGE_ARGS+=("--debug")
+fi
+if [[ "$UNIVERSAL" -eq 1 ]]; then
+  PACKAGE_ARGS+=("--universal")
 fi
 if [[ "$SIGN_IDENTITY" == "-" ]]; then
   PACKAGE_ARGS+=("--ad-hoc-sign")

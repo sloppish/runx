@@ -8,6 +8,7 @@ PROFILE="release"
 OUT_DIR="$ROOT_DIR/dist"
 APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
 TRAY_ICON_SOURCE="$ROOT_DIR/assets/runx-status-template.svg"
+UNIVERSAL=0
 
 usage() {
   cat <<'EOF'
@@ -16,6 +17,7 @@ Usage: scripts/package-macos.sh [options]
 Options:
   --out-dir PATH         Bundle output directory (default: ./dist)
   --debug                Build with the debug profile instead of release
+  --universal            Build and package a universal binary for arm64 + x86_64 macOS
   --sign-identity NAME   Code-signing identity to use
                          (default: RUNX_CODESIGN_IDENTITY, then first Apple Development identity, then ad-hoc)
   --ad-hoc-sign          Force ad-hoc signing even if a real identity is available
@@ -54,6 +56,10 @@ while [[ $# -gt 0 ]]; do
       ;;
     --debug)
       PROFILE="debug"
+      shift
+      ;;
+    --universal)
+      UNIVERSAL=1
       shift
       ;;
     --sign-identity)
@@ -125,12 +131,32 @@ build_tray_icon() {
 
 APP_VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 
-if [[ "${PROFILE}" == "release" ]]; then
-  cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
-  BIN_PATH="$ROOT_DIR/target/release/runx"
+if [[ "$UNIVERSAL" -eq 1 ]]; then
+  targets=(aarch64-apple-darwin x86_64-apple-darwin)
+  cargo_args=(build --manifest-path "$ROOT_DIR/Cargo.toml")
+  if [[ "${PROFILE}" == "release" ]]; then
+    cargo_args+=(--release)
+  fi
+  for target in "${targets[@]}"; do
+    cargo_args+=(--target "$target")
+  done
+  cargo "${cargo_args[@]}"
+
+  UNIVERSAL_BIN_DIR="$ROOT_DIR/target/universal/$PROFILE"
+  mkdir -p "$UNIVERSAL_BIN_DIR"
+  BIN_PATH="$UNIVERSAL_BIN_DIR/runx"
+  lipo -create \
+    "$ROOT_DIR/target/aarch64-apple-darwin/$PROFILE/runx" \
+    "$ROOT_DIR/target/x86_64-apple-darwin/$PROFILE/runx" \
+    -output "$BIN_PATH"
 else
-  cargo build --manifest-path "$ROOT_DIR/Cargo.toml"
-  BIN_PATH="$ROOT_DIR/target/debug/runx"
+  if [[ "${PROFILE}" == "release" ]]; then
+    cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
+    BIN_PATH="$ROOT_DIR/target/release/runx"
+  else
+    cargo build --manifest-path "$ROOT_DIR/Cargo.toml"
+    BIN_PATH="$ROOT_DIR/target/debug/runx"
+  fi
 fi
 
 BUNDLE_PATH="$OUT_DIR/${APP_NAME}.app"
@@ -195,4 +221,7 @@ if [[ "$SIGN_IDENTITY" == "-" ]]; then
   printf 'Signed with ad-hoc identity\n'
 else
   printf 'Signed with %s\n' "$SIGN_IDENTITY"
+fi
+if [[ "$UNIVERSAL" -eq 1 ]]; then
+  lipo -info "$MACOS_PATH/runx"
 fi
