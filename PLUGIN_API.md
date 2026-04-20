@@ -122,12 +122,15 @@ Runx exposes a global `runx` table with these fields:
 - `runx.getenv(name) -> string|nil`
 - `runx.parse_args(raw) -> { string, ... }`
 - `runx.walk_files(root) -> { string, ... }`
+- `runx.read_text(path) -> string`
 - `runx.exec_capture(program, args, first_line_only?) -> string`
 - `runx.exec_status(program, args, silence_stderr?) -> true`
 - `runx.exec_json(program, args) -> table`
 - `runx.copy_text(text) -> string`
 - `runx.type_text(text) -> string`
 - `runx.home_dir() -> string`
+- `runx.plugin_path: string`
+- `runx.plugin_dir: string`
 
 Notes:
 

@@ -457,7 +457,7 @@ fn load_table_with_context(
     search_paths: &[PathBuf],
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
-    install_runtime(&lua, context, plugin_config, search_paths)?;
+    install_runtime(&lua, path, context, plugin_config, search_paths)?;
     let table: Table = lua
         .load(source)
         .set_name(path.to_string_lossy().as_ref())
@@ -468,12 +468,18 @@ fn load_table_with_context(
 
 fn install_runtime(
     lua: &Lua,
+    plugin_path: &Path,
     context: &PluginExecutionContext,
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
 ) -> Result<()> {
     let runtime = lua.create_table()?;
     let search_paths = search_paths.to_vec();
+    let plugin_path = plugin_path.to_path_buf();
+    let plugin_dir = plugin_path
+        .parent()
+        .map(Path::to_path_buf)
+        .unwrap_or_else(|| PathBuf::from("."));
     runtime.set("api_version", PLUGIN_API_VERSION)?;
 
     runtime.set(
@@ -500,6 +506,13 @@ fn install_runtime(
         "walk_files",
         lua.create_function(|_, root: String| {
             walk_files(Path::new(&root)).map_err(mlua::Error::external)
+        })?,
+    )?;
+
+    runtime.set(
+        "read_text",
+        lua.create_function(|_, path: String| {
+            fs::read_to_string(&path).map_err(mlua::Error::external)
         })?,
     )?;
 
@@ -589,6 +602,8 @@ fn install_runtime(
         })?,
     )?;
 
+    runtime.set("plugin_path", plugin_path.display().to_string())?;
+    runtime.set("plugin_dir", plugin_dir.display().to_string())?;
     runtime.set("plugin_config", lua.to_value(plugin_config)?)?;
 
     lua.globals().set("runx", runtime)?;
