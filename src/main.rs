@@ -1,3 +1,19 @@
+//! Runx is a native-feeling macOS launcher implemented as a single binary crate.
+//!
+//! The crate is intentionally split into focused internal modules so that the
+//! generated documentation mirrors the runtime architecture:
+//!
+//! - [`launcher`] integrates Tao/Wry, the async runtime, providers, and actions.
+//! - [`state`] owns pure launcher and search-session transitions.
+//! - [`providers`] contains the search sources and worker fan-out layer.
+//! - [`plugins`] hosts the Lua plugin runtime and command routing.
+//! - [`macos`] isolates platform-specific shell-outs and permissions.
+//! - [`types`] defines the shared events and data models passed between modules.
+//!
+//! `main.rs` itself stays deliberately small so that `cargo doc` starts from a
+//! high-level map of the codebase and then points you at the specialized
+//! modules.
+
 mod actions;
 mod assets;
 mod config;
@@ -25,6 +41,7 @@ use types::AppEvent;
 
 use crate::launcher::Launcher;
 
+/// Starts the launcher process and reports any fatal startup error to stderr.
 fn main() {
     if let Err(error) = run() {
         eprintln!("{error:#}");
@@ -32,6 +49,8 @@ fn main() {
     }
 }
 
+/// Builds the Tao event loop, registers the global hotkey, and hands control
+/// over to the native event loop.
 fn run() -> Result<()> {
     let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]

@@ -1,3 +1,9 @@
+//! Lua plugin hosting, routing, and validation.
+//!
+//! This module loads plugin files, exposes the `runx.*` runtime helpers to Lua,
+//! validates plugin-produced items and actions, and routes configured command
+//! prefixes to plugin search handlers.
+
 use std::{
     collections::{HashMap, HashSet},
     env,
@@ -20,6 +26,7 @@ use crate::{
 
 const PLUGIN_API_VERSION: u32 = 1;
 
+/// In-memory plugin registry plus the routing/config needed to execute plugins.
 #[derive(Clone, Default)]
 pub struct PluginHost {
     plugins: Vec<LuaPlugin>,
@@ -72,12 +79,14 @@ struct PluginItem {
     action: PluginActionPayload,
 }
 
+/// Minimal Rust context passed into plugin action execution.
 #[derive(Debug, Clone, Default)]
 pub struct PluginExecutionContext {
     pub previous_app: Option<FrontmostApp>,
 }
 
 impl PluginHost {
+    /// Loads all Lua plugins from the configured directories.
     pub fn load(
         directories: &[PathBuf],
         search_paths: &[PathBuf],
@@ -126,6 +135,7 @@ impl PluginHost {
         }
     }
 
+    /// Returns search items contributed by plugins for the current query.
     pub fn search(&self, query: &str) -> Result<Vec<SearchItem>> {
         if let Some((route, args)) = self.match_route(query) {
             let plugin = self
@@ -166,6 +176,7 @@ impl PluginHost {
         Ok(items)
     }
 
+    /// Runs the selected plugin action.
     pub fn run(
         &self,
         plugin_id: &str,

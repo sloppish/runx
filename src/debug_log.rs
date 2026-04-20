@@ -1,3 +1,5 @@
+//! Minimal file-based debug logging used during macOS packaging and launch triage.
+
 use std::{
     fs::{self, OpenOptions},
     io::Write,
@@ -5,6 +7,7 @@ use std::{
 
 use directories::BaseDirs;
 
+/// Appends a line to `~/Library/Application Support/runx/debug.log`.
 pub fn append(message: impl AsRef<str>) {
     let Some(base_dirs) = BaseDirs::new() else {
         return;

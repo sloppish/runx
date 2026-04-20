@@ -1,3 +1,5 @@
+//! Provider for currently open on-screen windows.
+
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -22,6 +24,7 @@ use crate::{
     types::{Action, SearchItem},
 };
 
+/// Searches the current on-screen window list with a short-lived cache.
 pub struct WindowsProvider {
     cache: std::sync::Mutex<WindowCache>,
     icons: Arc<IconCache>,
@@ -42,6 +45,7 @@ struct WindowRecord {
 }
 
 impl WindowsProvider {
+    /// Creates a window provider backed by the shared icon cache.
     pub fn new(icons: Arc<IconCache>) -> Self {
         Self {
             cache: std::sync::Mutex::new(WindowCache::default()),
@@ -49,6 +53,7 @@ impl WindowsProvider {
         }
     }
 
+    /// Returns the highest-scoring visible windows for the current query.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
         let windows = self.snapshot()?;
         let query = query.trim();

@@ -1,9 +1,12 @@
+//! Embeds the static frontend templates into a themed HTML document.
+
 use crate::config::UiConfig;
 
 const HTML_TEMPLATE: &str = include_str!("../ui/index.html");
 const STYLE_TEMPLATE: &str = include_str!("../ui/styles.css");
 const SCRIPT_SOURCE: &str = include_str!("../ui/app.js");
 
+/// Returns the full HTML document served into the embedded webview.
 pub fn html(theme: &UiConfig) -> String {
     HTML_TEMPLATE
         .replace("__RUNX_STYLE__", &theme_css(theme))

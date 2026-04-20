@@ -1,7 +1,13 @@
+//! Fuzzy scoring and final result ordering.
+//!
+//! Providers produce raw result sets; this module turns them into a stable
+//! ordered list that respects fuzzy score, provider priority, and result limits.
+
 use std::collections::HashSet;
 
 use crate::{config::RankingConfig, types::SearchItem};
 
+/// Returns a simple fuzzy score for `candidate` against `query`.
 pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
     let query = query.trim();
     if query.is_empty() {
@@ -63,6 +69,7 @@ pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
     score
 }
 
+/// Deduplicates, orders, and truncates the final merged result list.
 pub fn sort_and_trim(items: Vec<SearchItem>, ranking: &RankingConfig) -> Vec<SearchItem> {
     let mut seen = HashSet::new();
     let mut unique = items

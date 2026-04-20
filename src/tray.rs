@@ -1,3 +1,8 @@
+//! Menu bar tray integration.
+//!
+//! This module owns the status-item icon and its small menu, then translates
+//! tray interactions back into [`crate::types::AppEvent`] values.
+
 use std::{fs::File, io::BufReader, path::Path};
 
 use anyhow::{Context, Result, bail};
@@ -14,6 +19,7 @@ const TRAY_ID: &str = "runx-tray";
 const MENU_OPEN_ID: &str = "tray-open";
 const MENU_QUIT_ID: &str = "tray-quit";
 
+/// Holds the tray icon and menu resources for the lifetime of the app.
 pub struct TrayState {
     _tray: TrayIcon,
     _menu: Menu,
@@ -22,6 +28,7 @@ pub struct TrayState {
 }
 
 impl TrayState {
+    /// Installs the menu bar item and wires it to the app event loop.
     pub fn install(proxy: EventLoopProxy<AppEvent>) -> Result<Self> {
         let menu = Menu::new();
         let open_item = MenuItem::with_id(MENU_OPEN_ID, "Open Runx", true, None);

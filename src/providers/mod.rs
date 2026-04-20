@@ -1,3 +1,8 @@
+//! Search-provider fan-out and worker management.
+//!
+//! Each provider encapsulates one search source. [`ProviderSet`] owns the
+//! workers and starts a new search generation across all of them.
+
 pub mod apps;
 pub mod settings;
 pub mod spotlight;
@@ -35,8 +40,10 @@ pub struct ProviderSet {
 }
 
 impl ProviderSet {
+    /// Number of providers launched for each search generation.
     pub const PROVIDER_COUNT: usize = 5;
 
+    /// Builds all provider workers from shared config, plugins, and icon state.
     pub fn new(
         config: Arc<Config>,
         plugins: Arc<PluginHost>,
@@ -72,10 +79,12 @@ impl ProviderSet {
         })
     }
 
+    /// Returns how many provider responses a session should wait for.
     pub fn provider_count(&self) -> usize {
         Self::PROVIDER_COUNT
     }
 
+    /// Starts a new search request across all providers.
     pub fn spawn_search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
         self.windows
             .search(proxy.clone(), generation, query.clone());

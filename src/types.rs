@@ -1,6 +1,12 @@
+//! Shared data structures exchanged between modules.
+//!
+//! These types are the common language between the launcher runtime, providers,
+//! plugins, and the embedded frontend.
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
+/// Canonical internal representation of one search result candidate.
 #[derive(Debug, Clone)]
 pub struct SearchItem {
     pub id: String,
@@ -13,6 +19,11 @@ pub struct SearchItem {
     pub action: Action,
 }
 
+/// Validated plugin action payload passed from Lua back into Rust.
+///
+/// The payload contract stays intentionally small: a required `kind` plus
+/// arbitrary extra JSON-like fields preserved for the plugin's `run(action)`
+/// handler.
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct PluginActionPayload {
     pub kind: String,
@@ -21,12 +32,14 @@ pub struct PluginActionPayload {
 }
 
 impl PluginActionPayload {
+    /// Converts the payload back into a JSON object for passing into Lua.
     pub fn as_json(&self) -> JsonValue {
         let mut object = self.fields.clone();
         object.insert("kind".to_owned(), JsonValue::String(self.kind.clone()));
         JsonValue::Object(object)
     }
 
+    /// Validates the minimal contract Runx expects from plugin action payloads.
     pub fn validate(&self) -> Result<(), String> {
         if self.kind.trim().is_empty() {
             return Err("action.kind must not be empty".to_owned());
@@ -47,6 +60,7 @@ impl PluginActionPayload {
         Ok(())
     }
 
+    /// Heuristic used to preflight Accessibility for typing-like actions.
     pub fn likely_needs_accessibility(&self) -> bool {
         let kind = self.kind.as_str();
         kind == "type"
@@ -56,6 +70,7 @@ impl PluginActionPayload {
     }
 }
 
+/// Actions that Runx can execute after a search result is activated.
 #[derive(Debug, Clone)]
 pub enum Action {
     OpenApplication {
@@ -79,6 +94,7 @@ pub enum Action {
 }
 
 impl Action {
+    /// Returns whether executing this action is likely to require Accessibility.
     pub fn likely_needs_accessibility(&self) -> bool {
         match self {
             Self::FocusWindow { .. } => true,
@@ -90,6 +106,7 @@ impl Action {
     }
 }
 
+/// User events sent through Tao's custom event channel.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     Frontend(FrontendCommand),
@@ -116,6 +133,7 @@ pub enum AppEvent {
     },
 }
 
+/// Commands emitted by the embedded frontend back into the Rust event loop.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FrontendCommand {
@@ -125,6 +143,7 @@ pub enum FrontendCommand {
     Hide,
 }
 
+/// Serialized frontend state pushed into the webview on each render.
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewState {
     pub query: String,
@@ -132,6 +151,7 @@ pub struct ViewState {
     pub status: Option<StatusLine>,
 }
 
+/// One visible row in the launcher result list.
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewItem {
     pub title: String,
@@ -142,6 +162,7 @@ pub struct ViewItem {
     pub compact: bool,
 }
 
+/// Short status line shown under the result list.
 #[derive(Debug, Clone, Serialize)]
 pub struct StatusLine {
     pub kind: &'static str,

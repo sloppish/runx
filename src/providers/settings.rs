@@ -1,3 +1,5 @@
+//! Provider for System Settings panes and extensions.
+
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -14,6 +16,7 @@ use crate::{
     types::{Action, SearchItem},
 };
 
+/// Searches a locally indexed list of System Settings items.
 pub struct SettingsProvider {
     items: Vec<SettingRecord>,
     icons: Arc<IconCache>,
@@ -34,6 +37,7 @@ struct BundleMetadata {
 }
 
 impl SettingsProvider {
+    /// Builds the local settings index from sidebar metadata and bundle scans.
     pub fn new(icons: Arc<IconCache>) -> Result<Self> {
         let bundle_map = scan_bundle_metadata()?;
         let ordered_ids = read_sidebar_ids()?;
@@ -62,6 +66,7 @@ impl SettingsProvider {
         Ok(Self { items, icons })
     }
 
+    /// Returns fuzzy matches for System Settings items.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
         let query = query.trim();
         if query.is_empty() {

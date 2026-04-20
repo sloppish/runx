@@ -1,3 +1,9 @@
+//! Pure launcher and search-session state.
+//!
+//! This module deliberately contains no Tao/Wry or macOS side effects, which
+//! makes it the best place to understand and test how searches reset, how stale
+//! provider results are ignored, and how frontend view state is assembled.
+
 use std::collections::HashMap;
 
 use crate::{
@@ -6,6 +12,7 @@ use crate::{
     types::{SearchItem, StatusLine, ViewItem, ViewState},
 };
 
+/// Top-level visibility and search-session state for the launcher.
 #[derive(Default)]
 pub struct AppState {
     visible: bool,
@@ -14,45 +21,54 @@ pub struct AppState {
 }
 
 impl AppState {
+    /// Creates a new hidden launcher state.
     pub fn new() -> Self {
         Self::default()
     }
 
+    /// Marks the launcher as visible and resets the current session.
     pub fn show(&mut self) {
         self.visible = true;
         self.focused_since_show = false;
         self.session.reset();
     }
 
+    /// Marks the launcher as hidden and clears any current session state.
     pub fn hide(&mut self) {
         self.visible = false;
         self.focused_since_show = false;
         self.session.reset();
     }
 
+    /// Returns whether the launcher is currently visible.
     pub fn is_visible(&self) -> bool {
         self.visible
     }
 
+    /// Returns whether the window has focused since the last `show()`.
     pub fn focused_since_show(&self) -> bool {
         self.focused_since_show
     }
 
+    /// Notes a native focus event for the launcher window.
     pub fn note_window_focused(&mut self) {
         if self.visible {
             self.focused_since_show = true;
         }
     }
 
+    /// Borrows the current search session.
     pub fn session(&self) -> &SearchSession {
         &self.session
     }
 
+    /// Mutably borrows the current search session.
     pub fn session_mut(&mut self) -> &mut SearchSession {
         &mut self.session
     }
 }
 
+/// Search-specific state for one launcher session.
 #[derive(Default)]
 pub struct SearchSession {
     query: String,
@@ -65,6 +81,7 @@ pub struct SearchSession {
 }
 
 impl SearchSession {
+    /// Clears query, status, and result state, invalidating older generations.
     pub fn reset(&mut self) {
         self.generation = self.generation.wrapping_add(1);
         self.search_token = self.search_token.wrapping_add(1);
@@ -75,20 +92,24 @@ impl SearchSession {
         self.status = None;
     }
 
+    /// Returns the user-visible query string.
     pub fn query(&self) -> &str {
         &self.query
     }
 
+    /// Replaces the current query and returns the new debounce token.
     pub fn set_query(&mut self, query: String) -> u64 {
         self.query = query;
         self.search_token = self.search_token.wrapping_add(1);
         self.search_token
     }
 
+    /// Returns the token for the most recently scheduled search.
     pub fn search_token(&self) -> u64 {
         self.search_token
     }
 
+    /// Starts a new provider search generation and updates the status line.
     pub fn begin_search(&mut self, provider_count: usize) -> u64 {
         self.generation = self.generation.wrapping_add(1);
         self.pending_providers = provider_count;
@@ -104,6 +125,7 @@ impl SearchSession {
         self.generation
     }
 
+    /// Applies provider results if they still belong to the active generation.
     pub fn apply_provider_items(
         &mut self,
         generation: u64,
@@ -119,6 +141,7 @@ impl SearchSession {
         true
     }
 
+    /// Applies a provider error if it still belongs to the active generation.
     pub fn apply_provider_error(
         &mut self,
         generation: u64,
@@ -137,14 +160,17 @@ impl SearchSession {
         true
     }
 
+    /// Overrides the current status line.
     pub fn set_status(&mut self, status: Option<StatusLine>) {
         self.status = status;
     }
 
+    /// Returns the rendered item at the given visible list index.
     pub fn rendered_item(&self, index: usize) -> Option<&SearchItem> {
         self.rendered_items.get(index)
     }
 
+    /// Rebuilds the rendered item list from current provider results.
     pub fn refresh_rendered_items(&mut self, ranking: &RankingConfig) {
         let all_items = self
             .provider_items
@@ -159,6 +185,7 @@ impl SearchSession {
         }
     }
 
+    /// Converts the session into the frontend-facing serialized view model.
     pub fn view_state(&self) -> ViewState {
         let items = self
             .rendered_items

@@ -1,3 +1,9 @@
+//! macOS-specific shell-outs and permission-sensitive integrations.
+//!
+//! If something talks to `open`, `osascript`, `lsappinfo`, or Accessibility
+//! trust, it belongs here rather than leaking platform details into the rest of
+//! the launcher.
+
 use std::{
     process::{Command, Stdio},
     thread,
@@ -23,6 +29,7 @@ unsafe extern "C" {
     fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> Boolean;
 }
 
+/// Snapshot of the app that was frontmost before Runx appeared.
 #[derive(Debug, Clone, Default)]
 pub struct FrontmostApp {
     pub name: Option<String>,
@@ -31,6 +38,7 @@ pub struct FrontmostApp {
 }
 
 impl FrontmostApp {
+    /// Human-friendly app name used in diagnostics and fallbacks.
     pub fn display_name(&self) -> &str {
         self.name
             .as_deref()
@@ -40,18 +48,22 @@ impl FrontmostApp {
     }
 }
 
+/// Opens an application bundle path through Launch Services.
 pub fn open_application(path: &str) -> Result<()> {
     run_quiet("open", &[path])
 }
 
+/// Opens an arbitrary path through Launch Services.
 pub fn open_path(path: &str) -> Result<()> {
     run_quiet("open", &[path])
 }
 
+/// Opens a System Settings deep-link URL.
 pub fn open_settings(url: &str) -> Result<()> {
     run_quiet("open", &[url])
 }
 
+/// Captures the app currently considered frontmost by macOS.
 pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     let output = run_capture("lsappinfo", &["front"])?;
     let Some(asn) = output
@@ -75,6 +87,7 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     Ok(Some(app))
 }
 
+/// Attempts to focus a specific window, falling back to app activation.
 pub fn focus_window(app_name: &str, window_title: &str) -> Result<Option<String>> {
     let script = r#"
 on run argv
@@ -115,6 +128,7 @@ end run
     }
 }
 
+/// Types text into the app that was focused before Runx was shown.
 pub fn type_text_into_previous_app(
     text: &str,
     previous_app: Option<&FrontmostApp>,
@@ -214,6 +228,7 @@ fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
     bail!("failed to reactivate {}", app.display_name());
 }
 
+/// Returns whether the current process is trusted for Accessibility APIs.
 pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
     let prompt_key = unsafe { CFString::wrap_under_get_rule(kAXTrustedCheckOptionPrompt) };
     let prompt_value = if prompt {

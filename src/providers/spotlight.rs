@@ -1,3 +1,5 @@
+//! Provider backed by the `mdfind` Spotlight CLI.
+
 use std::path::Path;
 use std::process::Command;
 use std::sync::Arc;
@@ -10,15 +12,18 @@ use crate::{
     types::{Action, SearchItem},
 };
 
+/// Searches Spotlight for app and preference-pane style matches.
 pub struct SpotlightProvider {
     icons: Arc<IconCache>,
 }
 
 impl SpotlightProvider {
+    /// Creates a Spotlight provider backed by the shared icon cache.
     pub fn new(icons: Arc<IconCache>) -> Self {
         Self { icons }
     }
 
+    /// Returns Spotlight matches for the current query.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
         let trimmed = query.trim();
         if trimmed.len() < 2 {

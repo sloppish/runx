@@ -1,9 +1,15 @@
+//! Thin adapter from selected result actions to concrete side effects.
+//!
+//! This module stays intentionally small: it pattern-matches on [`Action`] and
+//! delegates the actual work to [`crate::macos`] or the plugin runtime.
+
 use anyhow::Result;
 
 use crate::macos;
 use crate::plugins::{PluginExecutionContext, PluginHost};
 use crate::types::Action;
 
+/// Executes the action associated with the currently selected search result.
 pub fn execute_action(
     action: &Action,
     plugins: &PluginHost,

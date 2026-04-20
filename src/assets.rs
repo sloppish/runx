@@ -1,3 +1,8 @@
+//! Asset lookup and rendering for packaged versus source-run builds.
+//!
+//! The tray icon can come from bundled app resources or be rendered from the
+//! repository asset on demand during development.
+
 use std::{
     collections::hash_map::DefaultHasher,
     fs,
@@ -13,6 +18,7 @@ const TRAY_ICON_RESOURCE: &str = "RunxStatusTemplate.png";
 const TRAY_ICON_SOURCE: &str = "assets/runx-status-template.svg";
 const TRAY_ICON_SIZE: u32 = 36;
 
+/// Returns the PNG path used by the tray integration.
 pub fn tray_icon_path() -> Result<PathBuf> {
     if let Some(path) = bundled_resource(TRAY_ICON_RESOURCE) {
         return Ok(path);

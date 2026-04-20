@@ -1,3 +1,9 @@
+//! Loading and normalizing `config.toml`.
+//!
+//! The config layer owns both user-facing deserialization and the derived
+//! runtime values that the rest of the launcher needs, such as resolved plugin
+//! directories, command routes, and search paths.
+
 use std::{
     collections::{HashMap, HashSet},
     fs,
@@ -48,12 +54,14 @@ text = "#1f1a16"
 muted = "#756759"
 "##;
 
+/// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
     pub config: Config,
     pub plugin_dirs: Vec<PathBuf>,
     pub plugin_search_paths: Vec<PathBuf>,
 }
 
+/// Root configuration object deserialized from `config.toml`.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct Config {
@@ -65,6 +73,7 @@ pub struct Config {
     pub ui: UiConfig,
 }
 
+/// User-facing global hotkey configuration.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct HotKeyConfig {
@@ -72,6 +81,7 @@ pub struct HotKeyConfig {
     pub modifiers: Vec<String>,
 }
 
+/// Launcher window behavior and geometry.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct WindowConfig {
@@ -81,6 +91,7 @@ pub struct WindowConfig {
     pub always_on_top: bool,
 }
 
+/// Ranking and truncation rules for the merged result list.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct RankingConfig {
@@ -89,6 +100,7 @@ pub struct RankingConfig {
     pub result_limit: usize,
 }
 
+/// Plugin discovery and subprocess lookup configuration.
 #[derive(Debug, Clone, Deserialize, Default)]
 #[serde(default)]
 pub struct PluginsConfig {
@@ -96,6 +108,7 @@ pub struct PluginsConfig {
     pub search_paths: Vec<String>,
 }
 
+/// Theme tokens injected into the embedded HTML/CSS UI templates.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(default)]
 pub struct UiConfig {
@@ -108,6 +121,7 @@ pub struct UiConfig {
 }
 
 impl LoadedConfig {
+    /// Loads the user config, writing the default template on first launch.
     pub fn load() -> Result<Self> {
         let base_dirs =
             BaseDirs::new().context("could not resolve the current user's home directory")?;
@@ -152,10 +166,12 @@ impl LoadedConfig {
 }
 
 impl Config {
+    /// Converts the configured key/modifier pair into a `global_hotkey` binding.
     pub fn hotkey(&self) -> Result<HotKey> {
         self.hotkey.to_hotkey()
     }
 
+    /// Returns per-plugin config tables with routing metadata stripped out.
     pub fn plugin_config(&self) -> Result<HashMap<String, JsonValue>> {
         self.plugin
             .iter()
@@ -169,6 +185,7 @@ impl Config {
             .collect()
     }
 
+    /// Returns the command-prefix routing table for configured plugins.
     pub fn plugin_routes(&self) -> Result<HashMap<String, HashMap<String, String>>> {
         let mut routes_by_plugin = HashMap::new();
 
@@ -220,6 +237,7 @@ impl Default for HotKeyConfig {
 }
 
 impl HotKeyConfig {
+    /// Parses the config strings into `global_hotkey` types.
     pub fn to_hotkey(&self) -> Result<HotKey> {
         let mut modifiers = Modifiers::empty();
         for modifier in &self.modifiers {
@@ -258,6 +276,7 @@ impl Default for RankingConfig {
 }
 
 impl RankingConfig {
+    /// Returns the configured tie-break priority for a provider name.
     pub fn provider_rank(&self, provider: &str) -> usize {
         self.provider_order
             .iter()

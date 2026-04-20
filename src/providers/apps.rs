@@ -1,3 +1,5 @@
+//! Provider for installed application bundles.
+
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
@@ -15,6 +17,7 @@ use crate::{
     types::{Action, SearchItem},
 };
 
+/// Searches the local app bundle index built from common application roots.
 pub struct AppProvider {
     apps: Vec<AppRecord>,
     icons: Arc<IconCache>,
@@ -28,6 +31,7 @@ struct AppRecord {
 }
 
 impl AppProvider {
+    /// Scans well-known application directories and builds the in-memory index.
     pub fn new(icons: Arc<IconCache>) -> Result<Self> {
         let base_dirs = BaseDirs::new().context("could not determine the home directory")?;
         let mut roots = vec![
@@ -82,6 +86,7 @@ impl AppProvider {
         Ok(Self { apps, icons })
     }
 
+    /// Returns fuzzy matches for installed apps.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
         if query.trim().is_empty() {
             return Ok(Vec::new());

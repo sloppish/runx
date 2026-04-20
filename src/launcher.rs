@@ -1,3 +1,12 @@
+//! High-level launcher orchestration.
+//!
+//! This module is the integration layer between:
+//!
+//! - the pure state model in [`crate::state`]
+//! - Tao/Wry window and webview primitives
+//! - async provider fan-out
+//! - action execution and tray integration
+
 use std::{
     sync::Arc,
     time::{Duration, Instant},
@@ -33,6 +42,14 @@ const RENDER_COALESCE: Duration = Duration::from_millis(16);
 const SEARCH_DEBOUNCE: Duration = Duration::from_millis(24);
 const RUNX_BUNDLE_ID: &str = "dev.runx.launcher";
 
+/// Owns the live launcher runtime and applies UI, provider, and system events.
+///
+/// In practice, this is the top-level coordinator for the running app:
+///
+/// - it owns the Tao window and Wry webview
+/// - it starts provider searches and receives their results
+/// - it forwards state into the frontend renderer
+/// - it handles side effects such as tray setup and action execution
 pub struct Launcher {
     loaded: LoadedConfig,
     runtime: Runtime,
@@ -59,6 +76,7 @@ fn looks_like_runx(app: &crate::macos::FrontmostApp) -> bool {
 }
 
 impl Launcher {
+    /// Builds the launcher from config, plugins, providers, and webview UI.
     pub fn bootstrap(
         event_loop: &EventLoopWindowTarget<AppEvent>,
         proxy: EventLoopProxy<AppEvent>,
@@ -116,10 +134,12 @@ impl Launcher {
         })
     }
 
+    /// Returns the configured global hotkey used to toggle the launcher.
     pub fn hotkey(&self) -> Result<global_hotkey::hotkey::HotKey> {
         self.loaded.config.hotkey()
     }
 
+    /// Shows the launcher if hidden, or hides it if already visible.
     pub fn toggle(&mut self) -> Result<()> {
         if self.state.is_visible() {
             self.hide()?;
@@ -130,6 +150,7 @@ impl Launcher {
         Ok(())
     }
 
+    /// Installs the menu bar tray item on first use.
     pub fn ensure_tray(&mut self) -> Result<()> {
         if self.tray.is_none() {
             self.tray = Some(tray::TrayState::install(self.proxy.clone())?);
@@ -137,6 +158,7 @@ impl Launcher {
         Ok(())
     }
 
+    /// Applies Tao `WindowEvent`s to visibility and focus state.
     pub fn handle_window_event(&mut self, event: WindowEvent) -> Result<()> {
         match event {
             WindowEvent::CloseRequested => self.hide()?,
@@ -151,6 +173,7 @@ impl Launcher {
         Ok(())
     }
 
+    /// Handles app-specific events emitted by the frontend, tray, and providers.
     pub fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
             AppEvent::TrayToggle => self.toggle()?,
@@ -206,6 +229,7 @@ impl Launcher {
         Ok(())
     }
 
+    /// Pushes an error message into the UI status line.
     pub fn set_error(&mut self, message: String) {
         self.state.session_mut().set_status(Some(StatusLine {
             kind: "error",

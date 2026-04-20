@@ -1,3 +1,8 @@
+//! Icon extraction and caching for search results.
+//!
+//! Providers ask this module for icons so they can stay focused on search
+//! semantics instead of plist parsing, process inspection, and PNG rendering.
+
 use std::{
     collections::{HashMap, hash_map::DefaultHasher},
     fs,
@@ -15,6 +20,7 @@ use plist::{Dictionary, Value};
 const SYSTEM_SETTINGS_APP: &str = "/System/Applications/System Settings.app";
 const ICON_RENDER_SIZE: u32 = 128;
 
+/// In-memory and on-disk cache for bundle and process icons.
 pub struct IconCache {
     cache_dir: PathBuf,
     icons: Mutex<HashMap<String, Option<String>>>,
@@ -22,6 +28,7 @@ pub struct IconCache {
 }
 
 impl IconCache {
+    /// Creates the icon cache rooted in the user's cache directory.
     pub fn new() -> Result<Self> {
         let base_dirs =
             BaseDirs::new().context("could not resolve the current user's home directory")?;
@@ -36,6 +43,7 @@ impl IconCache {
         })
     }
 
+    /// Resolves an icon for an application bundle path and returns a data URL.
     pub fn icon_for_bundle<P: AsRef<Path>>(&self, bundle_path: P) -> Option<String> {
         let bundle_path = bundle_path.as_ref();
         let key = format!("bundle:{}", bundle_path.display());
@@ -48,6 +56,7 @@ impl IconCache {
         icon
     }
 
+    /// Resolves an icon for the owning app of a process id.
     pub fn icon_for_pid(&self, pid: i64) -> Option<String> {
         let bundle_path = {
             let cache = self
@@ -73,6 +82,7 @@ impl IconCache {
         self.icon_for_bundle(bundle_path)
     }
 
+    /// Returns the System Settings app icon.
     pub fn system_settings_icon(&self) -> Option<String> {
         self.icon_for_bundle(SYSTEM_SETTINGS_APP)
     }
