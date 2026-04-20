@@ -3,7 +3,8 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::Arc,
+    sync::{Arc, Mutex},
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result};
@@ -19,7 +20,8 @@ use crate::{
 
 /// Searches the local app bundle index built from common application roots.
 pub struct AppProvider {
-    apps: Vec<AppRecord>,
+    roots: Vec<PathBuf>,
+    index: Mutex<AppIndex>,
     icons: Arc<IconCache>,
 }
 
@@ -29,6 +31,13 @@ struct AppRecord {
     path: String,
     score_adjustment: i64,
 }
+
+struct AppIndex {
+    apps: Vec<AppRecord>,
+    scanned_at: Instant,
+}
+
+const APP_INDEX_REFRESH_COOLDOWN: Duration = Duration::from_secs(10);
 
 impl AppProvider {
     /// Scans well-known application directories and builds the in-memory index.
@@ -43,47 +52,16 @@ impl AppProvider {
         ];
         roots.retain(|path| path.exists());
 
-        let mut seen = HashSet::new();
-        let mut apps = Vec::new();
+        let apps = scan_apps(&roots);
 
-        for root in roots {
-            for entry in WalkDir::new(root)
-                .max_depth(4)
-                .follow_links(true)
-                .into_iter()
-                .filter_entry(filter_entry)
-                .flatten()
-            {
-                if !entry.file_type().is_dir() {
-                    continue;
-                }
-
-                let path = entry.path();
-                if path.extension().and_then(|value| value.to_str()) != Some("app") {
-                    continue;
-                }
-
-                let normalized = path.to_string_lossy().to_string();
-                if !seen.insert(normalized.clone()) {
-                    continue;
-                }
-
-                let name = path
-                    .file_stem()
-                    .and_then(|value| value.to_str())
-                    .unwrap_or("Application")
-                    .to_owned();
-                let score_adjustment = app_score_adjustment(path);
-                apps.push(AppRecord {
-                    name,
-                    path: normalized,
-                    score_adjustment,
-                });
-            }
-        }
-
-        apps.sort_by(|left, right| left.name.cmp(&right.name));
-        Ok(Self { apps, icons })
+        Ok(Self {
+            roots,
+            index: Mutex::new(AppIndex {
+                apps,
+                scanned_at: Instant::now(),
+            }),
+            icons,
+        })
     }
 
     /// Returns fuzzy matches for installed apps.
@@ -92,32 +70,132 @@ impl AppProvider {
             return Ok(Vec::new());
         }
 
-        let mut matches = Vec::new();
-        for app in &self.apps {
-            let score = fuzzy_score(&app.name, query) + app.score_adjustment;
-            if score <= 0 {
+        let mut matches = {
+            let index = self
+                .index
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            score_apps(&index.apps, query, limit)
+        };
+
+        if !matches.is_empty() {
+            return Ok(build_items(matches, &self.icons));
+        }
+
+        let rescanned = self.refresh_if_stale();
+        if rescanned {
+            let index = self
+                .index
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            matches = score_apps(&index.apps, query, limit);
+        }
+
+        Ok(build_items(matches, &self.icons))
+    }
+
+    fn refresh_if_stale(&self) -> bool {
+        let should_refresh = {
+            let index = self
+                .index
+                .lock()
+                .unwrap_or_else(|poison| poison.into_inner());
+            index.scanned_at.elapsed() >= APP_INDEX_REFRESH_COOLDOWN
+        };
+
+        if !should_refresh {
+            return false;
+        }
+
+        let apps = scan_apps(&self.roots);
+        let mut index = self
+            .index
+            .lock()
+            .unwrap_or_else(|poison| poison.into_inner());
+        if index.scanned_at.elapsed() < APP_INDEX_REFRESH_COOLDOWN {
+            return false;
+        }
+
+        index.apps = apps;
+        index.scanned_at = Instant::now();
+        true
+    }
+}
+
+fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
+    let mut seen = HashSet::new();
+    let mut apps = Vec::new();
+
+    for root in roots {
+        for entry in WalkDir::new(root)
+            .max_depth(4)
+            .follow_links(true)
+            .into_iter()
+            .filter_entry(filter_entry)
+            .flatten()
+        {
+            if !entry.file_type().is_dir() {
                 continue;
             }
 
-            matches.push((score, app.clone()));
+            let path = entry.path();
+            if path.extension().and_then(|value| value.to_str()) != Some("app") {
+                continue;
+            }
+
+            let normalized = path.to_string_lossy().to_string();
+            if !seen.insert(normalized.clone()) {
+                continue;
+            }
+
+            let name = path
+                .file_stem()
+                .and_then(|value| value.to_str())
+                .unwrap_or("Application")
+                .to_owned();
+            let score_adjustment = app_score_adjustment(path);
+            apps.push(AppRecord {
+                name,
+                path: normalized,
+                score_adjustment,
+            });
+        }
+    }
+
+    apps.sort_by(|left, right| left.name.cmp(&right.name));
+    apps
+}
+
+fn score_apps(apps: &[AppRecord], query: &str, limit: usize) -> Vec<(i64, AppRecord)> {
+    let mut matches = Vec::new();
+    for app in apps {
+        let score = fuzzy_score(&app.name, query) + app.score_adjustment;
+        if score <= 0 {
+            continue;
         }
 
-        matches.sort_by(|left, right| right.0.cmp(&left.0));
-        matches.truncate(limit);
-        Ok(matches
-            .into_iter()
-            .map(|(score, app)| SearchItem {
-                id: format!("app:{}", app.path),
-                provider: "apps".to_owned(),
-                badge: "APP".to_owned(),
-                icon: self.icons.icon_for_bundle(&app.path),
-                title: app.name,
-                subtitle: app.path.clone(),
-                raw_score: score,
-                action: Action::OpenApplication { path: app.path },
-            })
-            .collect())
+        matches.push((score, app.clone()));
     }
+
+    matches.sort_by(|left, right| right.0.cmp(&left.0));
+    matches.truncate(limit);
+    matches
+}
+
+fn build_items(matches: Vec<(i64, AppRecord)>, icons: &IconCache) -> Vec<SearchItem> {
+    matches
+        .into_iter()
+        .map(|(score, app)| SearchItem {
+            id: format!("app:{}", app.path),
+            provider: "apps".to_owned(),
+            badge: "APP".to_owned(),
+            icon: icons.icon_for_bundle(&app.path),
+            title: app.name,
+            subtitle: app.path.clone(),
+            raw_score: score,
+            action: Action::OpenApplication { path: app.path },
+        })
+        .collect()
 }
 
 fn filter_entry(entry: &DirEntry) -> bool {
