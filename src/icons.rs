@@ -17,7 +17,10 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use directories::BaseDirs;
 use plist::{Dictionary, Value};
 
-const SYSTEM_SETTINGS_APP: &str = "/System/Applications/System Settings.app";
+const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
+    "/System/Applications/System Settings.app",
+    "/System/Applications/System Preferences.app",
+];
 const ICON_RENDER_SIZE: u32 = 128;
 
 /// In-memory and on-disk cache for bundle and process icons.
@@ -78,7 +81,13 @@ impl IconCache {
 
     /// Returns the System Settings app icon.
     pub fn system_settings_icon(&self) -> Option<String> {
-        self.icon_for_bundle(SYSTEM_SETTINGS_APP)
+        for bundle_path in SYSTEM_SETTINGS_APP_CANDIDATES {
+            if let Some(icon) = self.icon_for_bundle(bundle_path) {
+                return Some(icon);
+            }
+        }
+
+        Some(system_settings_fallback_icon())
     }
 
     fn cached_icon(&self, key: &str) -> Option<Option<String>> {
@@ -254,6 +263,31 @@ fn stable_hash(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
     format!("{:016x}", hasher.finish())
+}
+
+fn system_settings_fallback_icon() -> String {
+    let svg = r##"<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128">
+  <defs>
+    <linearGradient id="bg" x1="20" y1="16" x2="108" y2="112" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#8fb2e6"/>
+      <stop offset="1" stop-color="#4f6f9d"/>
+    </linearGradient>
+  </defs>
+  <rect x="10" y="10" width="108" height="108" rx="28" fill="url(#bg)"/>
+  <g fill="none" stroke="#f6f9ff" stroke-linecap="round" stroke-linejoin="round" stroke-width="9">
+    <path d="M34 43h60"/>
+    <path d="M34 64h60"/>
+    <path d="M34 85h60"/>
+    <circle cx="50" cy="43" r="10" fill="#f6f9ff" stroke="none"/>
+    <circle cx="80" cy="64" r="10" fill="#f6f9ff" stroke="none"/>
+    <circle cx="60" cy="85" r="10" fill="#f6f9ff" stroke="none"/>
+  </g>
+</svg>"##;
+
+    format!(
+        "data:image/svg+xml;base64,{}",
+        STANDARD.encode(svg.as_bytes())
+    )
 }
 
 #[cfg(test)]
