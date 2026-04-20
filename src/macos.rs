@@ -15,12 +15,15 @@ use core_foundation::{
     base::TCFType, boolean::CFBoolean, dictionary::CFDictionary, string::CFString,
 };
 use core_foundation_sys::{base::Boolean, dictionary::CFDictionaryRef, string::CFStringRef};
+use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
+use objc2_foundation::NSString;
 
 use crate::debug_log;
 
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const PRIVACY_AUTOMATION: &str = "Privacy_Automation";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
+const CLIPBOARD_PASTE_DELAY: Duration = Duration::from_millis(90);
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -149,6 +152,11 @@ pub fn type_text_into_previous_app(
     reactivate_previous_app(previous_app)?;
     debug_log::append("type_text_into_previous_app reactivated previous app");
 
+    if requires_clipboard_paste(text) {
+        debug_log::append("type_text_into_previous_app using clipboard paste path");
+        return paste_text_into_previous_app(text);
+    }
+
     let script = r#"
 on run argv
     tell application "System Events"
@@ -186,6 +194,57 @@ end run
     }
 
     bail!("{}", output.stderr);
+}
+
+fn paste_text_into_previous_app(text: &str) -> Result<String> {
+    let previous_clipboard = read_clipboard_text().ok();
+    write_clipboard_text(text)?;
+    thread::sleep(CLIPBOARD_PASTE_DELAY);
+
+    let script = r#"
+tell application "System Events"
+    keystroke "v" using command down
+end tell
+"#;
+    let output = run_output("osascript", &["-e", script])
+        .context("failed to launch osascript for clipboard paste")?;
+    debug_log::append(format!(
+        "paste_text_into_previous_app osascript status={} stderr={:?}",
+        output.status, output.stderr
+    ));
+
+    thread::sleep(CLIPBOARD_PASTE_DELAY);
+    if let Some(previous) = previous_clipboard.as_deref() {
+        let _ = write_clipboard_text(previous);
+    }
+
+    if output.status.success() {
+        return Ok("Typed into the previous app".to_owned());
+    }
+
+    if automation_denied(&output.stderr) {
+        open_automation_settings();
+        bail!(
+            "macOS blocked Apple Events to System Events. Allow your terminal/runx under System Settings > Privacy & Security > Automation, then retry."
+        );
+    }
+
+    if accessibility_denied(&output.stderr) {
+        open_accessibility_settings();
+        bail!(
+            "macOS blocked assistive access while typing. Enable your terminal/runx in Privacy & Security > Accessibility, then retry."
+        );
+    }
+
+    if output.stderr.is_empty() {
+        bail!("typing failed for an unknown macOS reason");
+    }
+
+    bail!("{}", output.stderr);
+}
+
+fn requires_clipboard_paste(text: &str) -> bool {
+    !text.is_ascii()
 }
 
 fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
@@ -300,6 +359,29 @@ fn run_capture(program: &str, args: &[&str]) -> Result<String> {
     Ok(output.stdout)
 }
 
+fn read_clipboard_text() -> Result<String> {
+    let pasteboard = NSPasteboard::generalPasteboard();
+    let text = pasteboard
+        .stringForType(pasteboard_type_string())
+        .ok_or_else(|| anyhow::anyhow!("clipboard does not currently contain plain text"))?;
+    Ok(text.to_string())
+}
+
+fn write_clipboard_text(text: &str) -> Result<()> {
+    let pasteboard = NSPasteboard::generalPasteboard();
+    pasteboard.clearContents();
+    let text = NSString::from_str(text);
+    if pasteboard.setString_forType(&text, pasteboard_type_string()) {
+        return Ok(());
+    }
+    bail!("failed to write plain text to the macOS pasteboard")
+}
+
+fn pasteboard_type_string() -> &'static objc2_app_kit::NSPasteboardType {
+    // SAFETY: Apple exports `NSPasteboardTypeString` as a process-global constant.
+    unsafe { NSPasteboardTypeString }
+}
+
 fn run_quiet(program: &str, args: &[&str]) -> Result<()> {
     let status = Command::new(program)
         .args(args)
@@ -340,7 +422,7 @@ fn run_output(program: &str, args: &[&str]) -> Result<CommandOutput> {
 mod tests {
     use std::path::Path;
 
-    use super::parse_lsappinfo_field;
+    use super::{parse_lsappinfo_field, requires_clipboard_paste};
 
     #[test]
     fn parses_quoted_lsappinfo_fields() {
@@ -371,5 +453,15 @@ mod tests {
                 .and_then(|value| value.to_str()),
             Some("Alacritty.app")
         );
+    }
+
+    #[test]
+    fn ascii_text_uses_keystroke_path() {
+        assert!(!requires_clipboard_paste("hello123"));
+    }
+
+    #[test]
+    fn emoji_uses_clipboard_paste_path() {
+        assert!(requires_clipboard_paste("👍"));
     }
 }
