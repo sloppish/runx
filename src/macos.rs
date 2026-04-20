@@ -23,7 +23,7 @@ use crate::debug_log;
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const PRIVACY_AUTOMATION: &str = "Privacy_Automation";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
-const CLIPBOARD_PASTE_DELAY: Duration = Duration::from_millis(90);
+const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(250);
 
 #[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
@@ -199,7 +199,6 @@ end run
 fn paste_text_into_previous_app(text: &str) -> Result<String> {
     let previous_clipboard = read_clipboard_text().ok();
     write_clipboard_text(text)?;
-    thread::sleep(CLIPBOARD_PASTE_DELAY);
 
     let script = r#"
 tell application "System Events"
@@ -213,12 +212,8 @@ end tell
         output.status, output.stderr
     ));
 
-    thread::sleep(CLIPBOARD_PASTE_DELAY);
-    if let Some(previous) = previous_clipboard.as_deref() {
-        let _ = write_clipboard_text(previous);
-    }
-
     if output.status.success() {
+        schedule_clipboard_restore(previous_clipboard, text.to_owned());
         return Ok("Typed into the previous app".to_owned());
     }
 
@@ -241,6 +236,28 @@ end tell
     }
 
     bail!("{}", output.stderr);
+}
+
+fn schedule_clipboard_restore(previous_clipboard: Option<String>, inserted_text: String) {
+    let Some(previous_clipboard) = previous_clipboard else {
+        return;
+    };
+
+    thread::spawn(move || {
+        thread::sleep(CLIPBOARD_RESTORE_DELAY);
+
+        match read_clipboard_text() {
+            Ok(current) if current == inserted_text => {
+                if let Err(error) = write_clipboard_text(&previous_clipboard) {
+                    debug_log::append(format!("clipboard restore failed after paste: {error:#}"));
+                }
+            }
+            Ok(_) => {}
+            Err(error) => debug_log::append(format!(
+                "clipboard restore skipped after paste; could not read clipboard: {error:#}"
+            )),
+        }
+    });
 }
 
 fn requires_clipboard_paste(text: &str) -> bool {
