@@ -95,7 +95,23 @@ render_png() {
   local source="$1"
   local output="$2"
   local size="$3"
-  sips -Z "$size" -s format png "$source" --out "$output" >/dev/null
+
+  if [[ "$source" == *.svg ]] && command -v rsvg-convert >/dev/null 2>&1; then
+    rm -f "$output"
+    rsvg-convert -a -w "$size" -h "$size" "$source" -o "$output" >/dev/null 2>&1 || true
+    if [[ -s "$output" ]]; then
+      return 0
+    fi
+  fi
+
+  rm -f "$output"
+  sips -Z "$size" -s format png "$source" --out "$output" >/dev/null 2>&1 || true
+  if [[ -s "$output" ]]; then
+    return 0
+  fi
+
+  echo "Failed to render PNG from $source" >&2
+  return 1
 }
 
 build_app_icon() {
