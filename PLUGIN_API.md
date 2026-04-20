@@ -18,7 +18,7 @@ A plugin file must evaluate to a Lua table. Supported top-level fields:
 - `name: string?`
 - `badge: string?`
 - `search(query): table?`
-- `<handler>(args): table?`
+- `<handler>(raw, argv): table?`
 - `run(action): string|table|nil?`
 
 `id`, `name`, and `badge` are optional metadata. If omitted:
@@ -41,12 +41,25 @@ calc = "search_calc"
 When the user types `calc 2+2`, Runx strips the command prefix and calls:
 
 ```lua
-search_calc("2+2")
+search_calc("2+2", { "2+2" })
 ```
 
-This lets plugin code focus on the arguments instead of manually checking command prefixes and slicing strings itself.
+`raw` is the suffix after the command prefix. `argv` is the shell-like parsed argument list produced by Runx. For example:
+
+```lua
+-- user input
+pass-gen 1 "2 3" '4 "5"'
+
+-- handler arguments
+raw  == [[1 "2 3" '4 "5"']]
+argv == { "1", "2 3", [[4 "5"]] }
+```
+
+That lets plugin code choose the simpler representation for each command without manually checking prefixes and reparsing strings itself.
 
 If a plugin has configured commands, Runx routes matching queries to those handlers and does not call the plugin’s legacy `search(query)` fallback for that plugin.
+
+Compatibility note: handlers that only accept a single `raw` argument still work. Lua ignores the extra `argv` parameter if the function does not use it.
 
 Each item must match this schema:
 
@@ -107,6 +120,7 @@ Runx exposes a global `runx` table with these fields:
 - `runx.plugin_config: table`
 - `runx.fuzzy_score(candidate, query) -> integer`
 - `runx.getenv(name) -> string|nil`
+- `runx.parse_args(raw) -> { string, ... }`
 - `runx.walk_files(root) -> { string, ... }`
 - `runx.exec_capture(program, args, first_line_only?) -> string`
 - `runx.exec_status(program, args, silence_stderr?) -> true`
@@ -156,13 +170,14 @@ return {
   name = "Hello",
   badge = "HI",
 
-  search_hello = function(args)
+  search_hello = function(raw, argv)
     return {
       {
         title = "Say hello",
-        subtitle = args,
+        subtitle = raw,
         action = {
           kind = "hello",
+          argv = argv,
         },
       },
     }

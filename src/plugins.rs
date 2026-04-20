@@ -314,7 +314,8 @@ fn run_search_handler(
     let search: Function = table
         .get::<Option<Function>>(handler_name)?
         .ok_or_else(|| anyhow!("plugin `{}` does not export `{}`", plugin.id, handler_name))?;
-    let result = search.call::<mlua::Value>(args.to_owned())?;
+    let argv = lua.create_sequence_from(parse_shell_args(args)?)?;
+    let result = search.call::<mlua::Value>((args.to_owned(), argv))?;
     let raw_items: Vec<PluginItemWire> = lua.from_value(result)?;
 
     Ok(raw_items
@@ -488,6 +489,14 @@ fn install_runtime(
     )?;
 
     runtime.set(
+        "parse_args",
+        lua.create_function(|lua, raw: String| {
+            let args = parse_shell_args(&raw).map_err(mlua::Error::external)?;
+            lua.create_sequence_from(args)
+        })?,
+    )?;
+
+    runtime.set(
         "walk_files",
         lua.create_function(|_, root: String| {
             walk_files(Path::new(&root)).map_err(mlua::Error::external)
@@ -588,6 +597,67 @@ fn install_runtime(
 
 fn empty_plugin_config() -> JsonValue {
     JsonValue::Object(Default::default())
+}
+
+fn parse_shell_args(raw: &str) -> Result<Vec<String>> {
+    #[derive(Copy, Clone, Eq, PartialEq)]
+    enum Mode {
+        Unquoted,
+        SingleQuoted,
+        DoubleQuoted,
+    }
+
+    let mut mode = Mode::Unquoted;
+    let mut escaped = false;
+    let mut current = String::new();
+    let mut args = Vec::new();
+
+    for ch in raw.chars() {
+        if escaped {
+            current.push(ch);
+            escaped = false;
+            continue;
+        }
+
+        match mode {
+            Mode::Unquoted => match ch {
+                '\\' => escaped = true,
+                '\'' => mode = Mode::SingleQuoted,
+                '"' => mode = Mode::DoubleQuoted,
+                ch if ch.is_whitespace() => {
+                    if !current.is_empty() {
+                        args.push(std::mem::take(&mut current));
+                    }
+                }
+                _ => current.push(ch),
+            },
+            Mode::SingleQuoted => match ch {
+                '\'' => mode = Mode::Unquoted,
+                _ => current.push(ch),
+            },
+            Mode::DoubleQuoted => match ch {
+                '\\' => escaped = true,
+                '"' => mode = Mode::Unquoted,
+                _ => current.push(ch),
+            },
+        }
+    }
+
+    if escaped {
+        bail!("unterminated escape sequence in command arguments");
+    }
+
+    match mode {
+        Mode::Unquoted => {}
+        Mode::SingleQuoted => bail!("unterminated single-quoted string in command arguments"),
+        Mode::DoubleQuoted => bail!("unterminated double-quoted string in command arguments"),
+    }
+
+    if !current.is_empty() {
+        args.push(current);
+    }
+
+    Ok(args)
 }
 
 fn walk_files(root: &Path) -> Result<Vec<String>> {
@@ -725,8 +795,8 @@ mod tests {
     use serde_json::json;
 
     use super::{
-        LuaPlugin, PluginItemWire, build_routes, match_command, plugin_search_path,
-        validate_plugin_item,
+        LuaPlugin, PluginItemWire, build_routes, empty_plugin_config, match_command,
+        parse_shell_args, plugin_search_path, run_search_handler, validate_plugin_item,
     };
 
     #[test]
@@ -825,5 +895,58 @@ mod tests {
         assert_eq!(routes[0].plugin_id, "calc");
         assert_eq!(routes[0].command, "calc");
         assert_eq!(routes[0].handler, "search_calc");
+    }
+
+    #[test]
+    fn parse_shell_args_supports_quotes_and_escapes() {
+        let args = parse_shell_args(r#"1 "2 3" '4 "5"' six\ seven"#).expect("parsed args");
+
+        assert_eq!(args, vec!["1", "2 3", r#"4 "5""#, "six seven"]);
+    }
+
+    #[test]
+    fn parse_shell_args_rejects_unterminated_quotes() {
+        let error = parse_shell_args(r#""unterminated"#)
+            .expect_err("unterminated quotes should fail")
+            .to_string();
+
+        assert!(error.contains("unterminated double-quoted string"));
+    }
+
+    #[test]
+    fn routed_handlers_receive_raw_and_parsed_args() {
+        let plugin = LuaPlugin {
+            id: "args".to_owned(),
+            name: "Args Plugin".to_owned(),
+            badge: "ARG".to_owned(),
+            path: PathBuf::from("args.lua"),
+            source: r#"
+                return {
+                  search_echo = function(raw, argv)
+                    return {
+                      {
+                        title = raw,
+                        subtitle = table.concat(argv, "|"),
+                        action = { kind = "noop" },
+                      },
+                    }
+                  end,
+                }
+            "#
+            .to_owned(),
+        };
+
+        let items = run_search_handler(
+            &plugin,
+            "search_echo",
+            r#"1 "2 3" '4 "5"'"#,
+            empty_plugin_config(),
+            &[],
+        )
+        .expect("handler search should succeed");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, r#"1 "2 3" '4 "5"'"#);
+        assert_eq!(items[0].subtitle, r#"1|2 3|4 "5""#);
     }
 }
