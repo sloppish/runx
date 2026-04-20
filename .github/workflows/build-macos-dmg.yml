@@ -27,7 +27,7 @@ jobs:
       RUNX_NOTARY_TEAM_ID: ${{ secrets.RUNX_NOTARY_TEAM_ID }}
     steps:
       - name: Check out repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -96,7 +96,7 @@ jobs:
           ./scripts/build-dmg-macos.sh "${args[@]}"
 
       - name: Upload DMG artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: runx-macos-dmg
           path: dist/*.dmg
