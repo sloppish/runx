@@ -17,6 +17,8 @@ use crate::{
     types::{Action, PluginActionPayload, SearchItem},
 };
 
+const PLUGIN_API_VERSION: u32 = 1;
+
 #[derive(Clone, Default)]
 pub struct PluginHost {
     plugins: Vec<LuaPlugin>,
@@ -41,12 +43,22 @@ struct PluginMetadata {
 }
 
 #[derive(Debug, Deserialize)]
-struct PluginItem {
+struct PluginItemWire {
     id: Option<String>,
     title: String,
     subtitle: Option<String>,
     score: Option<i64>,
     badge: Option<String>,
+    action: PluginActionPayload,
+}
+
+#[derive(Debug)]
+struct PluginItem {
+    id: String,
+    title: String,
+    subtitle: String,
+    score: i64,
+    badge: String,
     action: PluginActionPayload,
 }
 
@@ -173,26 +185,82 @@ fn run_search(
         None => return Ok(Vec::new()),
     };
     let result = search.call::<mlua::Value>(query.to_owned())?;
-    let items: Vec<PluginItem> = lua.from_value(result)?;
+    let raw_items: Vec<PluginItemWire> = lua.from_value(result)?;
 
-    Ok(items
+    Ok(raw_items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| validate_plugin_item(plugin, index, item))
+        .collect::<Result<Vec<_>>>()?
         .into_iter()
         .map(|item| SearchItem {
-            id: item
-                .id
-                .unwrap_or_else(|| format!("plugin:{}:{}", plugin.id, item.title)),
+            id: item.id,
             provider: "plugins".to_owned(),
-            badge: item.badge.unwrap_or_else(|| plugin.badge.clone()),
+            badge: item.badge,
             icon: None,
             title: item.title,
-            subtitle: item.subtitle.unwrap_or_else(|| plugin.name.clone()),
-            raw_score: item.score.unwrap_or(0),
+            subtitle: item.subtitle,
+            raw_score: item.score,
             action: Action::Plugin {
                 plugin_id: plugin.id.clone(),
                 payload: item.action,
             },
         })
         .collect())
+}
+
+fn validate_plugin_item(
+    plugin: &LuaPlugin,
+    index: usize,
+    item: PluginItemWire,
+) -> Result<PluginItem> {
+    item.action
+        .validate()
+        .map_err(|error| anyhow!("plugin item {} action is invalid: {error}", index + 1))?;
+
+    let title = item.title.trim();
+    if title.is_empty() {
+        bail!("plugin item {} must have a non-empty title", index + 1);
+    }
+
+    let id = match item.id {
+        Some(id) => {
+            let id = id.trim();
+            if id.is_empty() {
+                bail!("plugin item {} has an empty `id`", index + 1);
+            }
+            id.to_owned()
+        }
+        None => format!("plugin:{}:{}", plugin.id, title),
+    };
+
+    let badge = match item.badge {
+        Some(badge) => {
+            let badge = badge.trim();
+            if badge.is_empty() {
+                bail!("plugin item {} has an empty `badge`", index + 1);
+            }
+            badge.to_owned()
+        }
+        None => plugin.badge.clone(),
+    };
+
+    let subtitle = item
+        .subtitle
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .unwrap_or(plugin.name.as_str())
+        .to_owned();
+
+    Ok(PluginItem {
+        id,
+        title: title.to_owned(),
+        subtitle,
+        score: item.score.unwrap_or(0),
+        badge,
+        action: item.action,
+    })
 }
 
 fn run_action(
@@ -275,6 +343,7 @@ fn install_runtime(
 ) -> Result<()> {
     let runtime = lua.create_table()?;
     let search_paths = search_paths.to_vec();
+    runtime.set("api_version", PLUGIN_API_VERSION)?;
 
     runtime.set(
         "fuzzy_score",
@@ -522,7 +591,9 @@ mod tests {
     use std::env;
     use std::path::PathBuf;
 
-    use super::plugin_search_path;
+    use serde_json::json;
+
+    use super::{LuaPlugin, PluginItemWire, plugin_search_path, validate_plugin_item};
 
     #[test]
     fn plugin_search_path_includes_configured_paths() {
@@ -545,5 +616,60 @@ mod tests {
                 assert!(path.contains(existing.as_ref()));
             }
         }
+    }
+
+    fn test_plugin() -> LuaPlugin {
+        LuaPlugin {
+            id: "test".to_owned(),
+            name: "Test Plugin".to_owned(),
+            badge: "TST".to_owned(),
+            path: PathBuf::from("test.lua"),
+            source: String::new(),
+        }
+    }
+
+    #[test]
+    fn validate_plugin_item_rejects_empty_title() {
+        let item = serde_json::from_value::<PluginItemWire>(json!({
+            "title": "   ",
+            "action": { "kind": "copy" }
+        }))
+        .expect("valid wire item");
+
+        let error = validate_plugin_item(&test_plugin(), 0, item)
+            .expect_err("empty titles should fail")
+            .to_string();
+
+        assert!(error.contains("non-empty title"));
+    }
+
+    #[test]
+    fn validate_plugin_item_rejects_invalid_action() {
+        let item = serde_json::from_value::<PluginItemWire>(json!({
+            "title": "Copy secret",
+            "action": { "kind": "  " }
+        }))
+        .expect("valid wire item");
+
+        let error = validate_plugin_item(&test_plugin(), 0, item)
+            .expect_err("invalid action should fail")
+            .to_string();
+
+        assert!(error.contains("action is invalid"));
+    }
+
+    #[test]
+    fn validate_plugin_item_falls_back_to_plugin_defaults() {
+        let item = serde_json::from_value::<PluginItemWire>(json!({
+            "title": "Copy secret",
+            "action": { "kind": "copy_secret" }
+        }))
+        .expect("valid wire item");
+
+        let item = validate_plugin_item(&test_plugin(), 0, item).expect("validated item");
+
+        assert_eq!(item.id, "plugin:test:Copy secret");
+        assert_eq!(item.badge, "TST");
+        assert_eq!(item.subtitle, "Test Plugin");
     }
 }

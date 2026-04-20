@@ -27,6 +27,26 @@ impl PluginActionPayload {
         JsonValue::Object(object)
     }
 
+    pub fn validate(&self) -> Result<(), String> {
+        if self.kind.trim().is_empty() {
+            return Err("action.kind must not be empty".to_owned());
+        }
+
+        if self.kind.trim() != self.kind {
+            return Err("action.kind must not contain leading or trailing whitespace".to_owned());
+        }
+
+        if self.fields.contains_key("kind") {
+            return Err("action fields must not contain the reserved key `kind`".to_owned());
+        }
+
+        if self.fields.keys().any(|key| key.trim().is_empty()) {
+            return Err("action field names must not be empty".to_owned());
+        }
+
+        Ok(())
+    }
+
     pub fn likely_needs_accessibility(&self) -> bool {
         let kind = self.kind.as_str();
         kind == "type"
@@ -168,6 +188,41 @@ mod tests {
         .expect("valid payload");
 
         assert!(payload.likely_needs_accessibility());
+    }
+
+    #[test]
+    fn plugin_action_payload_rejects_empty_kind() {
+        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "kind": "   "
+        }))
+        .expect("deserializes before validation");
+
+        let error = payload.validate().expect_err("empty kind should fail");
+        assert!(error.contains("must not be empty"));
+    }
+
+    #[test]
+    fn plugin_action_payload_rejects_whitespace_padded_kind() {
+        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "kind": " copy_password "
+        }))
+        .expect("deserializes before validation");
+
+        let error = payload
+            .validate()
+            .expect_err("whitespace-padded kind should fail");
+        assert!(error.contains("leading or trailing whitespace"));
+    }
+
+    #[test]
+    fn plugin_action_payload_validation_accepts_normal_kind() {
+        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
+            "kind": "copy_password",
+            "entry": "mail/example"
+        }))
+        .expect("valid payload");
+
+        payload.validate().expect("validation should pass");
     }
 
     #[test]
