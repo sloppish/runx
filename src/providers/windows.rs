@@ -74,7 +74,7 @@ impl WindowsProvider {
             items.push((score, window.clone()));
         }
 
-        items.sort_by(|left, right| right.0.cmp(&left.0));
+        items.sort_by_key(|item| std::cmp::Reverse(item.0));
         items.truncate(limit);
         Ok(items
             .into_iter()

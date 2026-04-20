@@ -177,7 +177,7 @@ fn score_apps(apps: &[AppRecord], query: &str, limit: usize) -> Vec<(i64, AppRec
         matches.push((score, app.clone()));
     }
 
-    matches.sort_by(|left, right| right.0.cmp(&left.0));
+    matches.sort_by_key(|item| std::cmp::Reverse(item.0));
     matches.truncate(limit);
     matches
 }

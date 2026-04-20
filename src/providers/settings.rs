@@ -83,7 +83,7 @@ impl SettingsProvider {
             items.push((score, setting.clone()));
         }
 
-        items.sort_by(|left, right| right.0.cmp(&left.0));
+        items.sort_by_key(|item| std::cmp::Reverse(item.0));
         items.truncate(limit);
         Ok(items
             .into_iter()
@@ -229,10 +229,8 @@ fn read_sidebar_ids() -> Result<Vec<String>> {
 
 fn collect_ids(value: &Value, ids: &mut Vec<String>) {
     match value {
-        Value::String(text) => {
-            if text.starts_with("com.apple.") {
-                ids.push(text.to_owned());
-            }
+        Value::String(text) if text.starts_with("com.apple.") => {
+            ids.push(text.to_owned());
         }
         Value::Array(values) => {
             for value in values {
