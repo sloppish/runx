@@ -4,6 +4,7 @@
 //! semantics instead of plist parsing, process inspection, and PNG rendering.
 
 use std::{
+    borrow::Cow,
     collections::{HashMap, hash_map::DefaultHasher},
     fs,
     hash::{Hash, Hasher},
@@ -17,12 +18,19 @@ use base64::{Engine as _, engine::general_purpose::STANDARD};
 use directories::BaseDirs;
 use objc2_app_kit::NSRunningApplication;
 use plist::{Dictionary, Value};
+use wry::http::{
+    Request, Response, StatusCode,
+    header::{CACHE_CONTROL, CONTENT_TYPE},
+};
 
 const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
     "/System/Applications/System Settings.app",
     "/System/Applications/System Preferences.app",
 ];
-const ICON_RENDER_SIZE: u32 = 128;
+const ICON_PROTOCOL_SCHEME: &str = "runx";
+const ICON_PROTOCOL_HOST: &str = "localhost";
+const ICON_CACHE_FORMAT_VERSION: &str = "png-v1";
+const ICON_RENDER_SIZE: u32 = 64;
 
 /// In-memory and on-disk cache for bundle and process icons.
 pub struct IconCache {
@@ -105,22 +113,49 @@ impl IconCache {
         let Some(icon_source) = find_bundle_icon_source(bundle_path)? else {
             return Ok(None);
         };
+        let icon_key = stable_hash(bundle_path);
 
-        let png_path = self.cache_dir.join(format!(
-            "{}-{}px.png",
-            stable_hash(bundle_path),
-            ICON_RENDER_SIZE
-        ));
+        let png_path = self.png_path_for_key(&icon_key);
         if !png_path.exists() {
             render_png_icon(&icon_source, &png_path)?;
         }
 
-        let bytes = fs::read(&png_path)
-            .with_context(|| format!("failed to read {}", png_path.display()))?;
-        Ok(Some(format!(
-            "data:image/png;base64,{}",
-            STANDARD.encode(bytes)
-        )))
+        Ok(Some(icon_protocol_url(&icon_key)))
+    }
+
+    /// Resolves a `runx://localhost/icon/<hash>.png` request into an image response.
+    pub fn protocol_response(&self, request: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
+        let Some(icon_key) = icon_key_from_request_path(request.uri().path()) else {
+            return response_with_status(StatusCode::NOT_FOUND, "text/plain", b"Not found");
+        };
+
+        let png_path = self.png_path_for_key(icon_key);
+        let bytes = match fs::read(&png_path) {
+            Ok(bytes) => bytes,
+            Err(_) => {
+                return response_with_status(StatusCode::NOT_FOUND, "text/plain", b"Not found");
+            }
+        };
+
+        Response::builder()
+            .status(StatusCode::OK)
+            .header(CONTENT_TYPE, "image/png")
+            .header(CACHE_CONTROL, "public, max-age=86400")
+            .body(Cow::Owned(bytes))
+            .unwrap_or_else(|_| {
+                response_with_status(
+                    StatusCode::INTERNAL_SERVER_ERROR,
+                    "text/plain",
+                    b"Failed to build response",
+                )
+            })
+    }
+
+    fn png_path_for_key(&self, icon_key: &str) -> PathBuf {
+        self.cache_dir.join(format!(
+            "{}-{}-{}px.png",
+            icon_key, ICON_CACHE_FORMAT_VERSION, ICON_RENDER_SIZE
+        ))
     }
 }
 
@@ -258,6 +293,27 @@ fn render_png_icon(icon_source: &Path, png_path: &Path) -> Result<()> {
     anyhow::bail!("{stderr}");
 }
 
+fn icon_protocol_url(icon_key: &str) -> String {
+    format!("{ICON_PROTOCOL_SCHEME}://{ICON_PROTOCOL_HOST}/icon/{icon_key}.png")
+}
+
+fn icon_key_from_request_path(path: &str) -> Option<&str> {
+    let key = path.strip_prefix("/icon/")?.strip_suffix(".png")?;
+    key.chars().all(|ch| ch.is_ascii_hexdigit()).then_some(key)
+}
+
+fn response_with_status(
+    status: StatusCode,
+    content_type: &'static str,
+    body: &'static [u8],
+) -> Response<Cow<'static, [u8]>> {
+    Response::builder()
+        .status(status)
+        .header(CONTENT_TYPE, content_type)
+        .body(Cow::Borrowed(body))
+        .unwrap_or_else(|_| Response::new(Cow::Borrowed(body)))
+}
+
 fn stable_hash(path: &Path) -> String {
     let mut hasher = DefaultHasher::new();
     path.hash(&mut hasher);
@@ -291,7 +347,7 @@ fn system_settings_fallback_icon() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::bundle_root_from_executable;
+    use super::{bundle_root_from_executable, icon_key_from_request_path};
     use std::path::Path;
 
     #[test]
@@ -307,5 +363,20 @@ mod tests {
     fn returns_none_without_bundle_ancestor() {
         let path = Path::new("/usr/bin/ssh");
         assert!(bundle_root_from_executable(path).is_none());
+    }
+
+    #[test]
+    fn extracts_icon_key_from_protocol_path() {
+        assert_eq!(
+            icon_key_from_request_path("/icon/deadbeef00cafe42.png"),
+            Some("deadbeef00cafe42")
+        );
+    }
+
+    #[test]
+    fn rejects_non_icon_protocol_paths() {
+        assert!(icon_key_from_request_path("/icons/deadbeef.png").is_none());
+        assert!(icon_key_from_request_path("/icon/not-hex.png").is_none());
+        assert!(icon_key_from_request_path("/icon/deadbeef.svg").is_none());
     }
 }

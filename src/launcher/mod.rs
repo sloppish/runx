@@ -35,6 +35,7 @@ use tao::{
     window::{Window, WindowBuilder},
 };
 use tokio::runtime::{Builder, Runtime};
+use wry::http::Request;
 use wry::{WebView, WebViewBuilder};
 
 use self::{search_controller::SearchController, window_controller::WindowController};
@@ -83,12 +84,16 @@ impl Launcher {
             plugin_routes,
         ));
         let icons = Arc::new(IconCache::new()?);
-        let providers = ProviderSet::new(config.clone(), plugins.clone(), icons)?;
+        let providers = ProviderSet::new(config.clone(), plugins.clone(), icons.clone())?;
         let window = build_window(event_loop, &config)?;
         let html = ui::html(&config.ui);
         let ipc_proxy = proxy.clone();
+        let protocol_icons = icons.clone();
         let webview = WebViewBuilder::new()
             .with_transparent(true)
+            .with_custom_protocol("runx".into(), move |_id, request: Request<Vec<u8>>| {
+                protocol_icons.protocol_response(&request)
+            })
             .with_html(&html)
             .with_ipc_handler(move |request| {
                 let payload = request.body();
