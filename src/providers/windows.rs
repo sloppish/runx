@@ -1,9 +1,6 @@
 //! Provider for currently open on-screen windows.
 
-use std::{
-    sync::{Arc, Mutex, MutexGuard},
-    time::{Duration, Instant},
-};
+use std::sync::{Arc, Mutex};
 
 use anyhow::Result;
 use core_foundation::{
@@ -25,16 +22,10 @@ use crate::{
     types::{Action, SearchItem},
 };
 
-/// Searches the current on-screen window list with a short-lived cache.
+/// Searches the current on-screen window list with a launcher-session snapshot.
 pub struct WindowsProvider {
-    cache: Mutex<WindowCache>,
     icons: Arc<IconCache>,
-}
-
-#[derive(Default)]
-struct WindowCache {
-    updated_at: Option<Instant>,
-    items: Vec<WindowRecord>,
+    session: Mutex<WindowSession>,
 }
 
 #[derive(Clone)]
@@ -45,22 +36,43 @@ struct WindowRecord {
     z_index: usize,
 }
 
+#[derive(Default)]
+struct WindowSession {
+    active: bool,
+    windows: Option<Vec<WindowRecord>>,
+}
+
 impl WindowsProvider {
     /// Creates a window provider backed by the shared icon cache.
     pub fn new(icons: Arc<IconCache>) -> Self {
         Self {
-            cache: Mutex::new(WindowCache::default()),
             icons,
+            session: Mutex::new(WindowSession::default()),
         }
+    }
+
+    /// Starts a new launcher-visible session and captures a fresh snapshot when permitted.
+    pub fn begin_session(&self) {
+        let windows = macos::has_screen_capture_access().then(read_windows);
+        let mut session = lock_or_recover(&self.session);
+        session.active = true;
+        session.windows = windows;
+    }
+
+    /// Ends the current launcher-visible session and clears the cached snapshot.
+    pub fn end_session(&self) {
+        let mut session = lock_or_recover(&self.session);
+        session.active = false;
+        session.windows = None;
     }
 
     /// Returns the highest-scoring visible windows for the current query.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
-        if !macos::request_screen_capture_access_once() {
-            return Ok(Vec::new());
-        }
+        let windows = match self.session_windows() {
+            Some(windows) => windows,
+            None => return Ok(Vec::new()),
+        };
 
-        let windows = self.snapshot()?;
         let query = query.trim();
         let empty_query = query.is_empty();
         let mut items = Vec::new();
@@ -104,23 +116,35 @@ impl WindowsProvider {
             .collect())
     }
 
-    fn snapshot(&self) -> Result<Vec<WindowRecord>> {
-        let mut cache = lock_or_recover(&self.cache);
-        if let Some(updated_at) = cache.updated_at
-            && updated_at.elapsed() < Duration::from_millis(900)
+    fn session_windows(&self) -> Option<Vec<WindowRecord>> {
         {
-            return Ok(cache.items.clone());
+            let session = lock_or_recover(&self.session);
+            if !session.active {
+                return None;
+            }
+            if let Some(windows) = &session.windows {
+                return Some(windows.clone());
+            }
         }
 
-        let fresh = read_windows();
-        cache.updated_at = Some(Instant::now());
-        cache.items = fresh.clone();
-        Ok(fresh)
+        if !macos::request_screen_capture_access_once() {
+            return None;
+        }
+
+        let windows = read_windows();
+        let mut session = lock_or_recover(&self.session);
+        if session.active {
+            session.windows = Some(windows.clone());
+        }
+        Some(windows)
     }
 }
 
-fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
-    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    match mutex.lock() {
+        Ok(guard) => guard,
+        Err(poisoned) => poisoned.into_inner(),
+    }
 }
 
 fn read_windows() -> Vec<WindowRecord> {

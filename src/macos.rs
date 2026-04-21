@@ -339,14 +339,19 @@ pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) != 0 }
 }
 
-/// Requests Screen Recording access at most once per process and returns whether it is granted.
+/// Requests Screen Recording access if needed and returns whether it is granted.
 pub fn request_screen_capture_access_once() -> bool {
-    if unsafe { CGPreflightScreenCaptureAccess() != 0 } {
+    if has_screen_capture_access() {
         return true;
     }
 
     let _ = unsafe { CGRequestScreenCaptureAccess() != 0 };
 
+    has_screen_capture_access()
+}
+
+/// Returns whether macOS currently grants Screen Recording access to Runx.
+pub fn has_screen_capture_access() -> bool {
     unsafe { CGPreflightScreenCaptureAccess() != 0 }
 }
 

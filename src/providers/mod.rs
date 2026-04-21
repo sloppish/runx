@@ -32,6 +32,7 @@ use self::{
 
 #[derive(Clone)]
 pub struct ProviderSet {
+    windows_provider: Arc<WindowsProvider>,
     windows: ProviderWorker,
     apps: ProviderWorker,
     settings: ProviderWorker,
@@ -52,6 +53,7 @@ impl ProviderSet {
         let spotlight = Arc::new(SpotlightProvider::new(icons));
 
         Ok(Self {
+            windows_provider: windows.clone(),
             windows: ProviderWorker::new("windows", {
                 let provider = windows;
                 let limit = config.ranking.result_limit;
@@ -74,6 +76,16 @@ impl ProviderSet {
                 move |query| provider.search(&query, limit)
             })?,
         })
+    }
+
+    /// Starts a new launcher-visible session for providers that cache per-open state.
+    pub fn begin_session(&self) {
+        self.windows_provider.begin_session();
+    }
+
+    /// Ends the current launcher-visible session and clears any per-open provider state.
+    pub fn end_session(&self) {
+        self.windows_provider.end_session();
     }
 
     /// Returns how many provider responses a session should wait for.

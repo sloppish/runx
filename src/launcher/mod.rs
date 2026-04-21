@@ -229,6 +229,7 @@ impl Launcher {
     }
 
     fn show(&mut self) -> Result<()> {
+        self.providers.begin_session();
         self.windows.note_shown(&mut self.state);
         self.search
             .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
@@ -258,6 +259,7 @@ impl Launcher {
     }
 
     fn hide(&mut self) -> Result<()> {
+        self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
         self.search.cancel_pending_render();
         self.windows.hide_window(&self.window);
