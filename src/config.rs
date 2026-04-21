@@ -23,6 +23,7 @@ const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `tie_threshold` is the raw fuzzy-score delta that still counts as "similar".
 # `empty_query_providers` controls which providers run before you type anything.
 # `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
+# `focus_behavior` controls how Runx tries to surface a selected window result.
 
 [hotkey]
 key = "Space"
@@ -34,6 +35,7 @@ height = 520
 hide_on_blur = true
 always_on_top = true
 show_on = "primary"
+focus_behavior = "focus_window_then_activate_fallback"
 
 [ranking]
 tie_threshold = 120
@@ -99,6 +101,7 @@ pub struct WindowConfig {
     pub hide_on_blur: bool,
     pub always_on_top: bool,
     pub show_on: WindowDisplayTarget,
+    pub focus_behavior: WindowFocusBehavior,
 }
 
 /// Monitor selection strategy for placing the launcher window.
@@ -108,6 +111,17 @@ pub enum WindowDisplayTarget {
     #[default]
     Primary,
     Cursor,
+}
+
+/// Strategy for focusing a selected window result.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowFocusBehavior {
+    ActivateAppOnly,
+    ActivateAppThenFocusWindow,
+    FocusWindowOnly,
+    #[default]
+    FocusWindowThenActivateFallback,
 }
 
 /// Ranking and truncation rules for the merged result list.
@@ -284,6 +298,7 @@ impl Default for WindowConfig {
             hide_on_blur: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Primary,
+            focus_behavior: WindowFocusBehavior::FocusWindowThenActivateFallback,
         }
     }
 }
@@ -429,7 +444,7 @@ fn parse_key(value: &str) -> Result<Code> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, WindowDisplayTarget, parse_key, parse_modifier};
+    use super::{Config, WindowDisplayTarget, WindowFocusBehavior, parse_key, parse_modifier};
     use global_hotkey::hotkey::{Code, Modifiers};
 
     mod parse_key_tests {
@@ -471,6 +486,41 @@ mod tests {
             let cursor: Config =
                 toml::from_str("[window]\nshow_on = \"cursor\"\n").expect("cursor should parse");
             assert_eq!(cursor.window.show_on, WindowDisplayTarget::Cursor);
+        }
+    }
+
+    mod window_focus_behavior_tests {
+        use super::{Config, WindowFocusBehavior};
+
+        #[test]
+        fn defaults_to_focus_then_activate_fallback() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(
+                config.window.focus_behavior,
+                WindowFocusBehavior::FocusWindowThenActivateFallback
+            );
+        }
+
+        #[test]
+        fn accepts_activate_app_only() {
+            let config: Config =
+                toml::from_str("[window]\nfocus_behavior = \"activate_app_only\"\n")
+                    .expect("focus behavior should parse");
+            assert_eq!(
+                config.window.focus_behavior,
+                WindowFocusBehavior::ActivateAppOnly
+            );
+        }
+
+        #[test]
+        fn accepts_focus_window_only() {
+            let config: Config =
+                toml::from_str("[window]\nfocus_behavior = \"focus_window_only\"\n")
+                    .expect("focus behavior should parse");
+            assert_eq!(
+                config.window.focus_behavior,
+                WindowFocusBehavior::FocusWindowOnly
+            );
         }
     }
 

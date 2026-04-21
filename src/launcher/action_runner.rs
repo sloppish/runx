@@ -9,6 +9,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     actions::execute_action,
+    config::WindowFocusBehavior,
     debug_log,
     macos::ensure_accessibility_trusted,
     plugins::{PluginExecutionContext, PluginHost},
@@ -19,12 +20,19 @@ use crate::{
 #[derive(Clone)]
 pub(crate) struct ActionRunner {
     plugins: Arc<PluginHost>,
+    window_focus_behavior: WindowFocusBehavior,
 }
 
 impl ActionRunner {
     /// Creates a runner that shares the loaded plugin registry.
-    pub(crate) fn new(plugins: Arc<PluginHost>) -> Self {
-        Self { plugins }
+    pub(crate) fn new(
+        plugins: Arc<PluginHost>,
+        window_focus_behavior: WindowFocusBehavior,
+    ) -> Self {
+        Self {
+            plugins,
+            window_focus_behavior,
+        }
     }
 
     /// Checks native permission requirements before an action is launched.
@@ -45,8 +53,9 @@ impl ActionRunner {
         context: PluginExecutionContext,
     ) {
         let plugins = self.plugins.clone();
+        let window_focus_behavior = self.window_focus_behavior;
         runtime.handle().spawn_blocking(move || {
-            let result = execute_action(&item.action, &plugins, &context);
+            let result = execute_action(&item.action, window_focus_behavior, &plugins, &context);
             let (message, is_error) = match result {
                 Ok(Some(message)) => (message, false),
                 Ok(None) => ("Action completed".to_owned(), false),

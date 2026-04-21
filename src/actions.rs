@@ -5,6 +5,7 @@
 
 use anyhow::Result;
 
+use crate::config::WindowFocusBehavior;
 use crate::macos;
 use crate::plugins::{PluginExecutionContext, PluginHost};
 use crate::types::Action;
@@ -12,6 +13,7 @@ use crate::types::Action;
 /// Executes the action associated with the currently selected search result.
 pub fn execute_action(
     action: &Action,
+    window_focus_behavior: WindowFocusBehavior,
     plugins: &PluginHost,
     context: &PluginExecutionContext,
 ) -> Result<Option<String>> {
@@ -32,7 +34,7 @@ pub fn execute_action(
         Action::FocusWindow {
             app_name,
             window_title,
-        } => macos::focus_window(app_name, window_title),
+        } => macos::focus_window(app_name, window_title, window_focus_behavior),
         Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload, context),
     }
 }

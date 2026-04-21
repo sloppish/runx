@@ -32,7 +32,7 @@ use objc2_app_kit::{
 };
 use objc2_foundation::NSString;
 
-use crate::debug_log;
+use crate::{config::WindowFocusBehavior, debug_log};
 
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
@@ -136,6 +136,12 @@ struct LoginItemTarget {
     name: String,
 }
 
+#[derive(Clone, Copy)]
+enum AppActivationMode {
+    Default,
+    AllWindows,
+}
+
 /// Opens an application bundle path through Launch Services.
 pub fn open_application(path: &str) -> Result<()> {
     run_quiet("open", &[path])
@@ -184,28 +190,21 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     Ok(Some(app))
 }
 
-/// Attempts to focus a specific window, falling back to app activation.
-pub fn focus_window(app_name: &str, window_title: &str) -> Result<Option<String>> {
-    let Some(pid) = activate_running_application_by_name(app_name)? else {
-        open_named_application(app_name)
-            .with_context(|| format!("failed to activate {app_name} for window focus"))?;
-        return Ok(Some(format!("Activated {}", app_name)));
-    };
-
-    if !ensure_accessibility_trusted(true) {
-        open_accessibility_settings();
-        return Ok(Some(format!(
-            "Activated {} (window focus requires Accessibility permission)",
-            app_name
-        )));
-    }
-
-    match focus_window_for_pid(pid, window_title) {
-        Ok(()) => Ok(Some(format!("Focused {}", window_title))),
-        Err(error) => Ok(Some(format!(
-            "Activated {} (direct window focus unavailable: {})",
-            app_name, error
-        ))),
+/// Attempts to focus a specific window using the configured strategy.
+pub fn focus_window(
+    app_name: &str,
+    window_title: &str,
+    behavior: WindowFocusBehavior,
+) -> Result<Option<String>> {
+    match behavior {
+        WindowFocusBehavior::ActivateAppOnly => activate_or_open_application(app_name),
+        WindowFocusBehavior::ActivateAppThenFocusWindow => {
+            activate_then_focus_window(app_name, window_title)
+        }
+        WindowFocusBehavior::FocusWindowOnly => focus_window_only(app_name, window_title),
+        WindowFocusBehavior::FocusWindowThenActivateFallback => {
+            focus_window_then_activate_fallback(app_name, window_title)
+        }
     }
 }
 
@@ -448,7 +447,7 @@ fn activate_matching_running_application(app: &FrontmostApp) -> Result<bool> {
         let bundle_id = NSString::from_str(bundle_id);
         let matches = NSRunningApplication::runningApplicationsWithBundleIdentifier(&bundle_id);
         if matches.count() > 0 {
-            activate_running_application(&matches.objectAtIndex(0))?;
+            activate_running_application(&matches.objectAtIndex(0), AppActivationMode::AllWindows)?;
             return Ok(true);
         }
     }
@@ -463,7 +462,7 @@ fn activate_matching_running_application(app: &FrontmostApp) -> Result<bool> {
             .and_then(|(expected, url)| url.path().map(|path| (expected, path.to_string())))
             .is_some_and(|(expected, actual)| expected == actual)
         {
-            activate_running_application(&candidate)?;
+            activate_running_application(&candidate, AppActivationMode::AllWindows)?;
             return Ok(true);
         }
 
@@ -473,7 +472,7 @@ fn activate_matching_running_application(app: &FrontmostApp) -> Result<bool> {
             .zip(candidate.localizedName())
             .is_some_and(|(expected, actual)| expected == actual.to_string())
         {
-            activate_running_application(&candidate)?;
+            activate_running_application(&candidate, AppActivationMode::AllWindows)?;
             return Ok(true);
         }
     }
@@ -481,7 +480,7 @@ fn activate_matching_running_application(app: &FrontmostApp) -> Result<bool> {
     Ok(false)
 }
 
-fn activate_running_application_by_name(name: &str) -> Result<Option<c_int>> {
+fn running_application_pid_by_name(name: &str) -> Option<c_int> {
     let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
     for index in 0..running_apps.count() {
         let candidate = running_apps.objectAtIndex(index);
@@ -489,20 +488,135 @@ fn activate_running_application_by_name(name: &str) -> Result<Option<c_int>> {
             .localizedName()
             .is_some_and(|actual| actual.to_string() == name)
         {
-            let pid = candidate.processIdentifier();
-            activate_running_application(&candidate)?;
-            return Ok(Some(pid));
+            return Some(candidate.processIdentifier());
         }
     }
-    Ok(None)
+    None
 }
 
-fn activate_running_application(app: &NSRunningApplication) -> Result<()> {
+fn activate_running_application_by_name(name: &str) -> Result<Option<c_int>> {
+    let Some(pid) = running_application_pid_by_name(name) else {
+        return Ok(None);
+    };
+    activate_running_application_by_pid(pid)?;
+    Ok(Some(pid))
+}
+
+fn activate_running_application_by_pid(pid: c_int) -> Result<()> {
+    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)
+}
+
+fn activate_running_application_by_pid_with_mode(
+    pid: c_int,
+    mode: AppActivationMode,
+) -> Result<()> {
+    let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
+    for index in 0..running_apps.count() {
+        let candidate = running_apps.objectAtIndex(index);
+        if candidate.processIdentifier() == pid {
+            activate_running_application(&candidate, mode)?;
+            return Ok(());
+        }
+    }
+    bail!("failed to find running application for pid {pid}")
+}
+
+fn activate_or_open_application(app_name: &str) -> Result<Option<String>> {
+    if activate_running_application_by_name(app_name)?.is_some() {
+        return Ok(Some(format!("Activated {}", app_name)));
+    }
+
+    open_named_application(app_name)
+        .with_context(|| format!("failed to activate {app_name} for window focus"))?;
+    Ok(Some(format!("Activated {}", app_name)))
+}
+
+fn activate_then_focus_window(app_name: &str, window_title: &str) -> Result<Option<String>> {
+    let Some(pid) = activate_running_application_by_name(app_name)? else {
+        open_named_application(app_name)
+            .with_context(|| format!("failed to activate {app_name} for window focus"))?;
+        return Ok(Some(format!("Activated {}", app_name)));
+    };
+
+    if !ensure_accessibility_trusted(true) {
+        open_accessibility_settings();
+        return Ok(Some(format!(
+            "Activated {} (window focus requires Accessibility permission)",
+            app_name
+        )));
+    }
+
+    match focus_window_for_pid(pid, window_title) {
+        Ok(()) => Ok(Some(format!("Focused {}", window_title))),
+        Err(error) => Ok(Some(format!(
+            "Activated {} (direct window focus unavailable: {})",
+            app_name, error
+        ))),
+    }
+}
+
+fn focus_window_only(app_name: &str, window_title: &str) -> Result<Option<String>> {
+    let Some(pid) = running_application_pid_by_name(app_name) else {
+        bail!(
+            "window is no longer available because {} is not running",
+            app_name
+        );
+    };
+
+    if !ensure_accessibility_trusted(true) {
+        open_accessibility_settings();
+        bail!(
+            "Runx needs Accessibility permission to focus a specific window without activating the whole app."
+        );
+    }
+
+    focus_window_for_pid(pid, window_title)?;
+    Ok(Some(format!("Focused {}", window_title)))
+}
+
+fn focus_window_then_activate_fallback(
+    app_name: &str,
+    window_title: &str,
+) -> Result<Option<String>> {
+    if let Some(pid) = running_application_pid_by_name(app_name) {
+        if ensure_accessibility_trusted(true) {
+            match focus_window_for_pid(pid, window_title) {
+                Ok(()) => {
+                    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
+                    let _ = focus_window_for_pid(pid, window_title);
+                    return Ok(Some(format!("Focused {}", window_title)));
+                }
+                Err(error) => {
+                    debug_log::append(format!(
+                        "focus_window_then_activate_fallback direct focus failed app={:?} title={:?} error={error:#}",
+                        app_name, window_title
+                    ));
+                }
+            }
+        } else {
+            open_accessibility_settings();
+        }
+
+        activate_running_application_by_pid(pid)?;
+        return Ok(Some(format!("Activated {}", app_name)));
+    }
+
+    open_named_application(app_name)
+        .with_context(|| format!("failed to activate {app_name} for window focus"))?;
+    Ok(Some(format!("Activated {}", app_name)))
+}
+
+fn activate_running_application(app: &NSRunningApplication, mode: AppActivationMode) -> Result<()> {
     if app.isHidden() {
         let _ = app.unhide();
     }
 
-    if app.activateWithOptions(NSApplicationActivationOptions::ActivateAllWindows) {
+    let options = match mode {
+        AppActivationMode::Default => NSApplicationActivationOptions(0),
+        AppActivationMode::AllWindows => NSApplicationActivationOptions::ActivateAllWindows,
+    };
+
+    if app.activateWithOptions(options) {
         thread::sleep(APP_REACTIVATION_DELAY);
         return Ok(());
     }

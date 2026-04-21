@@ -100,7 +100,7 @@ impl Action {
     pub fn likely_needs_accessibility(&self) -> bool {
         match self {
             Self::Noop => false,
-            Self::FocusWindow { .. } => true,
+            Self::FocusWindow { .. } => false,
             Self::Plugin { payload, .. } => payload.likely_needs_accessibility(),
             Self::OpenApplication { .. } | Self::OpenPath { .. } | Self::OpenSettings { .. } => {
                 false

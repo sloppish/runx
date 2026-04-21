@@ -113,7 +113,7 @@ impl Launcher {
             loaded,
             runtime,
             providers,
-            actions: ActionRunner::new(plugins),
+            actions: ActionRunner::new(plugins, config.window.focus_behavior),
             search: SearchController::new(&config.timing),
             windows: WindowController::default(),
             proxy,
