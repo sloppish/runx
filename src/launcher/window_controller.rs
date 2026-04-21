@@ -11,7 +11,7 @@ use tao::{dpi::PhysicalPosition, window::Window};
 use wry::WebView;
 
 use crate::{
-    config::WindowConfig,
+    config::{WindowConfig, WindowDisplayTarget},
     debug_log,
     macos::{FrontmostApp, capture_frontmost_app},
     state::AppState,
@@ -110,12 +110,9 @@ impl WindowController {
             .context("failed to focus the launcher input")
     }
 
-    /// Centers the launcher on the current or primary monitor.
+    /// Centers the launcher on the configured monitor.
     pub(crate) fn center_window(&self, window: &Window, config: &WindowConfig) {
-        let Some(monitor) = window
-            .current_monitor()
-            .or_else(|| window.primary_monitor())
-        else {
+        let Some(monitor) = monitor_for_window(window, config) else {
             return;
         };
 
@@ -128,6 +125,21 @@ impl WindowController {
         let y = monitor_origin.y as f64 + (monitor_size.height as f64 - window_height) / 3.2;
 
         window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+    }
+}
+
+fn monitor_for_window(
+    window: &Window,
+    config: &WindowConfig,
+) -> Option<tao::monitor::MonitorHandle> {
+    match config.show_on {
+        WindowDisplayTarget::Primary => window.primary_monitor(),
+        WindowDisplayTarget::Cursor => window
+            .cursor_position()
+            .ok()
+            .and_then(|position| window.monitor_from_point(position.x, position.y))
+            .or_else(|| window.current_monitor())
+            .or_else(|| window.primary_monitor()),
     }
 }
 

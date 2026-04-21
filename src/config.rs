@@ -31,6 +31,7 @@ width = 760
 height = 520
 hide_on_blur = true
 always_on_top = true
+show_on = "primary"
 
 [ranking]
 tie_threshold = 120
@@ -89,6 +90,16 @@ pub struct WindowConfig {
     pub height: f64,
     pub hide_on_blur: bool,
     pub always_on_top: bool,
+    pub show_on: WindowDisplayTarget,
+}
+
+/// Monitor selection strategy for placing the launcher window.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum WindowDisplayTarget {
+    #[default]
+    Primary,
+    Cursor,
 }
 
 /// Ranking and truncation rules for the merged result list.
@@ -255,6 +266,7 @@ impl Default for WindowConfig {
             height: 520.0,
             hide_on_blur: true,
             always_on_top: true,
+            show_on: WindowDisplayTarget::Primary,
         }
     }
 }
@@ -390,7 +402,7 @@ fn parse_key(value: &str) -> Result<Code> {
 
 #[cfg(test)]
 mod tests {
-    use super::{parse_key, parse_modifier};
+    use super::{Config, WindowDisplayTarget, parse_key, parse_modifier};
     use global_hotkey::hotkey::{Code, Modifiers};
 
     mod parse_key_tests {
@@ -415,6 +427,23 @@ mod tests {
         fn accepts_common_aliases() {
             assert!(matches!(parse_modifier("option"), Ok(Modifiers::ALT)));
             assert!(matches!(parse_modifier("cmd"), Ok(Modifiers::META)));
+        }
+    }
+
+    mod window_display_target_tests {
+        use super::{Config, WindowDisplayTarget};
+
+        #[test]
+        fn defaults_to_primary() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.window.show_on, WindowDisplayTarget::Primary);
+        }
+
+        #[test]
+        fn accepts_cursor() {
+            let cursor: Config =
+                toml::from_str("[window]\nshow_on = \"cursor\"\n").expect("cursor should parse");
+            assert_eq!(cursor.window.show_on, WindowDisplayTarget::Cursor);
         }
     }
 }
