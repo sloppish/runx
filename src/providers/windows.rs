@@ -62,10 +62,11 @@ impl WindowsProvider {
 
         let windows = self.snapshot()?;
         let query = query.trim();
+        let empty_query = query.is_empty();
         let mut items = Vec::new();
 
         for window in windows.iter() {
-            let score = if query.is_empty() {
+            let score = if empty_query {
                 10_000 - (window.z_index as i64 * 15)
             } else {
                 let combined = format!("{} {}", window.title, window.owner);
@@ -80,6 +81,9 @@ impl WindowsProvider {
         }
 
         items.sort_by_key(|item| std::cmp::Reverse(item.0));
+        if empty_query && !items.is_empty() {
+            items.remove(0);
+        }
         items.truncate(limit);
         Ok(items
             .into_iter()
