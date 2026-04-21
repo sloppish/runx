@@ -10,22 +10,29 @@ use tokio::runtime::Runtime;
 use wry::WebView;
 
 use crate::{
-    config::RankingConfig,
+    config::{RankingConfig, TimingConfig},
     providers::ProviderSet,
     state::AppState,
     types::{AppEvent, SearchItem},
 };
 
-const RENDER_COALESCE: Duration = Duration::from_millis(16);
-const SEARCH_DEBOUNCE: Duration = Duration::from_millis(24);
-
 /// Owns the transient scheduling state around searches and rerenders.
-#[derive(Default)]
 pub(crate) struct SearchController {
     render_scheduled: bool,
+    search_debounce: Duration,
+    render_coalesce: Duration,
 }
 
 impl SearchController {
+    /// Creates a controller using the configured debounce/coalescing timings.
+    pub(crate) fn new(timing: &TimingConfig) -> Self {
+        Self {
+            render_scheduled: false,
+            search_debounce: Duration::from_millis(timing.search_debounce_ms),
+            render_coalesce: Duration::from_millis(timing.render_coalesce_ms),
+        }
+    }
+
     /// Replaces the current query and schedules a debounced search start.
     pub(crate) fn handle_query_changed(
         &mut self,
@@ -35,8 +42,9 @@ impl SearchController {
         proxy: tao::event_loop::EventLoopProxy<AppEvent>,
     ) {
         let token = state.session_mut().set_query(query);
+        let search_debounce = self.search_debounce;
         runtime.handle().spawn(async move {
-            tokio::time::sleep(SEARCH_DEBOUNCE).await;
+            tokio::time::sleep(search_debounce).await;
             let _ = proxy.send_event(AppEvent::StartSearch { token });
         });
     }
@@ -75,7 +83,7 @@ impl SearchController {
             .session_mut()
             .apply_provider_items(generation, provider, items)
         {
-            self.request_render(runtime, proxy, RENDER_COALESCE);
+            self.request_render(runtime, proxy, self.render_coalesce);
         }
     }
 
@@ -93,7 +101,7 @@ impl SearchController {
             .session_mut()
             .apply_provider_error(generation, &provider, message)
         {
-            self.request_render(runtime, proxy, RENDER_COALESCE);
+            self.request_render(runtime, proxy, self.render_coalesce);
         }
     }
 

@@ -114,7 +114,7 @@ impl Launcher {
             runtime,
             providers,
             actions: ActionRunner::new(plugins),
-            search: SearchController::default(),
+            search: SearchController::new(&config.timing),
             windows: WindowController::default(),
             proxy,
             window,

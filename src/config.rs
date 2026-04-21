@@ -22,6 +22,7 @@ const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `provider_order` controls which provider wins when scores are close.
 # `tie_threshold` is the raw fuzzy-score delta that still counts as "similar".
 # `empty_query_providers` controls which providers run before you type anything.
+# `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
 
 [hotkey]
 key = "Space"
@@ -39,6 +40,10 @@ tie_threshold = 120
 provider_order = ["windows", "apps", "settings", "plugins", "spotlight"]
 empty_query_providers = ["windows"]
 result_limit = 24
+
+[timing]
+search_debounce_ms = 24
+render_coalesce_ms = 8
 
 [plugins]
 directories = []
@@ -71,6 +76,7 @@ pub struct Config {
     pub hotkey: HotKeyConfig,
     pub window: WindowConfig,
     pub ranking: RankingConfig,
+    pub timing: TimingConfig,
     pub plugins: PluginsConfig,
     pub plugin: HashMap<String, Table>,
     pub ui: UiConfig,
@@ -112,6 +118,14 @@ pub struct RankingConfig {
     pub provider_order: Vec<String>,
     pub empty_query_providers: Vec<String>,
     pub result_limit: usize,
+}
+
+/// Debounce and coalescing timings for the search/render pipeline.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(default)]
+pub struct TimingConfig {
+    pub search_debounce_ms: u64,
+    pub render_coalesce_ms: u64,
 }
 
 /// Plugin discovery and subprocess lookup configuration.
@@ -287,6 +301,15 @@ impl Default for RankingConfig {
             ],
             empty_query_providers: vec!["windows".to_owned()],
             result_limit: 24,
+        }
+    }
+}
+
+impl Default for TimingConfig {
+    fn default() -> Self {
+        Self {
+            search_debounce_ms: 24,
+            render_coalesce_ms: 8,
         }
     }
 }
@@ -469,6 +492,26 @@ mod tests {
                 config.ranking.empty_query_providers,
                 vec!["windows", "plugins"]
             );
+        }
+    }
+
+    mod timing_tests {
+        use super::Config;
+
+        #[test]
+        fn defaults_to_current_search_and_render_timings() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.timing.search_debounce_ms, 24);
+            assert_eq!(config.timing.render_coalesce_ms, 8);
+        }
+
+        #[test]
+        fn accepts_custom_timing_values() {
+            let config: Config =
+                toml::from_str("[timing]\nsearch_debounce_ms = 32\nrender_coalesce_ms = 12\n")
+                    .expect("custom timing values should parse");
+            assert_eq!(config.timing.search_debounce_ms, 32);
+            assert_eq!(config.timing.render_coalesce_ms, 12);
         }
     }
 }
