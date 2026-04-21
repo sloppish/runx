@@ -3,7 +3,8 @@
 use std::{
     collections::HashSet,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, MutexGuard},
+    thread,
     time::{Duration, Instant},
 };
 
@@ -21,7 +22,7 @@ use crate::{
 /// Searches the local app bundle index built from common application roots.
 pub struct AppProvider {
     roots: Vec<PathBuf>,
-    index: Mutex<AppIndex>,
+    index: Arc<Mutex<AppIndex>>,
     icons: Arc<IconCache>,
 }
 
@@ -35,6 +36,7 @@ struct AppRecord {
 struct AppIndex {
     apps: Vec<AppRecord>,
     scanned_at: Instant,
+    refreshing: bool,
 }
 
 const APP_INDEX_REFRESH_COOLDOWN: Duration = Duration::from_secs(10);
@@ -56,10 +58,11 @@ impl AppProvider {
 
         Ok(Self {
             roots,
-            index: Mutex::new(AppIndex {
+            index: Arc::new(Mutex::new(AppIndex {
                 apps,
                 scanned_at: Instant::now(),
-            }),
+                refreshing: false,
+            })),
             icons,
         })
     }
@@ -70,7 +73,7 @@ impl AppProvider {
             return Ok(Vec::new());
         }
 
-        let mut matches = {
+        let matches = {
             let index = self
                 .index
                 .lock()
@@ -82,44 +85,38 @@ impl AppProvider {
             return Ok(build_items(matches, &self.icons));
         }
 
-        let rescanned = self.refresh_if_stale();
-        if rescanned {
-            let index = self
-                .index
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            matches = score_apps(&index.apps, query, limit);
-        }
+        self.refresh_if_stale();
 
         Ok(build_items(matches, &self.icons))
     }
 
-    fn refresh_if_stale(&self) -> bool {
-        let should_refresh = {
-            let index = self
-                .index
-                .lock()
-                .unwrap_or_else(|poison| poison.into_inner());
-            index.scanned_at.elapsed() >= APP_INDEX_REFRESH_COOLDOWN
-        };
-
-        if !should_refresh {
-            return false;
+    fn refresh_if_stale(&self) {
+        let mut index = lock_or_recover(&self.index);
+        if index.refreshing || index.scanned_at.elapsed() < APP_INDEX_REFRESH_COOLDOWN {
+            return;
         }
 
-        let apps = scan_apps(&self.roots);
-        let mut index = self
-            .index
-            .lock()
-            .unwrap_or_else(|poison| poison.into_inner());
-        if index.scanned_at.elapsed() < APP_INDEX_REFRESH_COOLDOWN {
-            return false;
-        }
+        index.refreshing = true;
+        let roots = self.roots.clone();
+        let shared_index = Arc::clone(&self.index);
+        let spawn_result = thread::Builder::new()
+            .name("runx-app-index-refresh".to_owned())
+            .spawn(move || {
+                let apps = scan_apps(&roots);
+                let mut index = lock_or_recover(&shared_index);
+                index.apps = apps;
+                index.scanned_at = Instant::now();
+                index.refreshing = false;
+            });
 
-        index.apps = apps;
-        index.scanned_at = Instant::now();
-        true
+        if spawn_result.is_err() {
+            index.refreshing = false;
+        }
     }
+}
+
+fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
+    mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
 fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
