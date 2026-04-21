@@ -7,6 +7,7 @@
 use std::{
     ffi::{c_float, c_int, c_void},
     process::{Command, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
     thread,
     time::Duration,
 };
@@ -36,6 +37,7 @@ const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
 const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(250);
 const AX_MESSAGING_TIMEOUT_SECONDS: c_float = 1.0;
+static SCREEN_CAPTURE_REQUESTED: AtomicBool = AtomicBool::new(false);
 
 type AXUIElementRef = *const c_void;
 type AXError = c_int;
@@ -53,6 +55,8 @@ unsafe extern "C" {
     static kAXTrustedCheckOptionPrompt: CFStringRef;
 
     fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> Boolean;
+    fn CGPreflightScreenCaptureAccess() -> Boolean;
+    fn CGRequestScreenCaptureAccess() -> Boolean;
     fn AXUIElementCreateApplication(pid: c_int) -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
@@ -292,6 +296,19 @@ pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
     let options = CFDictionary::from_CFType_pairs(&[(prompt_key, prompt_value)]);
 
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) != 0 }
+}
+
+/// Requests Screen Recording access at most once per process and returns whether it is granted.
+pub fn request_screen_capture_access_once() -> bool {
+    if unsafe { CGPreflightScreenCaptureAccess() != 0 } {
+        return true;
+    }
+
+    if !SCREEN_CAPTURE_REQUESTED.swap(true, Ordering::SeqCst) {
+        let _ = unsafe { CGRequestScreenCaptureAccess() != 0 };
+    }
+
+    unsafe { CGPreflightScreenCaptureAccess() != 0 }
 }
 
 fn open_accessibility_settings() {

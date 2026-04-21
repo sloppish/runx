@@ -20,6 +20,7 @@ use core_graphics::window::{
 
 use crate::{
     icons::IconCache,
+    macos,
     scoring::fuzzy_score,
     types::{Action, SearchItem},
 };
@@ -55,6 +56,10 @@ impl WindowsProvider {
 
     /// Returns the highest-scoring visible windows for the current query.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
+        if !macos::request_screen_capture_access_once() {
+            return Ok(Vec::new());
+        }
+
         let windows = self.snapshot()?;
         let query = query.trim();
         let mut items = Vec::new();
