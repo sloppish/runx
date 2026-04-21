@@ -8,7 +8,10 @@ mod arinae;
 use std::{collections::HashSet, sync::OnceLock};
 
 use self::arinae::{ArinaeMatcher, FuzzyMatcher};
-use crate::{config::RankingConfig, types::SearchItem};
+use crate::{
+    config::{RankingConfig, RankingScoreRule, RankingScoreRuleField, RankingScoreRuleMatchKind},
+    types::SearchItem,
+};
 
 /// Returns an Arinae fuzzy score for `candidate` against `query`.
 pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
@@ -37,6 +40,13 @@ pub fn sort_and_trim(items: Vec<SearchItem>, ranking: &RankingConfig) -> Vec<Sea
         .into_iter()
         .filter(|item| seen.insert(item.id.clone()))
         .collect::<Vec<_>>();
+
+    for item in &mut unique {
+        item.raw_score = item
+            .raw_score
+            .saturating_add(ranking.provider_score_boost(&item.provider))
+            .saturating_add(score_rule_boost(item, ranking));
+    }
 
     unique.sort_by(base_compare);
     unique = regroup_by_threshold(unique, ranking);
@@ -86,6 +96,44 @@ fn base_compare(left: &SearchItem, right: &SearchItem) -> std::cmp::Ordering {
         .then_with(|| left.id.cmp(&right.id))
 }
 
+fn score_rule_boost(item: &SearchItem, ranking: &RankingConfig) -> i64 {
+    ranking
+        .score_rules
+        .iter()
+        .filter(|rule| rule_matches_item(rule, item))
+        .fold(0_i64, |total, rule| total.saturating_add(rule.boost))
+}
+
+fn rule_matches_item(rule: &RankingScoreRule, item: &SearchItem) -> bool {
+    if rule.pattern.trim().is_empty() {
+        return false;
+    }
+
+    if !rule.providers.is_empty()
+        && !rule
+            .providers
+            .iter()
+            .any(|provider| provider == &item.provider)
+    {
+        return false;
+    }
+
+    let candidate = match rule.field {
+        RankingScoreRuleField::Title => &item.title,
+        RankingScoreRuleField::Subtitle => &item.subtitle,
+        RankingScoreRuleField::Badge => &item.badge,
+        RankingScoreRuleField::Id => &item.id,
+    }
+    .to_lowercase();
+    let pattern = rule.pattern.to_lowercase();
+
+    match rule.match_kind {
+        RankingScoreRuleMatchKind::Exact => candidate == pattern,
+        RankingScoreRuleMatchKind::Prefix => candidate.starts_with(&pattern),
+        RankingScoreRuleMatchKind::Contains => candidate.contains(&pattern),
+    }
+}
+
 fn matcher() -> &'static ArinaeMatcher {
     static MATCHER: OnceLock<ArinaeMatcher> = OnceLock::new();
     MATCHER.get_or_init(ArinaeMatcher::default)
@@ -95,7 +143,9 @@ fn matcher() -> &'static ArinaeMatcher {
 mod tests {
     use super::{fuzzy_score, sort_and_trim};
     use crate::{
-        config::RankingConfig,
+        config::{
+            RankingConfig, RankingScoreRule, RankingScoreRuleField, RankingScoreRuleMatchKind,
+        },
         types::{Action, SearchItem},
     };
 
@@ -109,6 +159,8 @@ mod tests {
                 "settings".to_owned(),
             ],
             empty_query_providers: vec!["windows".to_owned()],
+            provider_score_boosts: Default::default(),
+            score_rules: vec![],
             result_limit: 10,
         };
 
@@ -132,6 +184,60 @@ mod tests {
         let window_score = fuzzy_score("Change retention order message", "chrom");
 
         assert!(app_score > window_score);
+    }
+
+    #[test]
+    fn provider_score_boosts_can_override_close_scores() {
+        let ranking = RankingConfig {
+            tie_threshold: 0,
+            provider_order: vec!["spotlight".to_owned(), "apps".to_owned()],
+            empty_query_providers: vec!["windows".to_owned()],
+            provider_score_boosts: [("apps".to_owned(), 20)].into_iter().collect(),
+            score_rules: vec![],
+            result_limit: 10,
+        };
+
+        let items = vec![
+            item("spot", "spotlight", "Spotlight Hit", 100),
+            item("app", "apps", "App Hit", 90),
+        ];
+
+        let ordered = sort_and_trim(items, &ranking);
+        let ids = ordered
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["app", "spot"]);
+    }
+
+    #[test]
+    fn item_score_rules_can_prefer_specific_titles_within_one_provider() {
+        let ranking = RankingConfig {
+            tie_threshold: 0,
+            provider_order: vec!["apps".to_owned()],
+            empty_query_providers: vec!["windows".to_owned()],
+            provider_score_boosts: Default::default(),
+            score_rules: vec![RankingScoreRule {
+                providers: vec!["apps".to_owned(), "windows".to_owned()],
+                field: RankingScoreRuleField::Title,
+                match_kind: RankingScoreRuleMatchKind::Contains,
+                pattern: "spotify".to_owned(),
+                boost: 20,
+            }],
+            result_limit: 10,
+        };
+
+        let items = vec![
+            item("spotlight", "apps", "Spotlight", 100),
+            item("spotify", "apps", "Spotify", 90),
+        ];
+
+        let ordered = sort_and_trim(items, &ranking);
+        let ids = ordered
+            .iter()
+            .map(|item| item.id.as_str())
+            .collect::<Vec<_>>();
+        assert_eq!(ids, vec!["spotify", "spotlight"]);
     }
 
     fn item(id: &str, provider: &str, title: &str, raw_score: i64) -> SearchItem {

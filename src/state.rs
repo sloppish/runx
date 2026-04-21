@@ -348,6 +348,8 @@ mod tests {
                 "spotlight".to_owned(),
             ],
             empty_query_providers: vec!["windows".to_owned()],
+            provider_score_boosts: Default::default(),
+            score_rules: Default::default(),
             result_limit: 24,
         }
     }

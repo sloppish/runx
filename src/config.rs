@@ -22,6 +22,8 @@ const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `provider_order` controls which provider wins when scores are close.
 # `tie_threshold` is the raw fuzzy-score delta that still counts as "similar".
 # `empty_query_providers` controls which providers run before you type anything.
+# `provider_score_boosts` lets you nudge merged scores per provider.
+# `score_rules` lets you boost or demote specific result text patterns.
 # `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
 # `focus_behavior` controls how Runx tries to surface a selected window result.
 
@@ -42,6 +44,15 @@ tie_threshold = 120
 provider_order = ["windows", "apps", "settings", "plugins", "spotlight"]
 empty_query_providers = ["windows"]
 result_limit = 24
+# Example:
+# [ranking.provider_score_boosts]
+# spotlight = -150
+# [[ranking.score_rules]]
+# providers = ["apps", "windows"]
+# field = "title"
+# match = "contains"
+# pattern = "spotify"
+# boost = 120
 
 [timing]
 search_debounce_ms = 24
@@ -131,7 +142,42 @@ pub struct RankingConfig {
     pub tie_threshold: i64,
     pub provider_order: Vec<String>,
     pub empty_query_providers: Vec<String>,
+    pub provider_score_boosts: HashMap<String, i64>,
+    pub score_rules: Vec<RankingScoreRule>,
     pub result_limit: usize,
+}
+
+/// One additive ranking rule matched against a result row.
+#[derive(Debug, Clone, Deserialize, Default)]
+#[serde(default)]
+pub struct RankingScoreRule {
+    pub providers: Vec<String>,
+    pub field: RankingScoreRuleField,
+    #[serde(rename = "match")]
+    pub match_kind: RankingScoreRuleMatchKind,
+    pub pattern: String,
+    pub boost: i64,
+}
+
+/// Search-item field targeted by a ranking score rule.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RankingScoreRuleField {
+    #[default]
+    Title,
+    Subtitle,
+    Badge,
+    Id,
+}
+
+/// Text-matching mode used by a ranking score rule.
+#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
+#[serde(rename_all = "snake_case")]
+pub enum RankingScoreRuleMatchKind {
+    Exact,
+    Prefix,
+    #[default]
+    Contains,
 }
 
 /// Debounce and coalescing timings for the search/render pipeline.
@@ -315,6 +361,8 @@ impl Default for RankingConfig {
                 "spotlight".to_owned(),
             ],
             empty_query_providers: vec!["windows".to_owned()],
+            provider_score_boosts: HashMap::new(),
+            score_rules: Vec::new(),
             result_limit: 24,
         }
     }
@@ -336,6 +384,14 @@ impl RankingConfig {
             .iter()
             .position(|candidate| candidate == provider)
             .unwrap_or(self.provider_order.len() + 1)
+    }
+
+    /// Returns the configured additive score adjustment for a provider.
+    pub fn provider_score_boost(&self, provider: &str) -> i64 {
+        self.provider_score_boosts
+            .get(provider)
+            .copied()
+            .unwrap_or(0)
     }
 }
 
@@ -542,6 +598,33 @@ mod tests {
                 config.ranking.empty_query_providers,
                 vec!["windows", "plugins"]
             );
+        }
+
+        #[test]
+        fn accepts_provider_score_boosts() {
+            let config: Config =
+                toml::from_str("[ranking.provider_score_boosts]\nspotlight = -150\napps = 60\n")
+                    .expect("provider score boosts should parse");
+            assert_eq!(config.ranking.provider_score_boost("spotlight"), -150);
+            assert_eq!(config.ranking.provider_score_boost("apps"), 60);
+            assert_eq!(config.ranking.provider_score_boost("windows"), 0);
+        }
+
+        #[test]
+        fn accepts_score_rules() {
+            let config: Config = toml::from_str(
+                "[[ranking.score_rules]]\nproviders = [\"apps\", \"windows\"]\nfield = \"title\"\nmatch = \"contains\"\npattern = \"spotify\"\nboost = 120\n",
+            )
+            .expect("score rules should parse");
+            let rule = &config.ranking.score_rules[0];
+            assert_eq!(rule.providers, vec!["apps", "windows"]);
+            assert_eq!(rule.field, super::super::RankingScoreRuleField::Title);
+            assert_eq!(
+                rule.match_kind,
+                super::super::RankingScoreRuleMatchKind::Contains
+            );
+            assert_eq!(rule.pattern, "spotify");
+            assert_eq!(rule.boost, 120);
         }
     }
 
