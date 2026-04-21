@@ -11,6 +11,7 @@ core-foundation-sys = "0.8"
 core-graphics = "0.25"
 directories = "6.0"
 global-hotkey = "0.7"
+memchr = "2.7"
 mlua = { version = "0.11.6", features = ["lua54", "send", "serde", "vendored"] }
 objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
 objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL"] }
@@ -19,6 +20,7 @@ png = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 tao = "0.35"
+thread_local = "1.1"
 tokio = { version = "1.48", features = ["rt-multi-thread", "time"] }
 toml = "0.8"
 tray-icon = "0.21"

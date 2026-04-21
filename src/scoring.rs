@@ -3,11 +3,14 @@
 //! Providers produce raw result sets; this module turns them into a stable
 //! ordered list that respects fuzzy score, provider priority, and result limits.
 
-use std::collections::HashSet;
+mod arinae;
 
+use std::{collections::HashSet, sync::OnceLock};
+
+use self::arinae::{ArinaeMatcher, FuzzyMatcher};
 use crate::{config::RankingConfig, types::SearchItem};
 
-/// Returns a simple fuzzy score for `candidate` against `query`.
+/// Returns an Arinae fuzzy score for `candidate` against `query`.
 pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
     let query = query.trim();
     if query.is_empty() {
@@ -16,56 +19,14 @@ pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
 
     let candidate_lower = candidate.to_ascii_lowercase();
     let query_lower = query.to_ascii_lowercase();
-    let candidate_chars: Vec<char> = candidate_lower.chars().collect();
-    let query_chars: Vec<char> = query_lower.chars().collect();
+    let Some(mut score) = matcher().fuzzy_match(&candidate_lower, &query_lower) else {
+        return 0;
+    };
 
-    let mut score = 0_i64;
-    let mut cursor = 0_usize;
-    let mut previous_match: Option<usize> = None;
-    let mut consecutive = 0_i64;
-
-    for query_char in query_chars {
-        let mut found = None;
-        for (index, candidate_char) in candidate_chars.iter().enumerate().skip(cursor) {
-            if *candidate_char == query_char {
-                found = Some(index);
-                break;
-            }
-        }
-
-        let Some(index) = found else {
-            return 0;
-        };
-
-        score += 12;
-        if index == 0 {
-            score += 30;
-        }
-        if let Some(previous) = previous_match {
-            if previous + 1 == index {
-                consecutive += 1;
-                score += 22 + (consecutive * 8);
-            } else {
-                consecutive = 0;
-            }
-        }
-
-        if index > 0 {
-            let previous = candidate_chars[index - 1];
-            if matches!(previous, '/' | '-' | '_' | ' ' | '.') {
-                score += 18;
-            }
-        }
-
-        previous_match = Some(index);
-        cursor = index + 1;
+    if candidate_lower.contains(&query_lower) {
+        score *= 2;
     }
 
-    if let Some(index) = candidate_lower.find(&query_lower) {
-        score += 50 - index as i64;
-    }
-
-    score -= (candidate_chars.len() as i64 / 3).max(0);
     score
 }
 
@@ -125,9 +86,14 @@ fn base_compare(left: &SearchItem, right: &SearchItem) -> std::cmp::Ordering {
         .then_with(|| left.id.cmp(&right.id))
 }
 
+fn matcher() -> &'static ArinaeMatcher {
+    static MATCHER: OnceLock<ArinaeMatcher> = OnceLock::new();
+    MATCHER.get_or_init(ArinaeMatcher::default)
+}
+
 #[cfg(test)]
 mod tests {
-    use super::sort_and_trim;
+    use super::{fuzzy_score, sort_and_trim};
     use crate::{
         config::RankingConfig,
         types::{Action, SearchItem},
@@ -158,6 +124,14 @@ mod tests {
             .map(|item| item.id.as_str())
             .collect::<Vec<_>>();
         assert_eq!(ids, vec!["b", "a", "c"]);
+    }
+
+    #[test]
+    fn prefers_contiguous_substring_over_scattered_subsequence() {
+        let app_score = fuzzy_score("Google Chrome", "chrom");
+        let window_score = fuzzy_score("Change retention order message", "chrom");
+
+        assert!(app_score > window_score);
     }
 
     fn item(id: &str, provider: &str, title: &str, raw_score: i64) -> SearchItem {
