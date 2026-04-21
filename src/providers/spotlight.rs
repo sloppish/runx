@@ -85,6 +85,7 @@ fn build_item(path: &str, query: &str, icons: &IconCache) -> Option<SearchItem> 
             icon: icons.icon_for_bundle(path),
             title,
             subtitle: "Spotlight application match".to_owned(),
+            compact: false,
             raw_score: score,
             action: Action::OpenApplication {
                 path: path.to_owned(),
@@ -100,6 +101,7 @@ fn build_item(path: &str, query: &str, icons: &IconCache) -> Option<SearchItem> 
             icon: icons.system_settings_icon(),
             title,
             subtitle: "Spotlight preference pane".to_owned(),
+            compact: false,
             raw_score: score,
             action: Action::OpenPath {
                 path: path.to_owned(),

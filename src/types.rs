@@ -15,6 +15,7 @@ pub struct SearchItem {
     pub icon: Option<String>,
     pub title: String,
     pub subtitle: String,
+    pub compact: bool,
     pub raw_score: i64,
     pub action: Action,
 }

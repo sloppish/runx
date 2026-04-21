@@ -100,6 +100,7 @@ impl SettingsProvider {
                         .or_else(|| self.icons.system_settings_icon()),
                     title: setting.title.clone(),
                     subtitle: setting.subtitle.clone(),
+                    compact: false,
                     raw_score: score,
                     action: Action::OpenSettings {
                         url,

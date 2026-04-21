@@ -167,6 +167,7 @@ mod tests {
             icon: None,
             title: title.to_owned(),
             subtitle: provider.to_owned(),
+            compact: false,
             raw_score,
             action: Action::OpenPath {
                 path: format!("/tmp/{id}"),

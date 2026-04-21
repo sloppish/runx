@@ -192,6 +192,7 @@ fn build_items(matches: Vec<(i64, AppRecord)>, icons: &IconCache) -> Vec<SearchI
             icon: icons.icon_for_bundle(&app.path),
             title: app.name,
             subtitle: app.path.clone(),
+            compact: false,
             raw_score: score,
             action: Action::OpenApplication { path: app.path },
         })

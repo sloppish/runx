@@ -182,7 +182,7 @@ impl SearchSession {
                 badge: item.badge.clone(),
                 icon: item.icon.clone(),
                 accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
-                compact: item.provider == "plugins",
+                compact: item.compact,
             })
             .collect();
 
@@ -201,6 +201,7 @@ fn provider_error_item(provider: &str, message: String, generation: u64) -> Sear
         icon: None,
         title: provider_error_title(provider),
         subtitle: message,
+        compact: false,
         raw_score: 1_000_000,
         action: Action::Noop,
     }
@@ -358,6 +359,7 @@ mod tests {
             icon: None,
             title: id.to_owned(),
             subtitle: "test".to_owned(),
+            compact: false,
             raw_score,
             action: Action::OpenPath {
                 path: format!("/tmp/{id}"),
@@ -373,6 +375,7 @@ mod tests {
             icon: None,
             title: id.to_owned(),
             subtitle: "test".to_owned(),
+            compact: true,
             raw_score,
             action: Action::Noop,
         }

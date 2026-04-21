@@ -66,6 +66,7 @@ struct PluginItemWire {
     subtitle: Option<String>,
     score: Option<i64>,
     badge: Option<String>,
+    style: Option<String>,
     action: PluginActionPayload,
 }
 
@@ -76,6 +77,7 @@ struct PluginItem {
     subtitle: String,
     score: i64,
     badge: String,
+    compact: bool,
     action: PluginActionPayload,
 }
 
@@ -294,6 +296,7 @@ fn run_search(
             icon: None,
             title: item.title,
             subtitle: item.subtitle,
+            compact: item.compact,
             raw_score: item.score,
             action: Action::Plugin {
                 plugin_id: plugin.id.clone(),
@@ -331,6 +334,7 @@ fn run_search_handler(
             icon: None,
             title: item.title,
             subtitle: item.subtitle,
+            compact: item.compact,
             raw_score: item.score,
             action: Action::Plugin {
                 plugin_id: plugin.id.clone(),
@@ -365,6 +369,19 @@ fn validate_plugin_item(
         None => format!("plugin:{}:{}", plugin.id, title),
     };
 
+    let compact = match item.style {
+        Some(style) => match style.trim() {
+            "compact" => true,
+            "full" => false,
+            "" => bail!("plugin item {} has an empty `style`", index + 1),
+            other => bail!(
+                "plugin item {} has invalid `style` `{other}`; expected `compact` or `full`",
+                index + 1
+            ),
+        },
+        None => true,
+    };
+
     let badge = match item.badge {
         Some(badge) => {
             let badge = badge.trim();
@@ -373,6 +390,7 @@ fn validate_plugin_item(
             }
             badge.to_owned()
         }
+        None if compact => String::new(),
         None => plugin.badge.clone(),
     };
 
@@ -381,7 +399,7 @@ fn validate_plugin_item(
         .as_deref()
         .map(str::trim)
         .filter(|value| !value.is_empty())
-        .unwrap_or(plugin.name.as_str())
+        .unwrap_or(if compact { "" } else { plugin.name.as_str() })
         .to_owned();
 
     Ok(PluginItem {
@@ -390,6 +408,7 @@ fn validate_plugin_item(
         subtitle,
         score: item.score.unwrap_or(0),
         badge,
+        compact,
         action: item.action,
     })
 }
@@ -868,8 +887,40 @@ mod tests {
         let item = validate_plugin_item(&test_plugin(), 0, item).expect("validated item");
 
         assert_eq!(item.id, "plugin:test:Copy secret");
+        assert_eq!(item.badge, "");
+        assert_eq!(item.subtitle, "");
+        assert!(item.compact);
+    }
+
+    #[test]
+    fn validate_plugin_item_accepts_full_style() {
+        let item = serde_json::from_value::<PluginItemWire>(json!({
+            "title": "Copy secret",
+            "style": "full",
+            "action": { "kind": "copy_secret" }
+        }))
+        .expect("valid wire item");
+
+        let item = validate_plugin_item(&test_plugin(), 0, item).expect("validated item");
+        assert!(!item.compact);
         assert_eq!(item.badge, "TST");
         assert_eq!(item.subtitle, "Test Plugin");
+    }
+
+    #[test]
+    fn validate_plugin_item_rejects_unknown_style() {
+        let item = serde_json::from_value::<PluginItemWire>(json!({
+            "title": "Copy secret",
+            "style": "wide",
+            "action": { "kind": "copy_secret" }
+        }))
+        .expect("valid wire item");
+
+        let error = validate_plugin_item(&test_plugin(), 0, item)
+            .expect_err("invalid style should fail")
+            .to_string();
+
+        assert!(error.contains("expected `compact` or `full`"));
     }
 
     #[test]
@@ -943,5 +994,36 @@ mod tests {
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, r#"1 "2 3" '4 "5"'"#);
         assert_eq!(items[0].subtitle, r#"1|2 3|4 "5""#);
+        assert!(items[0].compact);
+    }
+
+    #[test]
+    fn routed_handlers_can_request_full_style() {
+        let plugin = LuaPlugin {
+            id: "args".to_owned(),
+            name: "Args Plugin".to_owned(),
+            badge: "ARG".to_owned(),
+            path: PathBuf::from("args.lua"),
+            source: r#"
+                return {
+                  search_echo = function()
+                    return {
+                      {
+                        title = "Echo",
+                        style = "full",
+                        action = { kind = "noop" },
+                      },
+                    }
+                  end,
+                }
+            "#
+            .to_owned(),
+        };
+
+        let items = run_search_handler(&plugin, "search_echo", "", empty_plugin_config(), &[])
+            .expect("handler search should succeed");
+
+        assert_eq!(items.len(), 1);
+        assert!(!items[0].compact);
     }
 }

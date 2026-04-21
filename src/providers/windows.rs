@@ -85,6 +85,7 @@ impl WindowsProvider {
                 icon: self.icons.icon_for_pid(window.pid),
                 title: window.title.clone(),
                 subtitle: window.owner.clone(),
+                compact: false,
                 raw_score: score,
                 action: Action::FocusWindow {
                     app_name: window.owner,

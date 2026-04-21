@@ -69,6 +69,7 @@ Each item must match this schema:
   title = "Required title",
   subtitle = "Optional subtitle",
   badge = "Optional badge override",
+  style = "compact", -- or "full"
   score = 123,
   action = {
     kind = "required_action_kind",
@@ -82,14 +83,18 @@ Validation rules enforced by Runx:
 - `title` is required and must not be empty after trimming
 - `id`, if present, must not be empty after trimming
 - `badge`, if present, must not be empty after trimming
+- `style`, if present, must be either `"compact"` or `"full"`
 - `action.kind` is required and must not be empty
 - `action.kind` must not contain leading or trailing whitespace
 
 Normalization rules:
 
 - missing `id` becomes `plugin:<plugin_id>:<title>`
-- missing `badge` falls back to the plugin badge
-- missing or blank `subtitle` falls back to the plugin name
+- missing `badge` falls back to the plugin badge for `style = "full"` rows
+- missing `badge` becomes an empty string for `style = "compact"` rows
+- missing or blank `subtitle` falls back to the plugin name for `style = "full"` rows
+- missing or blank `subtitle` becomes an empty string for `style = "compact"` rows
+- missing `style` falls back to `"compact"`
 - missing `score` falls back to `0`
 
 If a returned item is invalid, the plugin search fails for that query with a clear error.
