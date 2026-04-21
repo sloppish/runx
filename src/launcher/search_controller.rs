@@ -46,6 +46,7 @@ impl SearchController {
         &mut self,
         state: &mut AppState,
         token: u64,
+        ranking: &RankingConfig,
         providers: &ProviderSet,
         proxy: tao::event_loop::EventLoopProxy<AppEvent>,
     ) {
@@ -53,8 +54,11 @@ impl SearchController {
             return;
         }
 
-        let generation = state.session_mut().begin_search(providers.provider_count());
-        providers.spawn_search(proxy, generation, state.session().query().to_owned());
+        let query = state.session().query().to_owned();
+        let provider_count =
+            providers.provider_count_for_query(&query, &ranking.empty_query_providers);
+        let generation = state.session_mut().begin_search(provider_count);
+        providers.spawn_search(proxy, generation, query, &ranking.empty_query_providers);
     }
 
     /// Merges one provider response into the current session and schedules rerender.

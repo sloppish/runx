@@ -347,6 +347,7 @@ mod tests {
                 "plugins".to_owned(),
                 "spotlight".to_owned(),
             ],
+            empty_query_providers: vec!["windows".to_owned()],
             result_limit: 24,
         }
     }

@@ -21,6 +21,7 @@ const DEFAULT_CONFIG: &str = r##"# Runx configuration
 #
 # `provider_order` controls which provider wins when scores are close.
 # `tie_threshold` is the raw fuzzy-score delta that still counts as "similar".
+# `empty_query_providers` controls which providers run before you type anything.
 
 [hotkey]
 key = "Space"
@@ -36,6 +37,7 @@ show_on = "primary"
 [ranking]
 tie_threshold = 120
 provider_order = ["windows", "apps", "settings", "plugins", "spotlight"]
+empty_query_providers = ["windows"]
 result_limit = 24
 
 [plugins]
@@ -108,6 +110,7 @@ pub enum WindowDisplayTarget {
 pub struct RankingConfig {
     pub tie_threshold: i64,
     pub provider_order: Vec<String>,
+    pub empty_query_providers: Vec<String>,
     pub result_limit: usize,
 }
 
@@ -282,6 +285,7 @@ impl Default for RankingConfig {
                 "plugins".to_owned(),
                 "spotlight".to_owned(),
             ],
+            empty_query_providers: vec!["windows".to_owned()],
             result_limit: 24,
         }
     }
@@ -444,6 +448,27 @@ mod tests {
             let cursor: Config =
                 toml::from_str("[window]\nshow_on = \"cursor\"\n").expect("cursor should parse");
             assert_eq!(cursor.window.show_on, WindowDisplayTarget::Cursor);
+        }
+    }
+
+    mod empty_query_provider_tests {
+        use super::Config;
+
+        #[test]
+        fn defaults_to_windows_only() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.ranking.empty_query_providers, vec!["windows"]);
+        }
+
+        #[test]
+        fn accepts_custom_provider_list() {
+            let config: Config =
+                toml::from_str("[ranking]\nempty_query_providers = [\"windows\", \"plugins\"]\n")
+                    .expect("custom empty query providers should parse");
+            assert_eq!(
+                config.ranking.empty_query_providers,
+                vec!["windows", "plugins"]
+            );
         }
     }
 }

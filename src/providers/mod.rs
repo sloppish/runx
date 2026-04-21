@@ -40,9 +40,6 @@ pub struct ProviderSet {
 }
 
 impl ProviderSet {
-    /// Number of providers launched for each search generation.
-    pub const PROVIDER_COUNT: usize = 5;
-
     /// Builds all provider workers from shared config, plugins, and icon state.
     pub fn new(
         config: Arc<Config>,
@@ -80,21 +77,56 @@ impl ProviderSet {
     }
 
     /// Returns how many provider responses a session should wait for.
-    pub fn provider_count(&self) -> usize {
-        Self::PROVIDER_COUNT
+    pub fn provider_count_for_query(&self, query: &str, empty_query_providers: &[String]) -> usize {
+        let enabled = enabled_providers_for_query(query, empty_query_providers);
+        ["windows", "apps", "settings", "plugins", "spotlight"]
+            .into_iter()
+            .filter(|provider| enabled.contains(provider))
+            .count()
     }
 
     /// Starts a new search request across all providers.
-    pub fn spawn_search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
-        self.windows
-            .search(proxy.clone(), generation, query.clone());
-        self.apps.search(proxy.clone(), generation, query.clone());
-        self.settings
-            .search(proxy.clone(), generation, query.clone());
-        self.plugins
-            .search(proxy.clone(), generation, query.clone());
-        self.spotlight.search(proxy, generation, query);
+    pub fn spawn_search(
+        &self,
+        proxy: EventLoopProxy<AppEvent>,
+        generation: u64,
+        query: String,
+        empty_query_providers: &[String],
+    ) {
+        let enabled = enabled_providers_for_query(&query, empty_query_providers);
+
+        if enabled.contains("windows") {
+            self.windows
+                .search(proxy.clone(), generation, query.clone());
+        }
+        if enabled.contains("apps") {
+            self.apps.search(proxy.clone(), generation, query.clone());
+        }
+        if enabled.contains("settings") {
+            self.settings
+                .search(proxy.clone(), generation, query.clone());
+        }
+        if enabled.contains("plugins") {
+            self.plugins
+                .search(proxy.clone(), generation, query.clone());
+        }
+        if enabled.contains("spotlight") {
+            self.spotlight.search(proxy, generation, query);
+        }
     }
+}
+
+fn enabled_providers_for_query<'a>(
+    query: &str,
+    empty_query_providers: &'a [String],
+) -> std::collections::HashSet<&'a str> {
+    if !query.trim().is_empty() {
+        return ["windows", "apps", "settings", "plugins", "spotlight"]
+            .into_iter()
+            .collect();
+    }
+
+    empty_query_providers.iter().map(String::as_str).collect()
 }
 
 #[derive(Clone)]

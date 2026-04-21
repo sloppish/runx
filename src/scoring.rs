@@ -142,6 +142,7 @@ mod tests {
                 "apps".to_owned(),
                 "settings".to_owned(),
             ],
+            empty_query_providers: vec!["windows".to_owned()],
             result_limit: 10,
         };
 
