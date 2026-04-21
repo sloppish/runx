@@ -8,6 +8,7 @@ use std::{
     collections::{HashMap, HashSet},
     fs,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
 use anyhow::{Context, Result, anyhow, bail};
@@ -78,12 +79,13 @@ muted = "#756759"
 /// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
     pub config: Config,
+    pub config_path: PathBuf,
     pub plugin_dirs: Vec<PathBuf>,
     pub plugin_search_paths: Vec<PathBuf>,
 }
 
 /// Root configuration object deserialized from `config.toml`.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default)]
 pub struct Config {
     pub hotkey: HotKeyConfig,
@@ -96,7 +98,7 @@ pub struct Config {
 }
 
 /// User-facing global hotkey configuration.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct HotKeyConfig {
     pub key: String,
@@ -104,7 +106,7 @@ pub struct HotKeyConfig {
 }
 
 /// Launcher window behavior and geometry.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default)]
 pub struct WindowConfig {
     pub width: f64,
@@ -136,7 +138,7 @@ pub enum WindowFocusBehavior {
 }
 
 /// Ranking and truncation rules for the merged result list.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct RankingConfig {
     pub tie_threshold: i64,
@@ -148,7 +150,7 @@ pub struct RankingConfig {
 }
 
 /// One additive ranking rule matched against a result row.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct RankingScoreRule {
     pub providers: Vec<String>,
@@ -181,7 +183,7 @@ pub enum RankingScoreRuleMatchKind {
 }
 
 /// Debounce and coalescing timings for the search/render pipeline.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct TimingConfig {
     pub search_debounce_ms: u64,
@@ -189,7 +191,7 @@ pub struct TimingConfig {
 }
 
 /// Plugin discovery and subprocess lookup configuration.
-#[derive(Debug, Clone, Deserialize, Default)]
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default)]
 pub struct PluginsConfig {
     pub directories: Vec<String>,
@@ -197,7 +199,7 @@ pub struct PluginsConfig {
 }
 
 /// Theme tokens injected into the embedded HTML/CSS UI templates.
-#[derive(Debug, Clone, Deserialize)]
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default)]
 pub struct UiConfig {
     pub font_family: String,
@@ -211,14 +213,7 @@ pub struct UiConfig {
 impl LoadedConfig {
     /// Loads the user config, writing the default template on first launch.
     pub fn load() -> Result<Self> {
-        let base_dirs =
-            BaseDirs::new().context("could not resolve the current user's home directory")?;
-        let root_dir = base_dirs.config_dir().join("runx");
-        let plugin_dir = root_dir.join("plugins");
-        fs::create_dir_all(&plugin_dir)
-            .with_context(|| format!("failed to create {}", plugin_dir.display()))?;
-
-        let config_path = root_dir.join("config.toml");
+        let (root_dir, plugin_dir, config_path) = runtime_paths()?;
         if !config_path.exists() {
             fs::write(&config_path, DEFAULT_CONFIG)
                 .with_context(|| format!("failed to write {}", config_path.display()))?;
@@ -232,6 +227,26 @@ impl LoadedConfig {
                 config_path.display()
             )
         })?;
+
+        Self::from_parts(config, root_dir, plugin_dir, config_path)
+    }
+
+    /// Builds a runtime config from built-in defaults without persisting anything.
+    pub fn load_defaults() -> Result<Self> {
+        let (root_dir, plugin_dir, config_path) = runtime_paths()?;
+        Self::from_parts(Config::default(), root_dir, plugin_dir, config_path)
+    }
+
+    fn from_parts(
+        config: Config,
+        root_dir: PathBuf,
+        plugin_dir: PathBuf,
+        config_path: PathBuf,
+    ) -> Result<Self> {
+        let base_dirs =
+            BaseDirs::new().context("could not resolve the current user's home directory")?;
+        fs::create_dir_all(&plugin_dir)
+            .with_context(|| format!("failed to create {}", plugin_dir.display()))?;
 
         let mut plugin_dirs = vec![plugin_dir];
         for configured in &config.plugins.directories {
@@ -247,10 +262,25 @@ impl LoadedConfig {
 
         Ok(Self {
             config,
+            config_path,
             plugin_dirs,
             plugin_search_paths,
         })
     }
+}
+
+fn runtime_paths() -> Result<(PathBuf, PathBuf, PathBuf)> {
+    let base_dirs =
+        BaseDirs::new().context("could not resolve the current user's home directory")?;
+    let root_dir = base_dirs.config_dir().join("runx");
+    let plugin_dir = root_dir.join("plugins");
+    let config_path = root_dir.join("config.toml");
+    Ok((root_dir, plugin_dir, config_path))
+}
+
+/// Returns the current modification time for the config file, if it exists.
+pub fn config_modified_at(path: &Path) -> Option<SystemTime> {
+    fs::metadata(path).ok()?.modified().ok()
 }
 
 impl Config {

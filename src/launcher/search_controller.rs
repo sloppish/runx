@@ -41,6 +41,7 @@ impl SearchController {
         runtime: &Runtime,
         proxy: tao::event_loop::EventLoopProxy<AppEvent>,
     ) {
+        state.session_mut().clear_config_error();
         let token = state.session_mut().set_query(query);
         let search_debounce = self.search_debounce;
         runtime.handle().spawn(async move {

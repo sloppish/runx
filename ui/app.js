@@ -2,6 +2,7 @@
   function createState() {
     return {
       query: "",
+      configError: null,
       items: [],
       selectedIndex: 0,
     };
@@ -31,6 +32,7 @@
 
   function applyRenderPayload(state, payload, environment) {
     const payloadQuery = typeof payload.query === "string" ? payload.query : "";
+    state.configError = typeof payload.config_error === "string" ? payload.config_error : null;
     const shouldSyncInput =
       payloadQuery === "" ||
       environment.inputValue === payloadQuery ||
@@ -84,10 +86,20 @@
 
   const state = createState();
   const resultsEl = document.getElementById("results");
+  const configErrorEl = document.getElementById("config-error");
   const inputEl = document.getElementById("query");
+  const inputWrapEl = document.querySelector(".input-wrap");
   const send = (payload) => root.ipc.postMessage(JSON.stringify(payload));
 
+  function inConfigErrorMode() {
+    return !!state.configError && state.query === "";
+  }
+
   function syncSelection(ensureVisible = true) {
+    if (inConfigErrorMode()) {
+      return;
+    }
+
     Array.from(resultsEl.children).forEach((child, index) => {
       child.classList.toggle("selected", index === state.selectedIndex);
     });
@@ -104,6 +116,21 @@
 
   function render() {
     clampSelection(state);
+
+    if (inConfigErrorMode()) {
+      inputWrapEl.classList.add("hidden");
+      resultsEl.classList.add("hidden");
+      configErrorEl.classList.remove("hidden");
+      configErrorEl.innerHTML = `
+        <div class="config-error-title">Config reload failed</div>
+        <div class="config-error-copy">${escapeHtml(state.configError)}</div>
+      `;
+      return;
+    }
+
+    inputWrapEl.classList.remove("hidden");
+    resultsEl.classList.remove("hidden");
+    configErrorEl.classList.add("hidden");
     resultsEl.innerHTML = "";
 
     for (const [index, item] of state.items.entries()) {
@@ -147,6 +174,9 @@
   };
 
   root.__RUNX_FOCUS = () => {
+    if (inConfigErrorMode()) {
+      return;
+    }
     inputEl.focus();
     inputEl.select();
   };
@@ -193,6 +223,29 @@
         send({ type: "activate", index });
       }
     }
+  });
+
+  document.addEventListener("keydown", (event) => {
+    if (!inConfigErrorMode()) {
+      return;
+    }
+
+    if (event.key === "Escape") {
+      event.preventDefault();
+      send({ type: "hide" });
+      return;
+    }
+
+    if (event.metaKey || event.ctrlKey || event.altKey || event.key.length !== 1) {
+      return;
+    }
+
+    event.preventDefault();
+    inputEl.value = event.key;
+    inputChanged(state, inputEl.value);
+    render();
+    inputEl.focus();
+    send({ type: "query_changed", query: inputEl.value });
   });
 
   send({ type: "ready" });

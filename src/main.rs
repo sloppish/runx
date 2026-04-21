@@ -31,8 +31,8 @@ mod tray;
 mod types;
 mod ui;
 
-use anyhow::{Context, Result};
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState};
+use anyhow::Result;
+use global_hotkey::GlobalHotKeyEvent;
 #[cfg(target_os = "macos")]
 use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tao::{
@@ -51,8 +51,7 @@ fn main() {
     }
 }
 
-/// Builds the Tao event loop, registers the global hotkey, and hands control
-/// over to the native event loop.
+/// Builds the Tao event loop and hands control over to the native event loop.
 fn run() -> Result<()> {
     let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
@@ -63,22 +62,12 @@ fn run() -> Result<()> {
 
     let proxy = event_loop.create_proxy();
     let mut launcher = Launcher::bootstrap(&event_loop, proxy)?;
-    let hotkey = launcher.hotkey()?;
-    let hotkey_id = hotkey.id();
-    let hotkey_manager =
-        GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
-    hotkey_manager
-        .register(hotkey)
-        .context("failed to register the global hotkey from config.toml")?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         while let Ok(global_event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if global_event.id == hotkey_id
-                && global_event.state == HotKeyState::Pressed
-                && let Err(error) = launcher.toggle()
-            {
+            if let Err(error) = launcher.handle_global_hotkey_event(global_event) {
                 launcher.set_error(error.to_string());
             }
         }

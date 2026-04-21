@@ -37,3 +37,16 @@ test("backend render payload does not overwrite active typing with stale query t
   assert.equal(state.items.length, 1);
   assert.equal(state.selectedIndex, 1);
 });
+
+test("backend render payload preserves config error separately from items", () => {
+  const state = ui.createState();
+
+  ui.applyRenderPayload(
+    state,
+    { query: "", config_error: "bad syntax", items: [] },
+    { inputValue: "", inputFocused: false },
+  );
+
+  assert.equal(state.configError, "bad syntax");
+  assert.equal(state.items.length, 0);
+});

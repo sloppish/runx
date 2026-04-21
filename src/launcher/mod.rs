@@ -12,6 +12,7 @@ mod search_controller;
 mod window_controller;
 
 use std::sync::Arc;
+use std::time::SystemTime;
 
 use crate::{
     config::{self, LoadedConfig},
@@ -27,6 +28,7 @@ use crate::{
 };
 use action_runner::ActionRunner;
 use anyhow::{Context, Result};
+use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 #[cfg(target_os = "macos")]
 use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
@@ -50,11 +52,16 @@ use self::{search_controller::SearchController, window_controller::WindowControl
 /// - it translates Tao/frontend/provider events into those controller calls
 pub struct Launcher {
     loaded: LoadedConfig,
+    last_config_modified: Option<SystemTime>,
+    hotkey_manager: GlobalHotKeyManager,
+    hotkey: HotKey,
     runtime: Runtime,
+    icons: Arc<IconCache>,
     providers: ProviderSet,
     actions: ActionRunner,
     search: SearchController,
     windows: WindowController,
+    config_reload_error: Option<String>,
     proxy: EventLoopProxy<AppEvent>,
     window: Window,
     webview: WebView,
@@ -69,9 +76,25 @@ impl Launcher {
         proxy: EventLoopProxy<AppEvent>,
     ) -> Result<Self> {
         debug_log::append(format!("launcher bootstrap pid={}", std::process::id()));
-        let loaded = LoadedConfig::load()?;
-        let plugin_config = loaded.config.plugin_config()?;
-        let plugin_routes = loaded.config.plugin_routes()?;
+        let bootstrap = Self::prepare_runtime_config()?;
+        let BootstrapConfig {
+            loaded,
+            hotkey,
+            plugin_config,
+            plugin_routes,
+            config_error,
+        } = bootstrap;
+        if let Some(error) = config_error.as_deref() {
+            debug_log::append(format!(
+                "error: Startup config invalid; using defaults: {error}"
+            ));
+        }
+        let last_config_modified = config::config_modified_at(&loaded.config_path);
+        let hotkey_manager =
+            GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
+        hotkey_manager
+            .register(hotkey)
+            .context("failed to register the global hotkey from config.toml")?;
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -111,22 +134,22 @@ impl Launcher {
 
         Ok(Self {
             loaded,
+            last_config_modified,
+            hotkey_manager,
+            hotkey,
             runtime,
+            icons: icons.clone(),
             providers,
             actions: ActionRunner::new(plugins, config.window.focus_behavior),
             search: SearchController::new(&config.timing),
             windows: WindowController::default(),
+            config_reload_error: config_error,
             proxy,
             window,
             webview,
             state: AppState::new(),
             tray: None,
         })
-    }
-
-    /// Returns the configured global hotkey used to toggle the launcher.
-    pub fn hotkey(&self) -> Result<global_hotkey::hotkey::HotKey> {
-        self.loaded.config.hotkey()
     }
 
     /// Shows the launcher if hidden, or hides it if already visible.
@@ -228,14 +251,30 @@ impl Launcher {
         self.log_outcome(message, true);
     }
 
+    /// Applies a global hotkey event emitted by the `global-hotkey` crate.
+    pub fn handle_global_hotkey_event(&mut self, event: GlobalHotKeyEvent) -> Result<()> {
+        if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
+            self.toggle()?;
+        }
+        Ok(())
+    }
+
     fn show(&mut self) -> Result<()> {
+        self.reload_config_if_needed()?;
         self.providers.begin_session();
         self.windows.note_shown(&mut self.state);
-        self.search
-            .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
         self.windows
             .center_window(&self.window, &self.loaded.config.window);
         self.windows.show_window(&self.window);
+        if let Some(message) = self.config_reload_error.clone() {
+            self.state.session_mut().set_config_error(message);
+            self.search
+                .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+            return Ok(());
+        }
+
+        self.search
+            .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
         let token = self.state.session().search_token();
         self.search.handle_start_search(
             &mut self.state,
@@ -333,6 +372,161 @@ impl Launcher {
 }
 
 impl Launcher {
+    fn prepare_runtime_config() -> Result<BootstrapConfig> {
+        match LoadedConfig::load().and_then(Self::build_bootstrap_config) {
+            Ok(bootstrap) => Ok(bootstrap),
+            Err(error) => {
+                let fallback = Self::build_bootstrap_config(LoadedConfig::load_defaults()?)?;
+                Ok(BootstrapConfig {
+                    config_error: Some(error.to_string()),
+                    ..fallback
+                })
+            }
+        }
+    }
+
+    fn build_bootstrap_config(loaded: LoadedConfig) -> Result<BootstrapConfig> {
+        let hotkey = loaded.config.hotkey()?;
+        let plugin_config = loaded.config.plugin_config()?;
+        let plugin_routes = loaded.config.plugin_routes()?;
+        Ok(BootstrapConfig {
+            loaded,
+            hotkey,
+            plugin_config,
+            plugin_routes,
+            config_error: None,
+        })
+    }
+
+    fn reload_config_if_needed(&mut self) -> Result<()> {
+        let current_modified = config::config_modified_at(&self.loaded.config_path);
+        if current_modified == self.last_config_modified {
+            return Ok(());
+        }
+
+        match self.reload_config() {
+            Ok(()) => {
+                self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
+                self.config_reload_error = None;
+            }
+            Err(error) => {
+                self.config_reload_error = Some(error.to_string());
+                self.log_outcome(
+                    format!("Config reload failed; keeping previous config: {error:#}"),
+                    true,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn reload_config(&mut self) -> Result<()> {
+        let was_visible = self.state.is_visible();
+        let current_query = self.state.session().query().to_owned();
+        let previous_hotkey = self.hotkey;
+        let previous_config = self.loaded.config.clone();
+
+        let loaded = LoadedConfig::load()?;
+        let reloaded_hotkey = loaded.config.hotkey()?;
+        let plugin_config = loaded.config.plugin_config()?;
+        let plugin_routes = loaded.config.plugin_routes()?;
+
+        let config = Arc::new(loaded.config.clone());
+        let plugins = Arc::new(plugins::PluginHost::load(
+            &loaded.plugin_dirs,
+            &loaded.plugin_search_paths,
+            plugin_config,
+            plugin_routes,
+        ));
+        let providers = ProviderSet::new(config.clone(), plugins.clone(), self.icons.clone())?;
+
+        if reloaded_hotkey != previous_hotkey {
+            self.hotkey_manager
+                .unregister(previous_hotkey)
+                .context("failed to unregister the previous hotkey during config reload")?;
+            if let Err(error) = self.hotkey_manager.register(reloaded_hotkey) {
+                let _ = self.hotkey_manager.register(previous_hotkey);
+                return Err(error).context("failed to register the reloaded hotkey");
+            }
+            self.hotkey = reloaded_hotkey;
+        }
+
+        self.providers.end_session();
+        self.providers = providers;
+        self.actions = ActionRunner::new(plugins, config.window.focus_behavior);
+        self.search = SearchController::new(&config.timing);
+        self.apply_window_config(&config.window);
+        self.apply_theme(&config.ui)?;
+        self.loaded = loaded;
+
+        if was_visible {
+            self.providers.begin_session();
+            self.state.session_mut().restart_query();
+            let token = self.state.session_mut().set_query(current_query);
+            self.search
+                .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+            self.search.handle_start_search(
+                &mut self.state,
+                token,
+                &self.loaded.config.ranking,
+                &self.providers,
+                self.proxy.clone(),
+            );
+            self.windows
+                .center_window(&self.window, &self.loaded.config.window);
+            self.windows.focus_input(&self.webview)?;
+        }
+
+        let mut updated = Vec::new();
+        if previous_config.hotkey != self.loaded.config.hotkey {
+            updated.push("hotkey");
+        }
+        if previous_config.window != self.loaded.config.window {
+            updated.push("window");
+        }
+        if previous_config.ranking != self.loaded.config.ranking {
+            updated.push("ranking");
+        }
+        if previous_config.timing != self.loaded.config.timing {
+            updated.push("timing");
+        }
+        if previous_config.plugins != self.loaded.config.plugins
+            || previous_config.plugin != self.loaded.config.plugin
+        {
+            updated.push("plugins");
+        }
+        if previous_config.ui != self.loaded.config.ui {
+            updated.push("theme");
+        }
+
+        if !updated.is_empty() {
+            self.log_outcome(format!("Reloaded config: {}", updated.join(", ")), false);
+        }
+
+        Ok(())
+    }
+
+    fn apply_window_config(&mut self, config: &config::WindowConfig) {
+        self.window
+            .set_inner_size(LogicalSize::new(config.width, config.height));
+        self.window.set_always_on_top(config.always_on_top);
+        if self.state.is_visible() {
+            self.windows.center_window(&self.window, config);
+        }
+    }
+
+    fn apply_theme(&self, theme: &config::UiConfig) -> Result<()> {
+        let css = ui::theme_css(theme);
+        let script = format!(
+            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; }})()",
+            serde_json::to_string(&css)?
+        );
+        self.webview
+            .evaluate_script(&script)
+            .context("failed to apply the reloaded UI theme")
+    }
+
     fn log_outcome(&self, message: String, is_error: bool) {
         if is_error {
             eprintln!("{message}");
@@ -341,6 +535,14 @@ impl Launcher {
             debug_log::append(format!("info: {message}"));
         }
     }
+}
+
+struct BootstrapConfig {
+    loaded: LoadedConfig,
+    hotkey: HotKey,
+    plugin_config: std::collections::HashMap<String, serde_json::Value>,
+    plugin_routes: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    config_error: Option<String>,
 }
 
 fn build_window(

@@ -151,6 +151,7 @@ pub enum FrontendCommand {
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewState {
     pub query: String,
+    pub config_error: Option<String>,
     pub items: Vec<ViewItem>,
 }
 

@@ -72,6 +72,7 @@ impl AppState {
 #[derive(Default)]
 pub struct SearchSession {
     query: String,
+    config_error: Option<String>,
     generation: u64,
     search_token: u64,
     provider_items: HashMap<String, Vec<SearchItem>>,
@@ -85,6 +86,7 @@ impl SearchSession {
         self.generation = self.generation.wrapping_add(1);
         self.search_token = self.search_token.wrapping_add(1);
         self.query.clear();
+        self.config_error = None;
         self.provider_items.clear();
         self.rendered_items.clear();
         self.pending_providers = 0;
@@ -105,6 +107,26 @@ impl SearchSession {
     /// Returns the token for the most recently scheduled search.
     pub fn search_token(&self) -> u64 {
         self.search_token
+    }
+
+    /// Invalidates the current generation while preserving the visible query text.
+    pub fn restart_query(&mut self) -> u64 {
+        self.generation = self.generation.wrapping_add(1);
+        self.search_token = self.search_token.wrapping_add(1);
+        self.provider_items.clear();
+        self.rendered_items.clear();
+        self.pending_providers = 0;
+        self.search_token
+    }
+
+    /// Sets a launcher-level config reload error to be rendered separately from search results.
+    pub fn set_config_error(&mut self, message: String) {
+        self.config_error = Some(message);
+    }
+
+    /// Clears any launcher-level config reload error notice.
+    pub fn clear_config_error(&mut self) {
+        self.config_error = None;
     }
 
     /// Starts a new provider search generation.
@@ -188,6 +210,7 @@ impl SearchSession {
 
         ViewState {
             query: self.query.clone(),
+            config_error: self.config_error.clone(),
             items,
         }
     }
@@ -322,6 +345,33 @@ mod tests {
                 .subtitle
                 .contains("unterminated single-quoted string")
         );
+    }
+
+    #[test]
+    fn config_error_is_exposed_in_view_state() {
+        let mut state = AppState::new();
+        state.show();
+        state
+            .session_mut()
+            .set_config_error("bad syntax".to_owned());
+        populate(&mut state, "alpha");
+
+        let view = state.session().view_state();
+        assert_eq!(view.config_error.as_deref(), Some("bad syntax"));
+        assert_eq!(view.items[0].title, "alpha");
+    }
+
+    #[test]
+    fn clear_config_error_removes_notice_from_view_state() {
+        let mut state = AppState::new();
+        state.show();
+        state
+            .session_mut()
+            .set_config_error("bad syntax".to_owned());
+
+        state.session_mut().clear_config_error();
+
+        assert!(state.session().view_state().config_error.is_none());
     }
 
     fn populate(state: &mut AppState, query: &str) {

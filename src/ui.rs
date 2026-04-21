@@ -13,7 +13,8 @@ pub fn html(theme: &UiConfig) -> String {
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
 }
 
-fn theme_css(theme: &UiConfig) -> String {
+/// Returns the theme-expanded CSS used by the embedded webview.
+pub fn theme_css(theme: &UiConfig) -> String {
     let replacements = [
         ("__ACCENT__", theme.accent.as_str()),
         ("__BACKGROUND__", theme.background.as_str()),
