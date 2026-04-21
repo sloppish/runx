@@ -14,9 +14,12 @@ use std::{
 use anyhow::{Context, Result, anyhow, bail};
 use directories::BaseDirs;
 use global_hotkey::hotkey::{Code, HotKey, Modifiers};
+use miette::{
+    GraphicalReportHandler, GraphicalTheme, LabeledSpan, MietteDiagnostic, NamedSource, Report,
+};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
-use toml::Table;
+use toml::{Spanned, Table};
 
 const DEFAULT_CONFIG: &str = r##"# Runx configuration
 #
@@ -76,6 +79,8 @@ text = "#1f1a16"
 muted = "#756759"
 "##;
 
+const KNOWN_PROVIDER_NAMES: [&str; 5] = ["windows", "apps", "settings", "plugins", "spotlight"];
+
 /// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
     pub config: Config,
@@ -86,7 +91,7 @@ pub struct LoadedConfig {
 
 /// Root configuration object deserialized from `config.toml`.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct Config {
     pub hotkey: HotKeyConfig,
     pub window: WindowConfig,
@@ -99,7 +104,7 @@ pub struct Config {
 
 /// User-facing global hotkey configuration.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct HotKeyConfig {
     pub key: String,
     pub modifiers: Vec<String>,
@@ -107,7 +112,7 @@ pub struct HotKeyConfig {
 
 /// Launcher window behavior and geometry.
 #[derive(Debug, Clone, Deserialize, PartialEq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct WindowConfig {
     pub width: f64,
     pub height: f64,
@@ -139,7 +144,7 @@ pub enum WindowFocusBehavior {
 
 /// Ranking and truncation rules for the merged result list.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct RankingConfig {
     pub tie_threshold: i64,
     pub provider_order: Vec<String>,
@@ -151,7 +156,7 @@ pub struct RankingConfig {
 
 /// One additive ranking rule matched against a result row.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct RankingScoreRule {
     pub providers: Vec<String>,
     pub field: RankingScoreRuleField,
@@ -184,7 +189,7 @@ pub enum RankingScoreRuleMatchKind {
 
 /// Debounce and coalescing timings for the search/render pipeline.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct TimingConfig {
     pub search_debounce_ms: u64,
     pub render_coalesce_ms: u64,
@@ -192,7 +197,7 @@ pub struct TimingConfig {
 
 /// Plugin discovery and subprocess lookup configuration.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct PluginsConfig {
     pub directories: Vec<String>,
     pub search_paths: Vec<String>,
@@ -200,7 +205,7 @@ pub struct PluginsConfig {
 
 /// Theme tokens injected into the embedded HTML/CSS UI templates.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
-#[serde(default)]
+#[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
     pub font_family: String,
     pub accent: String,
@@ -208,6 +213,57 @@ pub struct UiConfig {
     pub panel: String,
     pub text: String,
     pub muted: String,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawConfigSpans {
+    hotkey: RawHotKeySpans,
+    window: WindowConfig,
+    ranking: RawRankingSpans,
+    timing: TimingConfig,
+    plugins: PluginsConfig,
+    plugin: HashMap<String, Table>,
+    ui: UiConfig,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawHotKeySpans {
+    key: Option<Spanned<String>>,
+    modifiers: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawRankingSpans {
+    tie_threshold: i64,
+    provider_order: Vec<Spanned<String>>,
+    empty_query_providers: Vec<Spanned<String>>,
+    provider_score_boosts: RawProviderScoreBoostsSpans,
+    score_rules: Vec<RawRankingScoreRuleSpans>,
+    result_limit: usize,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawProviderScoreBoostsSpans {
+    windows: Option<i64>,
+    apps: Option<i64>,
+    settings: Option<i64>,
+    plugins: Option<i64>,
+    spotlight: Option<i64>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawRankingScoreRuleSpans {
+    providers: Vec<Spanned<String>>,
+    field: RankingScoreRuleField,
+    #[serde(rename = "match")]
+    match_kind: RankingScoreRuleMatchKind,
+    pattern: String,
+    boost: i64,
 }
 
 impl LoadedConfig {
@@ -221,12 +277,11 @@ impl LoadedConfig {
 
         let raw = fs::read_to_string(&config_path)
             .with_context(|| format!("failed to read {}", config_path.display()))?;
-        let config: Config = toml::from_str(&raw).with_context(|| {
-            format!(
-                "failed to parse {}.\nCheck the TOML syntax and the documented field names.",
-                config_path.display()
-            )
-        })?;
+        let config: Config = toml::from_str(&raw)
+            .map_err(|error| anyhow!(render_toml_parse_error(&config_path, &raw, &error)))?;
+        let raw_spans: RawConfigSpans = toml::from_str(&raw)
+            .map_err(|error| anyhow!(render_toml_parse_error(&config_path, &raw, &error)))?;
+        validate_config_with_spans(&config_path, &raw, &raw_spans)?;
 
         Self::from_parts(config, root_dir, plugin_dir, config_path)
     }
@@ -266,6 +321,181 @@ impl LoadedConfig {
             plugin_dirs,
             plugin_search_paths,
         })
+    }
+}
+
+#[cfg(test)]
+fn validate_config(config: &Config) -> Result<()> {
+    validate_provider_names(&config.ranking.provider_order, "[ranking].provider_order")?;
+    validate_provider_names(
+        &config.ranking.empty_query_providers,
+        "[ranking].empty_query_providers",
+    )?;
+
+    for provider in config.ranking.provider_score_boosts.keys() {
+        validate_provider_name(provider, "[ranking.provider_score_boosts] key")?;
+    }
+
+    for (index, rule) in config.ranking.score_rules.iter().enumerate() {
+        let context = format!("[[ranking.score_rules]] entry {}", index + 1);
+        validate_provider_names(&rule.providers, &format!("{context}.providers"))?;
+    }
+
+    Ok(())
+}
+
+fn validate_config_with_spans(config_path: &Path, raw: &str, spans: &RawConfigSpans) -> Result<()> {
+    if let Some(key) = &spans.hotkey.key
+        && let Err(error) = parse_key(key.get_ref())
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            key.span(),
+        )));
+    }
+
+    for modifier in &spans.hotkey.modifiers {
+        if let Err(error) = parse_modifier(modifier.get_ref()) {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                modifier.span(),
+            )));
+        }
+    }
+
+    validate_spanned_provider_names(
+        config_path,
+        raw,
+        &spans.ranking.provider_order,
+        "[ranking].provider_order",
+    )?;
+    validate_spanned_provider_names(
+        config_path,
+        raw,
+        &spans.ranking.empty_query_providers,
+        "[ranking].empty_query_providers",
+    )?;
+
+    for (index, rule) in spans.ranking.score_rules.iter().enumerate() {
+        validate_spanned_provider_names(
+            config_path,
+            raw,
+            &rule.providers,
+            &format!("[[ranking.score_rules]] entry {}.providers", index + 1),
+        )?;
+    }
+
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_provider_names(providers: &[String], context: &str) -> Result<()> {
+    for provider in providers {
+        validate_provider_name(provider, context)?;
+    }
+    Ok(())
+}
+
+#[cfg(test)]
+fn validate_provider_name(provider: &str, context: &str) -> Result<()> {
+    if KNOWN_PROVIDER_NAMES.contains(&provider) {
+        Ok(())
+    } else {
+        bail!(
+            "{context} contains unknown provider `{provider}`. Expected one of: {}",
+            KNOWN_PROVIDER_NAMES.join(", ")
+        )
+    }
+}
+
+fn validate_spanned_provider_names(
+    config_path: &Path,
+    raw: &str,
+    providers: &[Spanned<String>],
+    context: &str,
+) -> Result<()> {
+    for provider in providers {
+        let name = provider.get_ref();
+        if !KNOWN_PROVIDER_NAMES.contains(&name.as_str()) {
+            let message = format!(
+                "{context} contains unknown provider `{name}`. Expected one of: {}",
+                KNOWN_PROVIDER_NAMES.join(", ")
+            );
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &message,
+                provider.span(),
+            )));
+        }
+    }
+
+    Ok(())
+}
+
+fn render_toml_parse_error(config_path: &Path, raw: &str, error: &toml::de::Error) -> String {
+    render_config_error_report(
+        config_path,
+        raw,
+        "failed to parse",
+        "runx::config::toml_parse",
+        error.message(),
+        error.span(),
+    )
+}
+
+fn render_config_validation_error(
+    config_path: &Path,
+    raw: &str,
+    message: &str,
+    span: std::ops::Range<usize>,
+) -> String {
+    render_config_error_report(
+        config_path,
+        raw,
+        "invalid configuration",
+        "runx::config::validation",
+        message,
+        Some(span),
+    )
+}
+
+fn render_config_error_report(
+    config_path: &Path,
+    raw: &str,
+    title: &str,
+    code: &str,
+    message: &str,
+    span: Option<std::ops::Range<usize>>,
+) -> String {
+    let mut diagnostic = MietteDiagnostic::new(format!("{title} {}", config_path.display()))
+        .with_code(code)
+        .with_help("Fix the highlighted config value, then save config.toml again.");
+
+    if let Some(span) = span {
+        diagnostic =
+            diagnostic.with_label(LabeledSpan::new_with_span(Some(message.to_owned()), span));
+    }
+
+    let source = NamedSource::new(config_path.display().to_string(), raw.to_owned());
+    let report = Report::new(diagnostic).with_source_code(source);
+    let handler = GraphicalReportHandler::new_themed(GraphicalTheme::unicode_nocolor())
+        .without_cause_chain()
+        .with_context_lines(2)
+        .with_width(100);
+    let mut rendered = String::new();
+
+    if handler
+        .render_report(&mut rendered, report.as_ref())
+        .is_ok()
+    {
+        rendered
+    } else {
+        format!("{title} {}: {message}", config_path.display())
     }
 }
 
@@ -530,7 +760,12 @@ fn parse_key(value: &str) -> Result<Code> {
 
 #[cfg(test)]
 mod tests {
-    use super::{Config, WindowDisplayTarget, WindowFocusBehavior, parse_key, parse_modifier};
+    use std::path::Path;
+
+    use super::{
+        Config, WindowDisplayTarget, WindowFocusBehavior, parse_key, parse_modifier,
+        render_toml_parse_error,
+    };
     use global_hotkey::hotkey::{Code, Modifiers};
 
     mod parse_key_tests {
@@ -612,6 +847,9 @@ mod tests {
 
     mod empty_query_provider_tests {
         use super::Config;
+        use crate::config::{
+            RankingScoreRule, RankingScoreRuleField, RankingScoreRuleMatchKind, validate_config,
+        };
 
         #[test]
         fn defaults_to_windows_only() {
@@ -656,6 +894,77 @@ mod tests {
             assert_eq!(rule.pattern, "spotify");
             assert_eq!(rule.boost, 120);
         }
+
+        #[test]
+        fn rejects_unknown_top_level_section() {
+            let error =
+                toml::from_str::<Config>("[windo]\nwidth = 760\n").expect_err("typo should fail");
+            assert!(error.message().contains("unknown field `windo`"));
+        }
+
+        #[test]
+        fn rejects_unknown_nested_field() {
+            let error = toml::from_str::<Config>("[window]\nwidt = 760\n")
+                .expect_err("unknown nested field should fail");
+            assert!(error.message().contains("unknown field `widt`"));
+        }
+
+        #[test]
+        fn rejects_unknown_provider_in_provider_order() {
+            let mut config = Config::default();
+            config.ranking.provider_order = vec!["windows".to_owned(), "asdfasdf".to_owned()];
+
+            let error = validate_config(&config).expect_err("unknown provider should fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("[ranking].provider_order contains unknown provider `asdfasdf`")
+            );
+        }
+
+        #[test]
+        fn rejects_unknown_provider_in_empty_query_providers() {
+            let mut config = Config::default();
+            config.ranking.empty_query_providers = vec!["asdfasdf".to_owned()];
+
+            let error = validate_config(&config).expect_err("unknown provider should fail");
+            assert!(
+                error.to_string().contains(
+                    "[ranking].empty_query_providers contains unknown provider `asdfasdf`"
+                )
+            );
+        }
+
+        #[test]
+        fn rejects_unknown_provider_in_provider_score_boosts() {
+            let mut config = Config::default();
+            config
+                .ranking
+                .provider_score_boosts
+                .insert("asdfasdf".to_owned(), 10);
+
+            let error = validate_config(&config).expect_err("unknown provider should fail");
+            assert!(error.to_string().contains(
+                "[ranking.provider_score_boosts] key contains unknown provider `asdfasdf`"
+            ));
+        }
+
+        #[test]
+        fn rejects_unknown_provider_in_score_rules() {
+            let mut config = Config::default();
+            config.ranking.score_rules = vec![RankingScoreRule {
+                providers: vec!["asdfasdf".to_owned()],
+                field: RankingScoreRuleField::Title,
+                match_kind: RankingScoreRuleMatchKind::Contains,
+                pattern: "spotify".to_owned(),
+                boost: 120,
+            }];
+
+            let error = validate_config(&config).expect_err("unknown provider should fail");
+            assert!(error.to_string().contains(
+                "[[ranking.score_rules]] entry 1.providers contains unknown provider `asdfasdf`"
+            ));
+        }
     }
 
     mod timing_tests {
@@ -675,6 +984,37 @@ mod tests {
                     .expect("custom timing values should parse");
             assert_eq!(config.timing.search_debounce_ms, 32);
             assert_eq!(config.timing.render_coalesce_ms, 12);
+        }
+    }
+
+    mod diagnostics_tests {
+        use super::{Config, Path, render_toml_parse_error};
+        use crate::config::{RawConfigSpans, validate_config_with_spans};
+
+        #[test]
+        fn toml_parse_errors_include_source_context() {
+            let raw = "[[ranking.score_rules]]\nboost = \"oops\"\n";
+            let error = toml::from_str::<Config>(raw).expect_err("config should fail to parse");
+            let rendered = render_toml_parse_error(Path::new("/tmp/runx-config.toml"), raw, &error);
+
+            assert!(rendered.contains("failed to parse /tmp/runx-config.toml"));
+            assert!(rendered.contains("boost = \"oops\""));
+            assert!(rendered.contains("expected i64"));
+        }
+
+        #[test]
+        fn validation_errors_include_source_context() {
+            let raw = "[ranking]\nprovider_order = [\"windows\", \"asdfasdf\"]\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("provider_order = [\"windows\", \"asdfasdf\"]"));
+            assert!(rendered.contains("unknown provider `asdfasdf`"));
         }
     }
 }

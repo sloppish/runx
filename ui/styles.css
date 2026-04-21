@@ -166,18 +166,29 @@ input::placeholder {
 }
 
 .config-error-title {
-  font-size: 22px;
+  font-size: 24px;
   font-weight: 700;
   letter-spacing: -0.03em;
+  color: color-mix(in srgb, var(--text) 92%, white);
 }
 
 .config-error-copy {
-  font-size: 13px;
-  line-height: 1.5;
-  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.65;
+  color: color-mix(in srgb, var(--text) 84%, white);
   white-space: pre-wrap;
   overflow-wrap: anywhere;
   user-select: text;
+  font-family:
+    "SF Mono",
+    "JetBrains Mono",
+    "Menlo",
+    "Monaco",
+    "Consolas",
+    "Liberation Mono",
+    monospace;
+  font-variant-ligatures: none;
+  letter-spacing: 0;
 }
 
 .results::-webkit-scrollbar {

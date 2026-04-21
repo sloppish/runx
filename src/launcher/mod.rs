@@ -273,6 +273,7 @@ impl Launcher {
             return Ok(());
         }
 
+        clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
         self.search
             .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
         let token = self.state.session().search_token();
@@ -407,7 +408,7 @@ impl Launcher {
         match self.reload_config() {
             Ok(()) => {
                 self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
-                self.config_reload_error = None;
+                clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
             }
             Err(error) => {
                 self.config_reload_error = Some(error.to_string());
@@ -463,6 +464,7 @@ impl Launcher {
         if was_visible {
             self.providers.begin_session();
             self.state.session_mut().restart_query();
+            self.state.session_mut().clear_config_error();
             let token = self.state.session_mut().set_query(current_query);
             self.search
                 .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
@@ -537,6 +539,11 @@ impl Launcher {
     }
 }
 
+fn clear_recovered_config_error(state: &mut AppState, config_reload_error: &mut Option<String>) {
+    *config_reload_error = None;
+    state.session_mut().clear_config_error();
+}
+
 struct BootstrapConfig {
     loaded: LoadedConfig,
     hotkey: HotKey,
@@ -569,4 +576,25 @@ fn build_window(
     window.set_has_shadow(false);
 
     Ok(window)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::clear_recovered_config_error;
+    use crate::state::AppState;
+
+    #[test]
+    fn successful_reload_clears_latched_config_error_state() {
+        let mut state = AppState::new();
+        state.show();
+        state
+            .session_mut()
+            .set_config_error("bad config".to_owned());
+        let mut config_reload_error = Some("bad config".to_owned());
+
+        clear_recovered_config_error(&mut state, &mut config_reload_error);
+
+        assert!(config_reload_error.is_none());
+        assert!(state.session().view_state().config_error.is_none());
+    }
 }
