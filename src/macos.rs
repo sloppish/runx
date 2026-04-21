@@ -6,6 +6,8 @@
 
 use std::{
     ffi::{c_float, c_int, c_void},
+    io::Write,
+    path::Path,
     process::{Command, Stdio},
     thread,
     time::Duration,
@@ -36,6 +38,42 @@ const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
 const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(250);
 const AX_MESSAGING_TIMEOUT_SECONDS: c_float = 1.0;
+const LOGIN_ITEM_SCRIPT: &str = r#"on run argv
+  set actionName to item 1 of argv
+  set appPath to item 2 of argv
+  set appName to item 3 of argv
+
+  tell application "System Events"
+    if actionName is "enable" then
+      repeat with existingItem in login items
+        if name of existingItem is appName then
+          delete existingItem
+          exit repeat
+        end if
+      end repeat
+      make login item at end with properties {name:appName, path:appPath, hidden:false}
+      return "enabled"
+    else if actionName is "disable" then
+      repeat with existingItem in login items
+        if name of existingItem is appName then
+          delete existingItem
+          return "disabled"
+        end if
+      end repeat
+      return "missing"
+    else if actionName is "status" then
+      repeat with existingItem in login items
+        if name of existingItem is appName then
+          return "enabled"
+        end if
+      end repeat
+      return "disabled"
+    else
+      error "unknown action"
+    end if
+  end tell
+end run
+"#;
 
 type AXUIElementRef = *const c_void;
 type AXError = c_int;
@@ -90,6 +128,12 @@ impl FrontmostApp {
             .or(self.path.as_deref())
             .unwrap_or("previous app")
     }
+}
+
+#[derive(Debug, Clone)]
+struct LoginItemTarget {
+    path: String,
+    name: String,
 }
 
 /// Opens an application bundle path through Launch Services.
@@ -307,8 +351,87 @@ pub fn request_screen_capture_access_once() -> bool {
     unsafe { CGPreflightScreenCaptureAccess() != 0 }
 }
 
+/// Returns whether the running executable is packaged as a `.app` bundle and can be used as a login item.
+pub fn current_app_supports_login_item() -> bool {
+    current_login_item_target().is_some()
+}
+
+/// Toggles whether the current app bundle is opened at login and returns the new enabled state.
+pub fn toggle_current_app_login_item() -> Result<Option<bool>> {
+    let Some(target) = current_login_item_target() else {
+        return Ok(None);
+    };
+
+    let enabled = login_item_status(&target)?;
+    let next_action = if enabled { "disable" } else { "enable" };
+    let status = run_login_item_action(next_action, &target)?;
+    Ok(Some(matches!(status.as_str(), "enabled")))
+}
+
 fn open_accessibility_settings() {
     open_privacy_settings(PRIVACY_ACCESSIBILITY);
+}
+
+fn current_login_item_target() -> Option<LoginItemTarget> {
+    let executable = std::env::current_exe().ok()?;
+    login_item_target_from_executable_path(executable.as_path())
+}
+
+fn login_item_target_from_executable_path(executable_path: &Path) -> Option<LoginItemTarget> {
+    let bundle_path = bundle_root_from_executable_path(&executable_path.to_string_lossy())?;
+    let name = Path::new(&bundle_path)
+        .file_stem()
+        .and_then(|value| value.to_str())?
+        .to_owned();
+    Some(LoginItemTarget {
+        path: bundle_path,
+        name,
+    })
+}
+
+fn login_item_status(target: &LoginItemTarget) -> Result<bool> {
+    let status = run_login_item_action("status", target)?;
+    match status.as_str() {
+        "enabled" => Ok(true),
+        "disabled" | "missing" => Ok(false),
+        other => bail!("unexpected login item status `{other}`"),
+    }
+}
+
+fn run_login_item_action(action: &str, target: &LoginItemTarget) -> Result<String> {
+    let mut child = Command::new("osascript")
+        .arg("-")
+        .arg(action)
+        .arg(&target.path)
+        .arg(&target.name)
+        .stdin(Stdio::piped())
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
+        .context("failed to launch `osascript` for login item management")?;
+
+    {
+        let mut stdin = child
+            .stdin
+            .take()
+            .ok_or_else(|| anyhow::anyhow!("failed to open osascript stdin"))?;
+        stdin
+            .write_all(LOGIN_ITEM_SCRIPT.as_bytes())
+            .context("failed to send AppleScript to `osascript`")?;
+    }
+
+    let output = child
+        .wait_with_output()
+        .context("failed to wait for `osascript` login item command")?;
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if stderr.is_empty() {
+            bail!("`osascript` exited with status {}", output.status);
+        }
+        bail!("login item command failed: {stderr}");
+    }
+
+    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
 }
 
 fn open_privacy_settings(anchor: &str) {
@@ -666,9 +789,12 @@ fn run_quiet(program: &str, args: &[&str]) -> Result<()> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::path::{Path, PathBuf};
 
-    use super::{bundle_root_from_executable_path, requires_clipboard_paste};
+    use super::{
+        bundle_root_from_executable_path, login_item_target_from_executable_path,
+        requires_clipboard_paste,
+    };
 
     #[test]
     fn extracts_bundle_root_from_executable_path() {
@@ -710,5 +836,21 @@ mod tests {
     #[test]
     fn emoji_uses_clipboard_paste_path() {
         assert!(requires_clipboard_paste("👍"));
+    }
+
+    #[test]
+    fn derives_login_item_target_from_bundled_executable() {
+        let target = login_item_target_from_executable_path(
+            PathBuf::from("/Applications/Runx.app/Contents/MacOS/runx").as_path(),
+        )
+        .expect("bundled executable should produce login item target");
+
+        assert_eq!(target.path, "/Applications/Runx.app");
+        assert_eq!(target.name, "Runx");
+    }
+
+    #[test]
+    fn login_item_target_is_unavailable_for_non_bundled_executable() {
+        assert!(login_item_target_from_executable_path(Path::new("/usr/bin/ssh")).is_none());
     }
 }

@@ -119,6 +119,7 @@ pub enum AppEvent {
     },
     TrayToggle,
     TrayOpen,
+    TrayToggleAutostart,
     Quit,
     ProviderItems {
         generation: u64,

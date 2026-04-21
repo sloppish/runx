@@ -10,13 +10,14 @@ use png::{ColorType, Decoder, Transformations};
 use tao::event_loop::EventLoopProxy;
 use tray_icon::{
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
-    menu::{Menu, MenuEvent, MenuItem},
+    menu::{CheckMenuItem, Menu, MenuEvent, MenuItem},
 };
 
-use crate::{assets::tray_icon_path, types::AppEvent};
+use crate::{assets::tray_icon_path, macos, types::AppEvent};
 
 const TRAY_ID: &str = "runx-tray";
 const MENU_OPEN_ID: &str = "tray-open";
+const MENU_AUTOSTART_ID: &str = "tray-autostart";
 const MENU_QUIT_ID: &str = "tray-quit";
 
 /// Holds the tray icon and menu resources for the lifetime of the app.
@@ -24,6 +25,7 @@ pub struct TrayState {
     _tray: TrayIcon,
     _menu: Menu,
     _open_item: MenuItem,
+    autostart_item: CheckMenuItem,
     _quit_item: MenuItem,
 }
 
@@ -31,18 +33,29 @@ impl TrayState {
     /// Installs the menu bar item and wires it to the app event loop.
     pub fn install(proxy: EventLoopProxy<AppEvent>) -> Result<Self> {
         let menu = Menu::new();
+        let autostart_supported = macos::current_app_supports_login_item();
         let open_item = MenuItem::with_id(MENU_OPEN_ID, "Open Runx", true, None);
+        let autostart_item = CheckMenuItem::with_id(
+            MENU_AUTOSTART_ID,
+            "Launch at Login",
+            autostart_supported,
+            false,
+            None,
+        );
         let quit_item = MenuItem::with_id(MENU_QUIT_ID, "Quit Runx", true, None);
-        menu.append_items(&[&open_item, &quit_item])
+        menu.append_items(&[&open_item, &autostart_item, &quit_item])
             .context("failed to build the tray menu")?;
 
         let open_id = open_item.id().clone();
+        let autostart_id = autostart_item.id().clone();
         let quit_id = quit_item.id().clone();
         MenuEvent::set_event_handler(Some({
             let proxy = proxy.clone();
             move |event: MenuEvent| {
                 let app_event = if event.id == open_id {
                     Some(AppEvent::TrayOpen)
+                } else if event.id == autostart_id {
+                    Some(AppEvent::TrayToggleAutostart)
                 } else if event.id == quit_id {
                     Some(AppEvent::Quit)
                 } else {
@@ -86,8 +99,14 @@ impl TrayState {
             _tray: tray,
             _menu: menu,
             _open_item: open_item,
+            autostart_item,
             _quit_item: quit_item,
         })
+    }
+
+    /// Updates the checked state of the Launch at Login menu item.
+    pub fn set_autostart_enabled(&self, enabled: bool) {
+        self.autostart_item.set_checked(enabled);
     }
 }
 

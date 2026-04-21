@@ -17,6 +17,7 @@ use crate::{
     config::{self, LoadedConfig},
     debug_log,
     icons::IconCache,
+    macos,
     plugins::{self, PluginExecutionContext},
     providers::ProviderSet,
     state::AppState,
@@ -174,6 +175,7 @@ impl Launcher {
                 self.windows.capture_previous_app();
                 self.show_or_focus()?;
             }
+            AppEvent::TrayToggleAutostart => self.toggle_autostart()?,
             AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
             AppEvent::Render => {
@@ -276,6 +278,20 @@ impl Launcher {
             ),
             FrontendCommand::Activate { index } => self.activate(index),
             FrontendCommand::Hide => self.hide()?,
+        }
+        Ok(())
+    }
+
+    fn toggle_autostart(&mut self) -> Result<()> {
+        let Some(enabled) = macos::toggle_current_app_login_item()? else {
+            self.set_error(
+                "Launch at Login is only available from the installed app bundle.".to_owned(),
+            );
+            return Ok(());
+        };
+
+        if let Some(tray) = &self.tray {
+            tray.set_autostart_enabled(enabled);
         }
         Ok(())
     }
