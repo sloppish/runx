@@ -181,10 +181,6 @@ input::placeholder {
   background: var(--item-hover);
 }
 
-.results.hover-suspended .item:not(.selected):hover {
-  background: var(--item-bg);
-}
-
 .item.selected {
   background: var(--item-selected-bg);
   box-shadow: var(--item-selected-shadow);

@@ -4,7 +4,6 @@
       query: "",
       items: [],
       selectedIndex: 0,
-      hoverSuspended: false,
     };
   }
 
@@ -17,36 +16,17 @@
     state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.items.length - 1));
   }
 
-  function setHoverSuspended(state, value) {
-    state.hoverSuspended = value;
-  }
-
   function moveSelection(state, delta) {
     if (state.items.length === 0) {
       return;
     }
 
     state.selectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.items.length - 1));
-    setHoverSuspended(state, true);
   }
 
   function inputChanged(state, query) {
-    setHoverSuspended(state, true);
     state.query = query;
     state.selectedIndex = 0;
-  }
-
-  function resumeHover(state) {
-    setHoverSuspended(state, false);
-  }
-
-  function hoverRow(state, index) {
-    if (state.hoverSuspended || state.selectedIndex === index) {
-      return false;
-    }
-
-    state.selectedIndex = index;
-    return true;
   }
 
   function applyRenderPayload(state, payload, environment) {
@@ -89,11 +69,8 @@
     createState,
     escapeAttr,
     escapeHtml,
-    hoverRow,
     inputChanged,
     moveSelection,
-    resumeHover,
-    setHoverSuspended,
   };
 
   if (typeof module !== "undefined" && module.exports) {
@@ -109,10 +86,6 @@
   const resultsEl = document.getElementById("results");
   const inputEl = document.getElementById("query");
   const send = (payload) => root.ipc.postMessage(JSON.stringify(payload));
-
-  function syncHoverClass() {
-    resultsEl.classList.toggle("hover-suspended", state.hoverSuspended);
-  }
 
   function syncSelection(ensureVisible = true) {
     Array.from(resultsEl.children).forEach((child, index) => {
@@ -131,7 +104,6 @@
 
   function render() {
     clampSelection(state);
-    syncHoverClass();
     resultsEl.innerHTML = "";
 
     for (const [index, item] of state.items.entries()) {
@@ -154,12 +126,6 @@
         </div>
         <div class="accelerator">${item.accelerator ? escapeHtml(item.accelerator) : ""}</div>
       `;
-      row.addEventListener("mousemove", () => {
-        if (!hoverRow(state, index)) {
-          return;
-        }
-        render();
-      });
       row.addEventListener("click", () => send({ type: "activate", index }));
       resultsEl.appendChild(row);
     }
@@ -188,13 +154,7 @@
   inputEl.addEventListener("input", () => {
     inputChanged(state, inputEl.value);
     syncSelection(false);
-    syncHoverClass();
     send({ type: "query_changed", query: inputEl.value });
-  });
-
-  resultsEl.addEventListener("mousemove", () => {
-    resumeHover(state);
-    syncHoverClass();
   });
 
   inputEl.addEventListener("keydown", (event) => {

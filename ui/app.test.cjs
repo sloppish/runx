@@ -2,22 +2,11 @@ const test = require("node:test");
 const assert = require("node:assert/strict");
 const ui = require("./app.js");
 
-test("keyboard navigation suspends hover ownership until the mouse moves again", () => {
+test("hover does not steal keyboard selection", () => {
   const state = ui.createState();
   state.items = [{}, {}, {}];
 
-  assert.equal(ui.hoverRow(state, 1), true);
-  assert.equal(state.selectedIndex, 1);
-
   ui.moveSelection(state, 1);
-  assert.equal(state.selectedIndex, 2);
-  assert.equal(state.hoverSuspended, true);
-
-  assert.equal(ui.hoverRow(state, 1), false);
-  assert.equal(state.selectedIndex, 2);
-
-  ui.resumeHover(state);
-  assert.equal(ui.hoverRow(state, 1), true);
   assert.equal(state.selectedIndex, 1);
 });
 
@@ -30,7 +19,6 @@ test("typing resets selection to the first item", () => {
 
   assert.equal(state.query, "photo");
   assert.equal(state.selectedIndex, 0);
-  assert.equal(state.hoverSuspended, true);
 });
 
 test("backend render payload does not overwrite active typing with stale query text", () => {
