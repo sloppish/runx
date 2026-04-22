@@ -14,7 +14,7 @@ use wry::WebView;
 use crate::{
     config::{WindowConfig, WindowDisplayTarget},
     debug_log,
-    macos::{FrontmostApp, capture_frontmost_app, cursor_display_location},
+    macos::{self, FrontmostApp, capture_frontmost_app, cursor_display_location},
     state::AppState,
 };
 
@@ -90,8 +90,17 @@ impl WindowController {
 
     /// Shows the native window.
     pub(crate) fn show_window(&self, window: &Window) {
-        window.set_visible(true);
-        window.set_focus();
+        #[cfg(target_os = "macos")]
+        {
+            window.set_visible(true);
+            macos::show_launcher_panel(window);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            window.set_visible(true);
+            window.set_focus();
+        }
     }
 
     /// Hides the native window.
@@ -101,11 +110,22 @@ impl WindowController {
 
     /// Focuses the launcher window without changing its visibility state.
     pub(crate) fn focus_window(&self, window: &Window) {
-        window.set_focus();
+        #[cfg(target_os = "macos")]
+        {
+            macos::focus_launcher_panel(window);
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            window.set_focus();
+        }
     }
 
     /// Focuses the search input inside the webview.
     pub(crate) fn focus_input(&self, webview: &WebView) -> Result<()> {
+        webview
+            .focus()
+            .context("failed to focus the launcher webview")?;
         webview
             .evaluate_script("window.__RUNX_FOCUS && window.__RUNX_FOCUS();")
             .context("failed to focus the launcher input")

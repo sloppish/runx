@@ -18,7 +18,7 @@ use crate::{
     config::{self, LoadedConfig},
     debug_log,
     icons::IconCache,
-    macos,
+    macos::{self, configure_launcher_panel},
     plugins::{self, PluginExecutionContext},
     providers::ProviderSet,
     state::AppState,
@@ -284,14 +284,14 @@ impl Launcher {
             &self.providers,
             self.proxy.clone(),
         );
-        self.windows.focus_input(&self.webview)?;
+        self.ensure_launcher_key_focus()?;
         Ok(())
     }
 
     fn show_or_focus(&mut self) -> Result<()> {
         if self.state.is_visible() {
             self.windows.focus_window(&self.window);
-            self.windows.focus_input(&self.webview)?;
+            self.ensure_launcher_key_focus()?;
             return Ok(());
         }
 
@@ -299,35 +299,16 @@ impl Launcher {
     }
 
     fn hide(&mut self) -> Result<()> {
-        self.hide_with_focus_restore(true)
+        self.hide_without_focus_restore()
     }
 
     fn hide_without_focus_restore(&mut self) -> Result<()> {
-        self.hide_with_focus_restore(false)
-    }
-
-    fn hide_with_focus_restore(&mut self, restore_previous_focus: bool) -> Result<()> {
-        let previous_app = restore_previous_focus
-            .then(|| self.windows.previous_app())
-            .flatten();
         self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
         self.search.cancel_pending_render();
         self.windows.hide_window(&self.window);
         self.search
             .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
-        if let Some(previous_app) = previous_app.as_ref()
-            && let Err(error) = macos::restore_previous_app_focus(Some(previous_app))
-        {
-            debug_log::append(format!(
-                "restore_previous_app_focus failed after hide name={:?} bundle_id={:?} path={:?} pid={:?} window_id={:?} error={error:#}",
-                previous_app.name,
-                previous_app.bundle_id,
-                previous_app.path,
-                previous_app.pid,
-                previous_app.window_id
-            ));
-        }
         Ok(())
     }
 
@@ -335,7 +316,10 @@ impl Launcher {
         match command {
             FrontendCommand::Ready => {
                 self.search
-                    .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?
+                    .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+                if self.state.is_visible() {
+                    self.ensure_launcher_key_focus()?;
+                }
             }
             FrontendCommand::QueryChanged { query } => self.search.handle_query_changed(
                 &mut self.state,
@@ -506,7 +490,7 @@ impl Launcher {
             );
             self.windows
                 .center_window(&self.window, &self.loaded.config.window);
-            self.windows.focus_input(&self.webview)?;
+            self.ensure_launcher_key_focus()?;
         }
 
         let mut updated = Vec::new();
@@ -572,6 +556,16 @@ impl Launcher {
             debug_log::append(format!("info: {message}"));
         }
     }
+
+    fn ensure_launcher_key_focus(&self) -> Result<()> {
+        self.windows.focus_window(&self.window);
+        self.windows.focus_input(&self.webview)?;
+        debug_log::append(format!(
+            "launcher key focus after panel-native focus={}",
+            self.window.is_focused()
+        ));
+        Ok(())
+    }
 }
 
 fn clear_recovered_config_error(state: &mut AppState, config_reload_error: &mut Option<String>) {
@@ -601,7 +595,9 @@ fn build_window(
         .with_inner_size(size)
         .with_always_on_top(config.window.always_on_top);
     #[cfg(target_os = "macos")]
-    let builder = builder.with_has_shadow(false);
+    let builder = builder
+        .with_has_shadow(false)
+        .with_non_activating_panel(true);
 
     let window = builder
         .build(event_loop)
@@ -609,6 +605,8 @@ fn build_window(
 
     #[cfg(target_os = "macos")]
     window.set_has_shadow(false);
+    #[cfg(target_os = "macos")]
+    configure_launcher_panel(&window);
 
     Ok(window)
 }

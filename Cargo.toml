@@ -15,7 +15,7 @@ image = { version = "0.25", default-features = false, features = ["png", "webp"]
 memchr = "2.7"
 miette = { version = "7.6", features = ["fancy"] }
 mlua = { version = "0.11.6", features = ["lua54", "send", "serde", "vendored"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
 objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL"] }
 plist = "1.7"
 png = "0.17"
@@ -28,6 +28,9 @@ toml = "0.8"
 tray-icon = "0.21"
 walkdir = "2.5"
 wry = { version = "0.55", features = ["transparent"] }
+
+[patch.crates-io]
+tao = { git = "https://github.com/sloppish/tao.git", rev = "c355c45d1323721e759eb7c3dde3fb9533b04e09" }
 
 [lints.rustdoc]
 broken_intra_doc_links = "deny"

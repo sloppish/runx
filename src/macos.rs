@@ -29,9 +29,10 @@ use core_graphics::{
 };
 use objc2_app_kit::{
     NSApplicationActivationOptions, NSPasteboard, NSPasteboardTypeString, NSRunningApplication,
-    NSWorkspace,
+    NSWindow, NSWindowStyleMask, NSWorkspace,
 };
 use objc2_foundation::NSString;
+use tao::{platform::macos::WindowExtMacOS, window::Window};
 
 use crate::{config::WindowFocusBehavior, debug_log};
 
@@ -138,25 +139,12 @@ pub struct FrontmostApp {
     pub name: Option<String>,
     pub bundle_id: Option<String>,
     pub path: Option<String>,
-    pub pid: Option<c_int>,
-    pub window_id: Option<u32>,
 }
 
 /// Direct CoreGraphics snapshot of the display currently containing the mouse cursor.
 #[derive(Debug, Clone, Copy)]
 pub struct CursorDisplayLocation {
     pub display_id: u32,
-}
-
-impl FrontmostApp {
-    /// Human-friendly app name used in diagnostics and fallbacks.
-    pub fn display_name(&self) -> &str {
-        self.name
-            .as_deref()
-            .or(self.bundle_id.as_deref())
-            .or(self.path.as_deref())
-            .unwrap_or("previous app")
-    }
 }
 
 #[derive(Debug, Clone)]
@@ -210,14 +198,6 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
                     .and_then(|url| url.path().map(|path| path.to_string()))
                     .and_then(|path| bundle_root_from_executable_path(&path))
             }),
-        pid: Some(app.processIdentifier()),
-        window_id: None,
-    };
-    let app = FrontmostApp {
-        window_id: app
-            .pid
-            .and_then(|pid| capture_focused_window_id_for_pid(pid).ok().flatten()),
-        ..app
     };
 
     if app.name.is_none() && app.bundle_id.is_none() && app.path.is_none() {
@@ -225,47 +205,6 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     }
 
     Ok(Some(app))
-}
-
-/// Restores focus to the app and, when possible, the exact window that was frontmost before Runx appeared.
-pub fn restore_previous_app_focus(previous_app: Option<&FrontmostApp>) -> Result<()> {
-    let Some(app) = previous_app else {
-        debug_log::append("restore_previous_app_focus skipped: no previous app");
-        return Ok(());
-    };
-
-    if let (Some(pid), Some(window_id)) = (app.pid, app.window_id) {
-        if ensure_accessibility_trusted(false) {
-            match activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default) {
-                Ok(()) => match focus_window_for_pid(pid, window_id) {
-                    Ok(()) => {
-                        debug_log::append(format!(
-                            "restore_previous_app_focus restored exact window name={:?} bundle_id={:?} path={:?} pid={} window_id={}",
-                            app.name, app.bundle_id, app.path, pid, window_id
-                        ));
-                        return Ok(());
-                    }
-                    Err(error) => {
-                        debug_log::append(format!(
-                            "restore_previous_app_focus exact window restore failed name={:?} bundle_id={:?} path={:?} pid={} window_id={} error={error:#}",
-                            app.name, app.bundle_id, app.path, pid, window_id
-                        ));
-                    }
-                },
-                Err(error) => debug_log::append(format!(
-                    "restore_previous_app_focus pid activation failed name={:?} bundle_id={:?} path={:?} pid={} window_id={} error={error:#}",
-                    app.name, app.bundle_id, app.path, pid, window_id
-                )),
-            }
-        } else {
-            debug_log::append(format!(
-                "restore_previous_app_focus falling back to app restore without Accessibility name={:?} bundle_id={:?} path={:?} pid={} window_id={}",
-                app.name, app.bundle_id, app.path, pid, window_id
-            ));
-        }
-    }
-
-    reactivate_previous_app(Some(app))
 }
 
 /// Returns the display currently containing the mouse cursor using CoreGraphics.
@@ -284,6 +223,28 @@ pub fn cursor_display_location() -> Option<CursorDisplayLocation> {
         .next()?;
 
     Some(CursorDisplayLocation { display_id })
+}
+
+/// Configures the launcher window to behave like a non-activating panel.
+pub fn configure_launcher_panel(window: &Window) {
+    let window = ns_window(window);
+    let mut style_mask = window.styleMask();
+    style_mask.insert(NSWindowStyleMask::NonactivatingPanel);
+    window.setStyleMask(style_mask);
+    window.setHidesOnDeactivate(false);
+}
+
+/// Shows the launcher panel without activating Runx as the foreground app.
+pub fn show_launcher_panel(window: &Window) {
+    let window = ns_window(window);
+    window.orderFrontRegardless();
+    window.makeKeyWindow();
+}
+
+/// Re-focuses the launcher panel without activating Runx as the foreground app.
+pub fn focus_launcher_panel(window: &Window) {
+    let window = ns_window(window);
+    window.makeKeyWindow();
 }
 
 /// Attempts to focus a specific window using the configured strategy.
@@ -375,9 +336,6 @@ pub fn type_text_into_previous_app(
         );
     }
 
-    reactivate_previous_app(previous_app)?;
-    debug_log::append("type_text_into_previous_app reactivated previous app");
-
     if requires_clipboard_paste(text) {
         debug_log::append("type_text_into_previous_app using clipboard paste path");
         return paste_text_into_previous_app(text);
@@ -419,60 +377,6 @@ fn schedule_clipboard_restore(previous_clipboard: Option<String>, inserted_text:
 
 fn requires_clipboard_paste(text: &str) -> bool {
     !text.is_ascii()
-}
-
-fn reactivate_previous_app(app: Option<&FrontmostApp>) -> Result<()> {
-    let Some(app) = app else {
-        debug_log::append("reactivate_previous_app skipped: no previous app");
-        return Ok(());
-    };
-
-    if activate_matching_running_application(app)? {
-        debug_log::append(format!(
-            "reactivate_previous_app via running application name={:?} bundle_id={:?} path={:?}",
-            app.name, app.bundle_id, app.path
-        ));
-        return Ok(());
-    }
-
-    if let Some(bundle_id) = app.bundle_id.as_deref()
-        && run_quiet("open", &["-b", bundle_id]).is_ok()
-    {
-        debug_log::append(format!(
-            "reactivate_previous_app fallback via bundle_id {:?}",
-            bundle_id
-        ));
-        thread::sleep(APP_REACTIVATION_DELAY);
-        return Ok(());
-    }
-
-    if let Some(path) = app.path.as_deref()
-        && run_quiet("open", &["-a", path]).is_ok()
-    {
-        debug_log::append(format!(
-            "reactivate_previous_app fallback via path {:?}",
-            path
-        ));
-        thread::sleep(APP_REACTIVATION_DELAY);
-        return Ok(());
-    }
-
-    if let Some(name) = app.name.as_deref()
-        && run_quiet("open", &["-a", name]).is_ok()
-    {
-        debug_log::append(format!(
-            "reactivate_previous_app fallback via name {:?}",
-            name
-        ));
-        thread::sleep(APP_REACTIVATION_DELAY);
-        return Ok(());
-    }
-
-    debug_log::append(format!(
-        "reactivate_previous_app failed for name={:?} bundle_id={:?} path={:?}",
-        app.name, app.bundle_id, app.path
-    ));
-    bail!("failed to reactivate {}", app.display_name());
 }
 
 /// Returns whether the current process is trusted for Accessibility APIs.
@@ -602,44 +506,6 @@ fn open_privacy_settings(anchor: &str) {
 
 fn open_named_application(name: &str) -> Result<()> {
     run_quiet("open", &["-a", name])
-}
-
-fn activate_matching_running_application(app: &FrontmostApp) -> Result<bool> {
-    if let Some(bundle_id) = app.bundle_id.as_deref() {
-        let bundle_id = NSString::from_str(bundle_id);
-        let matches = NSRunningApplication::runningApplicationsWithBundleIdentifier(&bundle_id);
-        if matches.count() > 0 {
-            activate_running_application(&matches.objectAtIndex(0), AppActivationMode::AllWindows)?;
-            return Ok(true);
-        }
-    }
-
-    let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
-    for index in 0..running_apps.count() {
-        let candidate = running_apps.objectAtIndex(index);
-        if app
-            .path
-            .as_deref()
-            .zip(candidate.bundleURL())
-            .and_then(|(expected, url)| url.path().map(|path| (expected, path.to_string())))
-            .is_some_and(|(expected, actual)| expected == actual)
-        {
-            activate_running_application(&candidate, AppActivationMode::AllWindows)?;
-            return Ok(true);
-        }
-
-        if app
-            .name
-            .as_deref()
-            .zip(candidate.localizedName())
-            .is_some_and(|(expected, actual)| expected == actual.to_string())
-        {
-            activate_running_application(&candidate, AppActivationMode::AllWindows)?;
-            return Ok(true);
-        }
-    }
-
-    Ok(false)
 }
 
 fn running_application_pid_by_name(name: &str) -> Option<c_int> {
@@ -839,21 +705,8 @@ fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<()> {
     bail!("window not found")
 }
 
-fn capture_focused_window_id_for_pid(pid: c_int) -> Result<Option<u32>> {
-    let app_element = OwnedAxElement::application(pid)
-        .ok_or_else(|| anyhow::anyhow!("failed to create accessibility handle for pid {pid}"))?;
-    let _ = app_element.set_messaging_timeout(AX_MESSAGING_TIMEOUT_SECONDS);
-
-    let Some(window) = copy_ax_attribute_value(
-        app_element.as_ptr(),
-        ax_focused_window_attribute().as_concrete_TypeRef(),
-    )
-    .map_err(|error| anyhow::anyhow!(ax_error_message(error)))?
-    else {
-        return Ok(None);
-    };
-
-    copy_ax_window_id(window.as_CFTypeRef() as AXUIElementRef)
+fn ns_window(window: &Window) -> &NSWindow {
+    unsafe { &*(window.ns_window() as *mut NSWindow) }
 }
 
 fn bundle_root_from_executable_path(executable_path: &str) -> Option<String> {
@@ -870,10 +723,6 @@ fn bundle_root_from_executable_path(executable_path: &str) -> Option<String> {
 
 fn ax_focused_attribute() -> CFString {
     CFString::from_static_string("AXFocused")
-}
-
-fn ax_focused_window_attribute() -> CFString {
-    CFString::from_static_string("AXFocusedWindow")
 }
 
 fn ax_main_attribute() -> CFString {
@@ -1106,24 +955,6 @@ mod tests {
     #[test]
     fn returns_none_when_executable_path_has_no_bundle_root() {
         assert_eq!(bundle_root_from_executable_path("/usr/bin/ssh"), None);
-    }
-
-    #[test]
-    fn prefers_full_path_display_if_name_missing() {
-        let app = super::FrontmostApp {
-            name: None,
-            bundle_id: None,
-            path: Some("/Applications/SampleApp.app".to_owned()),
-            pid: None,
-            window_id: None,
-        };
-        assert_eq!(app.display_name(), "/Applications/SampleApp.app");
-        assert_eq!(
-            Path::new(app.display_name())
-                .file_name()
-                .and_then(|value| value.to_str()),
-            Some("SampleApp.app")
-        );
     }
 
     #[test]
