@@ -5,6 +5,14 @@
   --text: __TEXT__;
   --muted: __MUTED__;
   --font: __FONT_FAMILY__;
+  --label-font-size: __LABEL_FONT_SIZE__;
+  --input-font-size: __INPUT_FONT_SIZE__;
+  --title-font-size: __TITLE_FONT_SIZE__;
+  --subtitle-font-size: __SUBTITLE_FONT_SIZE__;
+  --badge-font-size: __BADGE_FONT_SIZE__;
+  --accelerator-font-size: __ACCELERATOR_FONT_SIZE__;
+  --config-error-title-font-size: __CONFIG_ERROR_TITLE_FONT_SIZE__;
+  --config-error-body-font-size: __CONFIG_ERROR_BODY_FONT_SIZE__;
   --shell-bg: linear-gradient(180deg, rgba(255, 255, 255, 0.96), rgba(252, 246, 238, 0.98));
   --shell-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.72);
   --shell-border: rgba(140, 102, 67, 0.16);
@@ -99,7 +107,7 @@ body {
   align-items: center;
   text-transform: uppercase;
   letter-spacing: 0.14em;
-  font-size: 10px;
+  font-size: var(--label-font-size);
   color: var(--muted);
 }
 
@@ -128,7 +136,7 @@ input {
   padding: 0;
   background: transparent;
   color: var(--text);
-  font-size: 30px;
+  font-size: var(--input-font-size);
   font-weight: 600;
   letter-spacing: -0.03em;
   font-family: var(--font);
@@ -166,14 +174,14 @@ input::placeholder {
 }
 
 .config-error-title {
-  font-size: 24px;
+  font-size: var(--config-error-title-font-size);
   font-weight: 700;
   letter-spacing: -0.03em;
   color: color-mix(in srgb, var(--text) 92%, white);
 }
 
 .config-error-copy {
-  font-size: 15px;
+  font-size: var(--config-error-body-font-size);
   line-height: 1.65;
   color: color-mix(in srgb, var(--text) 84%, white);
   white-space: pre-wrap;
@@ -241,7 +249,7 @@ input::placeholder {
   border: 1px solid var(--badge-border);
   display: grid;
   place-items: center;
-  font-size: 11px;
+  font-size: var(--badge-font-size);
   font-weight: 700;
   letter-spacing: 0.18em;
   color: var(--badge-text);
@@ -274,7 +282,7 @@ input::placeholder {
 }
 
 .title {
-  font-size: 16px;
+  font-size: var(--title-font-size);
   font-weight: 650;
   letter-spacing: -0.02em;
   white-space: nowrap;
@@ -284,7 +292,7 @@ input::placeholder {
 
 .subtitle {
   margin-top: 4px;
-  font-size: 12px;
+  font-size: var(--subtitle-font-size);
   color: var(--muted);
   white-space: nowrap;
   overflow: hidden;
@@ -293,7 +301,7 @@ input::placeholder {
 
 .accelerator {
   color: var(--chip-text);
-  font-size: 12px;
+  font-size: var(--accelerator-font-size);
   font-weight: 600;
   padding: 6px 9px;
   border-radius: 999px;

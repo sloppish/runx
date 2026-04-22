@@ -77,6 +77,16 @@ background = "#f3ede5"
 panel = "#fffaf3"
 text = "#1f1a16"
 muted = "#756759"
+
+[ui.font_sizes]
+label = 10
+input = 30
+title = 16
+subtitle = 12
+badge = 11
+accelerator = 12
+config_error_title = 24
+config_error_body = 15
 "##;
 
 const KNOWN_PROVIDER_NAMES: [&str; 5] = ["windows", "apps", "settings", "plugins", "spotlight"];
@@ -213,6 +223,21 @@ pub struct UiConfig {
     pub panel: String,
     pub text: String,
     pub muted: String,
+    pub font_sizes: UiFontSizesConfig,
+}
+
+/// Font-size tokens injected into the embedded UI theme.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiFontSizesConfig {
+    pub label: u16,
+    pub input: u16,
+    pub title: u16,
+    pub subtitle: u16,
+    pub badge: u16,
+    pub accelerator: u16,
+    pub config_error_title: u16,
+    pub config_error_body: u16,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -665,6 +690,22 @@ impl Default for UiConfig {
             panel: "#fffaf3".to_owned(),
             text: "#1f1a16".to_owned(),
             muted: "#756759".to_owned(),
+            font_sizes: UiFontSizesConfig::default(),
+        }
+    }
+}
+
+impl Default for UiFontSizesConfig {
+    fn default() -> Self {
+        Self {
+            label: 10,
+            input: 30,
+            title: 16,
+            subtitle: 12,
+            badge: 11,
+            accelerator: 12,
+            config_error_title: 24,
+            config_error_body: 15,
         }
     }
 }
@@ -984,6 +1025,40 @@ mod tests {
                     .expect("custom timing values should parse");
             assert_eq!(config.timing.search_debounce_ms, 32);
             assert_eq!(config.timing.render_coalesce_ms, 12);
+        }
+    }
+
+    mod ui_tests {
+        use super::Config;
+
+        #[test]
+        fn defaults_to_current_ui_font_sizes() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.ui.font_sizes.label, 10);
+            assert_eq!(config.ui.font_sizes.input, 30);
+            assert_eq!(config.ui.font_sizes.title, 16);
+            assert_eq!(config.ui.font_sizes.subtitle, 12);
+            assert_eq!(config.ui.font_sizes.badge, 11);
+            assert_eq!(config.ui.font_sizes.accelerator, 12);
+            assert_eq!(config.ui.font_sizes.config_error_title, 24);
+            assert_eq!(config.ui.font_sizes.config_error_body, 15);
+        }
+
+        #[test]
+        fn accepts_custom_ui_font_sizes() {
+            let config: Config = toml::from_str(
+                "[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+            )
+            .expect("custom ui font sizes should parse");
+
+            assert_eq!(config.ui.font_sizes.label, 11);
+            assert_eq!(config.ui.font_sizes.input, 34);
+            assert_eq!(config.ui.font_sizes.title, 18);
+            assert_eq!(config.ui.font_sizes.subtitle, 13);
+            assert_eq!(config.ui.font_sizes.badge, 12);
+            assert_eq!(config.ui.font_sizes.accelerator, 13);
+            assert_eq!(config.ui.font_sizes.config_error_title, 28);
+            assert_eq!(config.ui.font_sizes.config_error_body, 17);
         }
     }
 
