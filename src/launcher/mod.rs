@@ -140,7 +140,7 @@ impl Launcher {
             runtime,
             icons: icons.clone(),
             providers,
-            actions: ActionRunner::new(plugins, config.window.focus_behavior),
+            actions: ActionRunner::new(plugins, config.providers.windows.focus_behavior),
             search: SearchController::new(&config.timing),
             windows: WindowController::default(),
             config_reload_error: config_error,
@@ -461,7 +461,7 @@ impl Launcher {
 
         self.providers.end_session();
         self.providers = providers;
-        self.actions = ActionRunner::new(plugins, config.window.focus_behavior);
+        self.actions = ActionRunner::new(plugins, config.providers.windows.focus_behavior);
         self.search = SearchController::new(&config.timing);
         self.apply_window_config(&config.window);
         self.apply_theme(&config.ui)?;

@@ -41,6 +41,8 @@ height = 520
 hide_on_blur = true
 always_on_top = true
 show_on = "primary"
+
+[providers.windows]
 include_other_desktops = false
 focus_behavior = "focus_window_then_activate_fallback"
 
@@ -134,6 +136,7 @@ pub struct LoadedConfig {
 pub struct Config {
     pub hotkey: HotKeyConfig,
     pub window: WindowConfig,
+    pub providers: ProvidersConfig,
     pub ranking: RankingConfig,
     pub timing: TimingConfig,
     pub plugins: PluginsConfig,
@@ -158,6 +161,19 @@ pub struct WindowConfig {
     pub hide_on_blur: bool,
     pub always_on_top: bool,
     pub show_on: WindowDisplayTarget,
+}
+
+/// Provider-specific runtime behavior.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct ProvidersConfig {
+    pub windows: WindowsProviderConfig,
+}
+
+/// Settings for the macOS windows provider and window activation path.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct WindowsProviderConfig {
     pub include_other_desktops: bool,
     pub focus_behavior: WindowFocusBehavior,
 }
@@ -360,6 +376,7 @@ pub struct UiLayoutConfig {
 struct RawConfigSpans {
     hotkey: RawHotKeySpans,
     window: WindowConfig,
+    providers: ProvidersConfig,
     ranking: RawRankingSpans,
     timing: TimingConfig,
     plugins: PluginsConfig,
@@ -840,8 +857,6 @@ impl Default for WindowConfig {
             hide_on_blur: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Primary,
-            include_other_desktops: false,
-            focus_behavior: WindowFocusBehavior::FocusWindowThenActivateFallback,
         }
     }
 }
@@ -910,6 +925,15 @@ impl Default for UiConfig {
             entries: UiEntriesConfig::default(),
             font_sizes: UiFontSizesConfig::default(),
             layout: UiLayoutConfig::default(),
+        }
+    }
+}
+
+impl Default for WindowsProviderConfig {
+    fn default() -> Self {
+        Self {
+            include_other_desktops: false,
+            focus_behavior: WindowFocusBehavior::FocusWindowThenActivateFallback,
         }
     }
 }
@@ -1096,7 +1120,6 @@ mod tests {
         fn defaults_to_primary() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert_eq!(config.window.show_on, WindowDisplayTarget::Primary);
-            assert!(!config.window.include_other_desktops);
         }
 
         #[test]
@@ -1107,10 +1130,17 @@ mod tests {
         }
 
         #[test]
+        fn defaults_to_current_windows_provider_settings() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert!(!config.providers.windows.include_other_desktops);
+        }
+
+        #[test]
         fn accepts_include_other_desktops() {
-            let config: Config = toml::from_str("[window]\ninclude_other_desktops = true\n")
-                .expect("include_other_desktops should parse");
-            assert!(config.window.include_other_desktops);
+            let config: Config =
+                toml::from_str("[providers.windows]\ninclude_other_desktops = true\n")
+                    .expect("include_other_desktops should parse");
+            assert!(config.providers.windows.include_other_desktops);
         }
     }
 
@@ -1121,7 +1151,7 @@ mod tests {
         fn defaults_to_focus_then_activate_fallback() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert_eq!(
-                config.window.focus_behavior,
+                config.providers.windows.focus_behavior,
                 WindowFocusBehavior::FocusWindowThenActivateFallback
             );
         }
@@ -1129,10 +1159,10 @@ mod tests {
         #[test]
         fn accepts_activate_app_only() {
             let config: Config =
-                toml::from_str("[window]\nfocus_behavior = \"activate_app_only\"\n")
+                toml::from_str("[providers.windows]\nfocus_behavior = \"activate_app_only\"\n")
                     .expect("focus behavior should parse");
             assert_eq!(
-                config.window.focus_behavior,
+                config.providers.windows.focus_behavior,
                 WindowFocusBehavior::ActivateAppOnly
             );
         }
@@ -1140,10 +1170,10 @@ mod tests {
         #[test]
         fn accepts_focus_window_only() {
             let config: Config =
-                toml::from_str("[window]\nfocus_behavior = \"focus_window_only\"\n")
+                toml::from_str("[providers.windows]\nfocus_behavior = \"focus_window_only\"\n")
                     .expect("focus behavior should parse");
             assert_eq!(
-                config.window.focus_behavior,
+                config.providers.windows.focus_behavior,
                 WindowFocusBehavior::FocusWindowOnly
             );
         }
