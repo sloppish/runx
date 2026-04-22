@@ -4,7 +4,6 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Runx"
 APP_DIR="/Applications"
-ENABLE_LOGIN_ITEM=0
 DRY_RUN=0
 SIGN_IDENTITY=""
 
@@ -15,7 +14,6 @@ Usage: scripts/install-macos.sh [options]
 Options:
   --app-dir PATH         Install destination directory (default: /Applications)
   --user-apps            Shortcut for --app-dir "$HOME/Applications"
-  --login-item           Add Runx to macOS Login Items after install
   --sign-identity NAME   Code-signing identity to pass through to packaging
   --dry-run              Print the actions without installing
   -h, --help             Show this help
@@ -30,10 +28,6 @@ while [[ $# -gt 0 ]]; do
       ;;
     --user-apps)
       APP_DIR="$HOME/Applications"
-      shift
-      ;;
-    --login-item)
-      ENABLE_LOGIN_ITEM=1
       shift
       ;;
     --sign-identity)
@@ -95,12 +89,4 @@ else
     copy_app_with_admin
   fi
   printf 'Installed %s\n' "$TARGET_APP"
-fi
-
-if [[ "$ENABLE_LOGIN_ITEM" -eq 1 ]]; then
-  if [[ "$DRY_RUN" -eq 1 ]]; then
-    "$ROOT_DIR/scripts/login-item-macos.sh" --dry-run enable "$TARGET_APP" "$APP_NAME"
-  else
-    "$ROOT_DIR/scripts/login-item-macos.sh" enable "$TARGET_APP" "$APP_NAME"
-  fi
 fi
