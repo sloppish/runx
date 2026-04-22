@@ -7,13 +7,14 @@
 use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
+use tao::platform::macos::MonitorHandleExtMacOS;
 use tao::{dpi::PhysicalPosition, window::Window};
 use wry::WebView;
 
 use crate::{
     config::{WindowConfig, WindowDisplayTarget},
     debug_log,
-    macos::{FrontmostApp, capture_frontmost_app},
+    macos::{FrontmostApp, capture_frontmost_app, cursor_display_location},
     state::AppState,
 };
 
@@ -134,12 +135,18 @@ fn monitor_for_window(
 ) -> Option<tao::monitor::MonitorHandle> {
     match config.show_on {
         WindowDisplayTarget::Primary => window.primary_monitor(),
-        WindowDisplayTarget::Cursor => window
-            .cursor_position()
-            .ok()
-            .and_then(|position| window.monitor_from_point(position.x, position.y))
-            .or_else(|| window.current_monitor())
-            .or_else(|| window.primary_monitor()),
+        WindowDisplayTarget::Cursor => {
+            let cursor_display = cursor_display_location();
+            cursor_display
+                .as_ref()
+                .and_then(|cursor| {
+                    window
+                        .available_monitors()
+                        .find(|monitor| monitor.native_id() == cursor.display_id)
+                })
+                .or_else(|| window.current_monitor())
+                .or_else(|| window.primary_monitor())
+        }
     }
 }
 

@@ -23,6 +23,7 @@ use core_foundation_sys::{
     string::CFStringRef,
 };
 use core_graphics::{
+    display::CGDisplay,
     event::{CGEvent, CGEventFlags, CGEventTapLocation, KeyCode},
     event_source::{CGEventSource, CGEventSourceStateID},
 };
@@ -120,6 +121,12 @@ pub struct FrontmostApp {
     pub path: Option<String>,
 }
 
+/// Direct CoreGraphics snapshot of the display currently containing the mouse cursor.
+#[derive(Debug, Clone, Copy)]
+pub struct CursorDisplayLocation {
+    pub display_id: u32,
+}
+
 impl FrontmostApp {
     /// Human-friendly app name used in diagnostics and fallbacks.
     pub fn display_name(&self) -> &str {
@@ -189,6 +196,24 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     }
 
     Ok(Some(app))
+}
+
+/// Returns the display currently containing the mouse cursor using CoreGraphics.
+pub fn cursor_display_location() -> Option<CursorDisplayLocation> {
+    let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
+    let event = CGEvent::new(source).ok()?;
+    let point = event.location();
+    let (display_ids, matching_count) = CGDisplay::displays_with_point(point, 8).ok()?;
+    if matching_count == 0 {
+        return None;
+    }
+
+    let display_id = display_ids
+        .into_iter()
+        .take(matching_count as usize)
+        .next()?;
+
+    Some(CursorDisplayLocation { display_id })
 }
 
 /// Attempts to focus a specific window using the configured strategy.
