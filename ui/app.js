@@ -17,12 +17,18 @@
     state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.items.length - 1));
   }
 
-  function moveSelection(state, delta) {
+  function moveSelection(state, delta, cycle = false) {
     if (state.items.length === 0) {
       return;
     }
 
-    state.selectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.items.length - 1));
+    if (!cycle) {
+      state.selectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.items.length - 1));
+      return;
+    }
+
+    const count = state.items.length;
+    state.selectedIndex = ((state.selectedIndex + delta) % count + count) % count;
   }
 
   function inputChanged(state, query) {
@@ -90,6 +96,10 @@
   const inputEl = document.getElementById("query");
   const inputWrapEl = document.querySelector(".input-wrap");
   const send = (payload) => root.ipc.postMessage(JSON.stringify(payload));
+
+  function cycleSelectionEnabled() {
+    return !!root.__RUNX_CYCLE_SELECTION__;
+  }
 
   function inConfigErrorMode() {
     return !!state.configError && state.query === "";
@@ -192,14 +202,14 @@
 
     if (event.key === "ArrowDown" || (ctrlDown && event.key.toLowerCase() === "n")) {
       event.preventDefault();
-      moveSelection(state, 1);
+      moveSelection(state, 1, cycleSelectionEnabled());
       render();
       return;
     }
 
     if (event.key === "ArrowUp" || (ctrlDown && event.key.toLowerCase() === "p")) {
       event.preventDefault();
-      moveSelection(state, -1);
+      moveSelection(state, -1, cycleSelectionEnabled());
       render();
       return;
     }

@@ -13,9 +13,15 @@ pub fn html(theme: &UiConfig) -> String {
     } else {
         "shell canvas-hidden"
     };
+    let cycle_selection_value = if theme.cycle_selection {
+        "true"
+    } else {
+        "false"
+    };
 
     HTML_TEMPLATE
         .replace("__SHELL_CLASS__", shell_class)
+        .replace("__RUNX_CYCLE_SELECTION_VALUE__", cycle_selection_value)
         .replace("__RUNX_STYLE__", &theme_css(theme))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
 }
@@ -147,5 +153,17 @@ mod tests {
         let document = html(&theme);
 
         assert!(document.contains(r#"<main class="shell canvas-hidden">"#));
+    }
+
+    #[test]
+    fn html_exposes_cycle_selection_flag() {
+        let theme = UiConfig {
+            cycle_selection: true,
+            ..UiConfig::default()
+        };
+
+        let document = html(&theme);
+
+        assert!(document.contains("window.__RUNX_CYCLE_SELECTION__ = true;"));
     }
 }

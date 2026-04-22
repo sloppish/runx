@@ -72,6 +72,7 @@ search_paths = []
 # Command routing can be configured under `[plugin.<id>.commands]`.
 [ui]
 show_header = true
+cycle_selection = false
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 accent = "#c77b49"
 background = "#f3ede5"
@@ -242,6 +243,7 @@ pub struct PluginsConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
     pub show_header: bool,
+    pub cycle_selection: bool,
     pub font_family: String,
     pub accent: String,
     pub background: String,
@@ -319,6 +321,7 @@ struct RawConfigSpans {
 #[serde(default, deny_unknown_fields)]
 struct RawUiSpans {
     show_header: bool,
+    cycle_selection: bool,
     font_family: String,
     accent: String,
     background: String,
@@ -840,6 +843,7 @@ impl Default for UiConfig {
     fn default() -> Self {
         Self {
             show_header: true,
+            cycle_selection: false,
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
             accent: "#c77b49".to_owned(),
@@ -1231,6 +1235,7 @@ mod tests {
         fn defaults_to_current_ui_font_sizes() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert!(config.ui.show_header);
+            assert!(!config.ui.cycle_selection);
             assert!(config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 24);
             assert_eq!(config.ui.canvas.opacity, 1.0);
@@ -1261,11 +1266,12 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui]\nshow_header = false\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[ui]\nshow_header = false\ncycle_selection = true\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
             assert!(!config.ui.show_header);
+            assert!(config.ui.cycle_selection);
             assert!(!config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 18);
             assert_eq!(config.ui.canvas.opacity, 0.75);
@@ -1385,6 +1391,7 @@ mod tests {
             let raw = r##"
 [ui]
 show_header = true
+cycle_selection = false
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 accent = "#c77b49"
 background = "#f3ede5"

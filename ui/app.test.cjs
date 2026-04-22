@@ -10,6 +10,17 @@ test("hover does not steal keyboard selection", () => {
   assert.equal(state.selectedIndex, 1);
 });
 
+test("selection can wrap from first to last and last to first", () => {
+  const state = ui.createState();
+  state.items = [{}, {}, {}];
+
+  ui.moveSelection(state, -1, true);
+  assert.equal(state.selectedIndex, 2);
+
+  ui.moveSelection(state, 1, true);
+  assert.equal(state.selectedIndex, 0);
+});
+
 test("typing resets selection to the first item", () => {
   const state = ui.createState();
   state.items = [{}, {}, {}];

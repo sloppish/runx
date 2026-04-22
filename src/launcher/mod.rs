@@ -526,9 +526,15 @@ impl Launcher {
 
     fn apply_theme(&self, theme: &config::UiConfig) -> Result<()> {
         let css = ui::theme_css(theme);
+        let cycle_selection = if theme.cycle_selection {
+            "true"
+        } else {
+            "false"
+        };
         let script = format!(
-            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; }})()",
-            serde_json::to_string(&css)?
+            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; }})()",
+            serde_json::to_string(&css)?,
+            cycle_selection
         );
         self.webview
             .evaluate_script(&script)
