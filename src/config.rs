@@ -87,6 +87,19 @@ badge = 11
 accelerator = 12
 config_error_title = 24
 config_error_body = 15
+
+[ui.layout]
+input_padding_y = 14
+input_padding_x = 18
+input_radius = 18
+list_gap = 8
+entry_padding_y = 13
+entry_padding_x = 14
+entry_gap = 14
+row_radius = 18
+badge_size = 46
+badge_radius = 14
+icon_size = 46
 "##;
 
 const KNOWN_PROVIDER_NAMES: [&str; 5] = ["windows", "apps", "settings", "plugins", "spotlight"];
@@ -224,6 +237,7 @@ pub struct UiConfig {
     pub text: String,
     pub muted: String,
     pub font_sizes: UiFontSizesConfig,
+    pub layout: UiLayoutConfig,
 }
 
 /// Font-size tokens injected into the embedded UI theme.
@@ -238,6 +252,23 @@ pub struct UiFontSizesConfig {
     pub accelerator: u16,
     pub config_error_title: u16,
     pub config_error_body: u16,
+}
+
+/// Layout tokens injected into the embedded UI theme.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiLayoutConfig {
+    pub input_padding_y: u16,
+    pub input_padding_x: u16,
+    pub input_radius: u16,
+    pub list_gap: u16,
+    pub entry_padding_y: u16,
+    pub entry_padding_x: u16,
+    pub entry_gap: u16,
+    pub row_radius: u16,
+    pub badge_size: u16,
+    pub badge_radius: u16,
+    pub icon_size: u16,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -691,6 +722,7 @@ impl Default for UiConfig {
             text: "#1f1a16".to_owned(),
             muted: "#756759".to_owned(),
             font_sizes: UiFontSizesConfig::default(),
+            layout: UiLayoutConfig::default(),
         }
     }
 }
@@ -706,6 +738,24 @@ impl Default for UiFontSizesConfig {
             accelerator: 12,
             config_error_title: 24,
             config_error_body: 15,
+        }
+    }
+}
+
+impl Default for UiLayoutConfig {
+    fn default() -> Self {
+        Self {
+            input_padding_y: 14,
+            input_padding_x: 18,
+            input_radius: 18,
+            list_gap: 8,
+            entry_padding_y: 13,
+            entry_padding_x: 14,
+            entry_gap: 14,
+            row_radius: 18,
+            badge_size: 46,
+            badge_radius: 14,
+            icon_size: 46,
         }
     }
 }
@@ -1042,6 +1092,17 @@ mod tests {
             assert_eq!(config.ui.font_sizes.accelerator, 12);
             assert_eq!(config.ui.font_sizes.config_error_title, 24);
             assert_eq!(config.ui.font_sizes.config_error_body, 15);
+            assert_eq!(config.ui.layout.input_padding_y, 14);
+            assert_eq!(config.ui.layout.input_padding_x, 18);
+            assert_eq!(config.ui.layout.input_radius, 18);
+            assert_eq!(config.ui.layout.list_gap, 8);
+            assert_eq!(config.ui.layout.entry_padding_y, 13);
+            assert_eq!(config.ui.layout.entry_padding_x, 14);
+            assert_eq!(config.ui.layout.entry_gap, 14);
+            assert_eq!(config.ui.layout.row_radius, 18);
+            assert_eq!(config.ui.layout.badge_size, 46);
+            assert_eq!(config.ui.layout.badge_radius, 14);
+            assert_eq!(config.ui.layout.icon_size, 46);
         }
 
         #[test]
@@ -1059,6 +1120,26 @@ mod tests {
             assert_eq!(config.ui.font_sizes.accelerator, 13);
             assert_eq!(config.ui.font_sizes.config_error_title, 28);
             assert_eq!(config.ui.font_sizes.config_error_body, 17);
+        }
+
+        #[test]
+        fn accepts_custom_ui_layout() {
+            let config: Config = toml::from_str(
+                "[ui.layout]\ninput_padding_y = 16\ninput_padding_x = 20\ninput_radius = 20\nlist_gap = 10\nentry_padding_y = 14\nentry_padding_x = 16\nentry_gap = 15\nrow_radius = 20\nbadge_size = 48\nbadge_radius = 16\nicon_size = 40\n",
+            )
+            .expect("custom ui layout should parse");
+
+            assert_eq!(config.ui.layout.input_padding_y, 16);
+            assert_eq!(config.ui.layout.input_padding_x, 20);
+            assert_eq!(config.ui.layout.input_radius, 20);
+            assert_eq!(config.ui.layout.list_gap, 10);
+            assert_eq!(config.ui.layout.entry_padding_y, 14);
+            assert_eq!(config.ui.layout.entry_padding_x, 16);
+            assert_eq!(config.ui.layout.entry_gap, 15);
+            assert_eq!(config.ui.layout.row_radius, 20);
+            assert_eq!(config.ui.layout.badge_size, 48);
+            assert_eq!(config.ui.layout.badge_radius, 16);
+            assert_eq!(config.ui.layout.icon_size, 40);
         }
     }
 

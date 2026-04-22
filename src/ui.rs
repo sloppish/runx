@@ -23,6 +23,17 @@ pub fn theme_css(theme: &UiConfig) -> String {
     let accelerator_font_size = format!("{}px", theme.font_sizes.accelerator);
     let config_error_title_font_size = format!("{}px", theme.font_sizes.config_error_title);
     let config_error_body_font_size = format!("{}px", theme.font_sizes.config_error_body);
+    let input_padding_y = format!("{}px", theme.layout.input_padding_y);
+    let input_padding_x = format!("{}px", theme.layout.input_padding_x);
+    let input_radius = format!("{}px", theme.layout.input_radius);
+    let list_gap = format!("{}px", theme.layout.list_gap);
+    let entry_padding_y = format!("{}px", theme.layout.entry_padding_y);
+    let entry_padding_x = format!("{}px", theme.layout.entry_padding_x);
+    let entry_gap = format!("{}px", theme.layout.entry_gap);
+    let row_radius = format!("{}px", theme.layout.row_radius);
+    let badge_size = format!("{}px", theme.layout.badge_size);
+    let badge_radius = format!("{}px", theme.layout.badge_radius);
+    let icon_size = format!("{}px", theme.layout.icon_size);
 
     let replacements = [
         ("__ACCENT__", theme.accent.as_str()),
@@ -45,6 +56,17 @@ pub fn theme_css(theme: &UiConfig) -> String {
             "__CONFIG_ERROR_BODY_FONT_SIZE__",
             config_error_body_font_size.as_str(),
         ),
+        ("__INPUT_PADDING_Y__", input_padding_y.as_str()),
+        ("__INPUT_PADDING_X__", input_padding_x.as_str()),
+        ("__INPUT_RADIUS__", input_radius.as_str()),
+        ("__LIST_GAP__", list_gap.as_str()),
+        ("__ENTRY_PADDING_Y__", entry_padding_y.as_str()),
+        ("__ENTRY_PADDING_X__", entry_padding_x.as_str()),
+        ("__ENTRY_GAP__", entry_gap.as_str()),
+        ("__ROW_RADIUS__", row_radius.as_str()),
+        ("__BADGE_SIZE__", badge_size.as_str()),
+        ("__BADGE_RADIUS__", badge_radius.as_str()),
+        ("__ICON_SIZE__", icon_size.as_str()),
     ];
 
     let mut css = STYLE_TEMPLATE.to_owned();
@@ -65,11 +87,15 @@ mod tests {
         theme.font_sizes.input = 34;
         theme.font_sizes.title = 18;
         theme.font_sizes.config_error_body = 17;
+        theme.layout.input_radius = 22;
+        theme.layout.badge_size = 52;
 
         let css = theme_css(&theme);
 
         assert!(css.contains("--input-font-size: 34px;"));
         assert!(css.contains("--title-font-size: 18px;"));
         assert!(css.contains("--config-error-body-font-size: 17px;"));
+        assert!(css.contains("--input-radius: 22px;"));
+        assert!(css.contains("--badge-size: 52px;"));
     }
 }
