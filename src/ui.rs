@@ -6,6 +6,7 @@ const HTML_TEMPLATE: &str = include_str!("../ui/index.html");
 const STYLE_TEMPLATE: &str = include_str!("../ui/styles.css");
 const SCRIPT_SOURCE: &str = include_str!("../ui/app.js");
 
+#[derive(Clone)]
 struct ResolvedUiColors {
     accent: String,
     background: String,
@@ -47,13 +48,13 @@ struct ResolvedUiColors {
 }
 
 impl ResolvedUiColors {
-    fn light(theme: &UiConfig) -> Self {
+    fn builtin_light() -> Self {
         Self {
-            accent: theme.accent.clone(),
-            background: theme.background.clone(),
-            panel: theme.panel.clone(),
-            text: theme.text.clone(),
-            muted: theme.muted.clone(),
+            accent: "#c77b49".to_owned(),
+            background: "#f3ede5".to_owned(),
+            panel: "#fffaf3".to_owned(),
+            text: "#1f1a16".to_owned(),
+            muted: "#756759".to_owned(),
             shell_bg: "linear-gradient(180deg, rgb(255 255 255), rgb(252 246 238))".to_owned(),
             shell_shadow: "inset 0 1px 0 rgba(255, 255, 255, 0.72)".to_owned(),
             shell_border: "rgba(140, 102, 67, 0.16)".to_owned(),
@@ -111,7 +112,7 @@ impl ResolvedUiColors {
         }
     }
 
-    fn dark() -> Self {
+    fn builtin_dark() -> Self {
         Self {
             accent: "#d7a17b".to_owned(),
             background: "#10151d".to_owned(),
@@ -225,6 +226,30 @@ impl ResolvedUiColors {
     }
 }
 
+fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors, &'static str) {
+    let builtin_light = ResolvedUiColors::builtin_light()
+        .with_overrides(&theme.colorscheme_config("builtin_light").overrides);
+    let builtin_dark = ResolvedUiColors::builtin_dark()
+        .with_overrides(&theme.colorscheme_config("builtin_dark").overrides);
+
+    match theme.colorscheme() {
+        "system" => (builtin_light, builtin_dark, "light dark"),
+        "builtin_light" => (builtin_light.clone(), builtin_light, "light"),
+        "builtin_dark" => (builtin_dark.clone(), builtin_dark, "dark"),
+        other => {
+            let scheme = theme.colorscheme_config(other);
+            let use_light_base = matches!(scheme.base.as_deref(), Some("builtin_light"));
+            let resolved = if use_light_base {
+                builtin_light.with_overrides(&scheme.overrides)
+            } else {
+                builtin_dark.with_overrides(&scheme.overrides)
+            };
+            let document_color_scheme = if use_light_base { "light" } else { "dark" };
+            (resolved.clone(), resolved, document_color_scheme)
+        }
+    }
+}
+
 /// Returns the full HTML document served into the embedded webview.
 pub fn html(theme: &UiConfig) -> String {
     let shell_class = if theme.canvas.show {
@@ -247,8 +272,7 @@ pub fn html(theme: &UiConfig) -> String {
 
 /// Returns the theme-expanded CSS used by the embedded webview.
 pub fn theme_css(theme: &UiConfig) -> String {
-    let light = ResolvedUiColors::light(theme).with_overrides(&theme.colors);
-    let dark = ResolvedUiColors::dark().with_overrides(&theme.dark_colors);
+    let (light, dark, document_color_scheme) = resolve_theme_colors(theme);
     let header_display = if theme.show_header { "flex" } else { "none" };
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
     let canvas_radius = format!("{}px", theme.canvas.radius);
@@ -427,6 +451,7 @@ pub fn theme_css(theme: &UiConfig) -> String {
             dark.canvas_hidden_config_error_bg.as_str(),
         ),
         ("__FONT_FAMILY__", theme.font_family.as_str()),
+        ("__DOCUMENT_COLOR_SCHEME__", document_color_scheme),
         ("__HEADER_DISPLAY__", header_display),
         ("__CANVAS_DISPLAY__", canvas_display),
         ("__CANVAS_RADIUS__", canvas_radius.as_str()),
@@ -474,7 +499,7 @@ pub fn theme_css(theme: &UiConfig) -> String {
 #[cfg(test)]
 mod tests {
     use super::{html, theme_css};
-    use crate::config::UiConfig;
+    use crate::config::{UiColorOverridesConfig, UiColorschemeConfig, UiConfig};
 
     #[test]
     fn theme_css_includes_configured_font_sizes() {
@@ -512,6 +537,45 @@ mod tests {
         assert!(css.contains("--section-gap: 16px;"));
         assert!(css.contains("--input-radius: 22px;"));
         assert!(css.contains("--badge-size: 52px;"));
+    }
+
+    #[test]
+    fn explicit_custom_colorscheme_is_pinned_in_both_light_and_dark_css() {
+        let mut theme = UiConfig {
+            colorscheme: "gruvbox".to_owned(),
+            ..UiConfig::default()
+        };
+        theme.colorschemes.insert(
+            "gruvbox".to_owned(),
+            UiColorschemeConfig {
+                base: Some("builtin_dark".to_owned()),
+                overrides: UiColorOverridesConfig {
+                    accent: Some("#fabd2f".to_owned()),
+                    panel: Some("#282828".to_owned()),
+                    ..UiColorOverridesConfig::default()
+                },
+            },
+        );
+
+        let css = theme_css(&theme);
+
+        assert!(css.contains("--document-color-scheme: dark;"));
+        assert!(css.contains("--accent: #fabd2f;"));
+        assert!(css.contains("--panel: #282828;"));
+        assert!(css.matches("--accent: #fabd2f;").count() >= 2);
+    }
+
+    #[test]
+    fn system_colorscheme_keeps_light_dark_pairing() {
+        let theme = UiConfig::default();
+
+        let css = theme_css(&theme);
+
+        assert!(css.contains("--document-color-scheme: light dark;"));
+        assert!(!css.contains("--accent: __LIGHT_ACCENT__"));
+        assert!(css.contains("--accent: #c77b49;"));
+        assert!(css.contains("@media (prefers-color-scheme: dark)"));
+        assert!(css.contains("--accent: #d7a17b;"));
     }
 
     #[test]

@@ -76,15 +76,13 @@ search_paths = []
 [ui]
 show_header = true
 cycle_selection = false
+colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
-accent = "#c77b49"
-background = "#f3ede5"
-panel = "#fffaf3"
-text = "#1f1a16"
-muted = "#756759"
-# Full light/dark token overrides can be configured under:
-# [ui.colors]
-# [ui.dark_colors]
+# Built-in light/dark scheme overrides and custom schemes live under:
+# [ui.colorschemes.builtin_light]
+# [ui.colorschemes.builtin_dark]
+# [ui.colorschemes.gruvbox]
+# base = "builtin_dark"
 
 [ui.canvas]
 show = true
@@ -121,6 +119,7 @@ icon_size = 46
 "##;
 
 const KNOWN_PROVIDER_NAMES: [&str; 5] = ["windows", "apps", "settings", "plugins", "spotlight"];
+const BUILTIN_COLORSCHEME_NAMES: [&str; 2] = ["builtin_light", "builtin_dark"];
 
 /// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
@@ -265,18 +264,31 @@ pub struct PluginsConfig {
 pub struct UiConfig {
     pub show_header: bool,
     pub cycle_selection: bool,
+    pub colorscheme: String,
     pub font_family: String,
-    pub accent: String,
-    pub background: String,
-    pub panel: String,
-    pub text: String,
-    pub muted: String,
+    // Deprecated compatibility path; merged into builtin_light.
+    pub accent: Option<String>,
+    pub background: Option<String>,
+    pub panel: Option<String>,
+    pub text: Option<String>,
+    pub muted: Option<String>,
+    pub colorschemes: HashMap<String, UiColorschemeConfig>,
+    // Deprecated compatibility path; merged into builtin_light/builtin_dark.
     pub colors: UiColorOverridesConfig,
     pub dark_colors: UiColorOverridesConfig,
     pub canvas: UiCanvasConfig,
     pub entries: UiEntriesConfig,
     pub font_sizes: UiFontSizesConfig,
     pub layout: UiLayoutConfig,
+}
+
+/// One named colorscheme entry under `[ui.colorschemes.<name>]`.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiColorschemeConfig {
+    pub base: Option<String>,
+    #[serde(flatten)]
+    pub overrides: UiColorOverridesConfig,
 }
 
 /// Full per-scheme UI color-token overrides.
@@ -320,6 +332,56 @@ pub struct UiColorOverridesConfig {
     pub canvas_hidden_item_hover: Option<String>,
     pub canvas_hidden_item_selected_bg: Option<String>,
     pub canvas_hidden_config_error_bg: Option<String>,
+}
+
+impl UiColorOverridesConfig {
+    fn merge_from(&mut self, other: &Self) {
+        macro_rules! merge {
+            ($field:ident) => {
+                if let Some(value) = &other.$field {
+                    self.$field = Some(value.clone());
+                }
+            };
+        }
+
+        merge!(accent);
+        merge!(background);
+        merge!(panel);
+        merge!(text);
+        merge!(muted);
+        merge!(shell_bg);
+        merge!(shell_shadow);
+        merge!(shell_border);
+        merge!(label_strong);
+        merge!(input_bg);
+        merge!(input_border);
+        merge!(input_shadow);
+        merge!(placeholder);
+        merge!(scrollbar);
+        merge!(item_bg);
+        merge!(item_hover);
+        merge!(item_selected_bg);
+        merge!(item_selected_shadow);
+        merge!(badge_bg);
+        merge!(badge_border);
+        merge!(badge_text);
+        merge!(badge_icon_bg);
+        merge!(chip_text);
+        merge!(chip_bg);
+        merge!(chip_border);
+        merge!(config_error_bg);
+        merge!(config_error_border);
+        merge!(config_error_shadow);
+        merge!(config_error_title);
+        merge!(config_error_copy);
+        merge!(canvas_hidden_input_bg);
+        merge!(canvas_hidden_input_border);
+        merge!(canvas_hidden_input_shadow);
+        merge!(canvas_hidden_item_bg);
+        merge!(canvas_hidden_item_hover);
+        merge!(canvas_hidden_item_selected_bg);
+        merge!(canvas_hidden_config_error_bg);
+    }
 }
 
 /// Canvas tokens injected into the embedded UI theme.
@@ -389,18 +451,29 @@ struct RawConfigSpans {
 struct RawUiSpans {
     show_header: bool,
     cycle_selection: bool,
+    colorscheme: Option<Spanned<String>>,
     font_family: String,
-    accent: String,
-    background: String,
-    panel: String,
-    text: String,
-    muted: String,
+    accent: Option<String>,
+    background: Option<String>,
+    panel: Option<String>,
+    text: Option<String>,
+    muted: Option<String>,
+    colorschemes: HashMap<String, RawUiColorschemeSpans>,
     colors: UiColorOverridesConfig,
     dark_colors: UiColorOverridesConfig,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
     font_sizes: UiFontSizesConfig,
     layout: UiLayoutConfig,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawUiColorschemeSpans {
+    base: Option<Spanned<String>>,
+    #[allow(dead_code)]
+    #[serde(flatten)]
+    overrides: UiColorOverridesConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -534,6 +607,8 @@ fn validate_config(config: &Config) -> Result<()> {
         config.ui.entries.opacity,
         "[ui.entries].opacity must be between 0.0 and 1.0",
     )?;
+    validate_ui_colorscheme_selector(config)?;
+    validate_ui_colorschemes(&config.ui.colorschemes)?;
 
     for provider in config.ranking.provider_score_boosts.keys() {
         validate_provider_name(provider, "[ranking.provider_score_boosts] key")?;
@@ -634,6 +709,52 @@ fn validate_config_with_spans(config_path: &Path, raw: &str, spans: &RawConfigSp
         )));
     }
 
+    if let Some(colorscheme) = &spans.ui.colorscheme
+        && let Err(error) = validate_ui_colorscheme_name_impl(
+            colorscheme.get_ref(),
+            spans.ui.colorschemes.keys().map(String::as_str),
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            colorscheme.span(),
+        )));
+    }
+
+    for (name, scheme) in &spans.ui.colorschemes {
+        if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
+            if let Some(base) = &scheme.base {
+                let message = format!(
+                    "[ui.colorschemes.{name}].base is not allowed for built-in colorschemes"
+                );
+                return Err(anyhow!(render_config_validation_error(
+                    config_path,
+                    raw,
+                    &message,
+                    base.span(),
+                )));
+            }
+            continue;
+        }
+
+        if let Some(base) = &scheme.base
+            && !BUILTIN_COLORSCHEME_NAMES.contains(&base.get_ref().as_str())
+        {
+            let message = format!(
+                "[ui.colorschemes.{name}].base must be one of: {}",
+                BUILTIN_COLORSCHEME_NAMES.join(", ")
+            );
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &message,
+                base.span(),
+            )));
+        }
+    }
+
     Ok(())
 }
 
@@ -688,6 +809,58 @@ fn validate_spanned_provider_names(
     }
 
     Ok(())
+}
+
+#[cfg(test)]
+fn validate_ui_colorscheme_selector(config: &Config) -> Result<()> {
+    validate_ui_colorscheme_name_impl(
+        &config.ui.colorscheme,
+        config.ui.colorschemes.keys().map(String::as_str),
+    )
+}
+
+#[cfg(test)]
+fn validate_ui_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>) -> Result<()> {
+    for (name, scheme) in colorschemes {
+        if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
+            if scheme.base.is_some() {
+                bail!("[ui.colorschemes.{name}].base is not allowed for built-in colorschemes");
+            }
+            continue;
+        }
+
+        if let Some(base) = &scheme.base
+            && !BUILTIN_COLORSCHEME_NAMES.contains(&base.as_str())
+        {
+            bail!(
+                "[ui.colorschemes.{name}].base must be one of: {}",
+                BUILTIN_COLORSCHEME_NAMES.join(", ")
+            );
+        }
+    }
+    Ok(())
+}
+
+fn validate_ui_colorscheme_name_impl<'a>(
+    name: &str,
+    available: impl IntoIterator<Item = &'a str>,
+) -> Result<()> {
+    if name == "system" {
+        return Ok(());
+    }
+
+    if BUILTIN_COLORSCHEME_NAMES.contains(&name) {
+        return Ok(());
+    }
+
+    if available.into_iter().any(|candidate| candidate == name) {
+        Ok(())
+    } else {
+        bail!(
+            "[ui].colorscheme must be `system`, one of the built-ins (`{}`), or a custom name under [ui.colorschemes.<name>]",
+            BUILTIN_COLORSCHEME_NAMES.join("`, `")
+        )
+    }
 }
 
 fn render_toml_parse_error(config_path: &Path, raw: &str, error: &toml::de::Error) -> String {
@@ -828,6 +1001,36 @@ impl Config {
     }
 }
 
+impl UiConfig {
+    /// Returns the selected colorscheme name, or `system` to follow the built-in light/dark pair.
+    pub fn colorscheme(&self) -> &str {
+        self.colorscheme.as_str()
+    }
+
+    /// Returns a named colorscheme merged with legacy built-in override fields.
+    pub fn colorscheme_config(&self, name: &str) -> UiColorschemeConfig {
+        let mut scheme = self.colorschemes.get(name).cloned().unwrap_or_default();
+
+        match name {
+            "builtin_light" => {
+                scheme.overrides.merge_from(&UiColorOverridesConfig {
+                    accent: self.accent.clone(),
+                    background: self.background.clone(),
+                    panel: self.panel.clone(),
+                    text: self.text.clone(),
+                    muted: self.muted.clone(),
+                    ..UiColorOverridesConfig::default()
+                });
+                scheme.overrides.merge_from(&self.colors);
+            }
+            "builtin_dark" => scheme.overrides.merge_from(&self.dark_colors),
+            _ => {}
+        }
+
+        scheme
+    }
+}
+
 impl Default for HotKeyConfig {
     fn default() -> Self {
         Self {
@@ -909,16 +1112,21 @@ impl RankingConfig {
 
 impl Default for UiConfig {
     fn default() -> Self {
+        let mut colorschemes = HashMap::new();
+        colorschemes.insert("builtin_light".to_owned(), UiColorschemeConfig::default());
+        colorschemes.insert("builtin_dark".to_owned(), UiColorschemeConfig::default());
         Self {
             show_header: true,
             cycle_selection: false,
+            colorscheme: "system".to_owned(),
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
-            accent: "#c77b49".to_owned(),
-            background: "#f3ede5".to_owned(),
-            panel: "#fffaf3".to_owned(),
-            text: "#1f1a16".to_owned(),
-            muted: "#756759".to_owned(),
+            accent: None,
+            background: None,
+            panel: None,
+            text: None,
+            muted: None,
+            colorschemes,
             colors: UiColorOverridesConfig::default(),
             dark_colors: UiColorOverridesConfig::default(),
             canvas: UiCanvasConfig::default(),
@@ -1323,18 +1531,21 @@ mod tests {
 
     mod ui_tests {
         use super::Config;
-        use crate::config::UiColorOverridesConfig;
+        use crate::config::{UiColorOverridesConfig, UiColorschemeConfig, validate_config};
 
         #[test]
         fn defaults_to_current_ui_font_sizes() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert!(config.ui.show_header);
             assert!(!config.ui.cycle_selection);
+            assert_eq!(config.ui.colorscheme, "system");
             assert!(config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 24);
             assert_eq!(config.ui.canvas.opacity, 1.0);
             assert_eq!(config.ui.canvas.background_opacity, 0.97);
             assert_eq!(config.ui.entries.opacity, 1.0);
+            assert!(config.ui.colorschemes.contains_key("builtin_light"));
+            assert!(config.ui.colorschemes.contains_key("builtin_dark"));
             assert_eq!(config.ui.colors, UiColorOverridesConfig::default());
             assert_eq!(config.ui.dark_colors, UiColorOverridesConfig::default());
             assert_eq!(config.ui.font_sizes.label, 10);
@@ -1362,12 +1573,13 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui]\nshow_header = false\ncycle_selection = true\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
             assert!(!config.ui.show_header);
             assert!(config.ui.cycle_selection);
+            assert_eq!(config.ui.colorscheme, "builtin_dark");
             assert!(!config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 18);
             assert_eq!(config.ui.canvas.opacity, 0.75);
@@ -1407,31 +1619,116 @@ mod tests {
         #[test]
         fn accepts_full_ui_color_overrides() {
             let config: Config = toml::from_str(
-                "[ui.colors]\naccent = \"#111111\"\nshell_bg = \"linear-gradient(180deg, #111, #222)\"\nconfig_error_title = \"#fefefe\"\ncanvas_hidden_input_bg = \"#222222\"\n[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\nbadge_icon_bg = \"rgba(0,0,0,0.9)\"\n",
+                "[ui]\ncolorscheme = \"gruvbox\"\n[ui.colorschemes.builtin_light]\naccent = \"#111111\"\nshell_bg = \"linear-gradient(180deg, #111, #222)\"\nconfig_error_title = \"#fefefe\"\ncanvas_hidden_input_bg = \"#222222\"\n[ui.colorschemes.builtin_dark]\nitem_bg = \"rgba(1,2,3,0.4)\"\nbadge_icon_bg = \"rgba(0,0,0,0.9)\"\n[ui.colorschemes.gruvbox]\nbase = \"builtin_dark\"\npanel = \"#282828\"\ntext = \"#ebdbb2\"\n",
             )
             .expect("custom ui color overrides should parse");
 
-            assert_eq!(config.ui.colors.accent.as_deref(), Some("#111111"));
+            assert_eq!(config.ui.colorscheme, "gruvbox");
             assert_eq!(
-                config.ui.colors.shell_bg.as_deref(),
+                config
+                    .ui
+                    .colorschemes
+                    .get("builtin_light")
+                    .and_then(|scheme| scheme.overrides.accent.as_deref()),
+                Some("#111111")
+            );
+            assert_eq!(
+                config
+                    .ui
+                    .colorschemes
+                    .get("builtin_light")
+                    .and_then(|scheme| scheme.overrides.shell_bg.as_deref()),
                 Some("linear-gradient(180deg, #111, #222)")
             );
             assert_eq!(
-                config.ui.colors.config_error_title.as_deref(),
+                config
+                    .ui
+                    .colorschemes
+                    .get("builtin_light")
+                    .and_then(|scheme| scheme.overrides.config_error_title.as_deref()),
                 Some("#fefefe")
             );
             assert_eq!(
-                config.ui.colors.canvas_hidden_input_bg.as_deref(),
+                config
+                    .ui
+                    .colorschemes
+                    .get("builtin_light")
+                    .and_then(|scheme| scheme.overrides.canvas_hidden_input_bg.as_deref()),
                 Some("#222222")
             );
+            assert_eq!(
+                config
+                    .ui
+                    .colorschemes
+                    .get("builtin_dark")
+                    .and_then(|scheme| scheme.overrides.item_bg.as_deref()),
+                Some("rgba(1,2,3,0.4)")
+            );
+            assert_eq!(
+                config
+                    .ui
+                    .colorschemes
+                    .get("builtin_dark")
+                    .and_then(|scheme| scheme.overrides.badge_icon_bg.as_deref()),
+                Some("rgba(0,0,0,0.9)")
+            );
+            assert_eq!(
+                config.ui.colorschemes.get("gruvbox"),
+                Some(&UiColorschemeConfig {
+                    base: Some("builtin_dark".to_owned()),
+                    overrides: UiColorOverridesConfig {
+                        panel: Some("#282828".to_owned()),
+                        text: Some("#ebdbb2".to_owned()),
+                        ..UiColorOverridesConfig::default()
+                    },
+                })
+            );
+        }
+
+        #[test]
+        fn legacy_light_and_dark_override_fields_still_parse() {
+            let config: Config = toml::from_str(
+                "[ui]\naccent = \"#333333\"\npanel = \"#eeeeee\"\n[ui.colors]\naccent = \"#111111\"\n[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\n",
+            )
+            .expect("legacy color overrides should still parse");
+
+            assert_eq!(config.ui.accent.as_deref(), Some("#333333"));
+            assert_eq!(config.ui.panel.as_deref(), Some("#eeeeee"));
+            assert_eq!(config.ui.colors.accent.as_deref(), Some("#111111"));
             assert_eq!(
                 config.ui.dark_colors.item_bg.as_deref(),
                 Some("rgba(1,2,3,0.4)")
             );
-            assert_eq!(
-                config.ui.dark_colors.badge_icon_bg.as_deref(),
-                Some("rgba(0,0,0,0.9)")
+        }
+
+        #[test]
+        fn rejects_unknown_selected_colorscheme() {
+            let mut config = Config::default();
+            config.ui.colorscheme = "gruvbox".to_owned();
+
+            let error = validate_config(&config).expect_err("unknown colorscheme should fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("[ui].colorscheme must be `system`")
             );
+        }
+
+        #[test]
+        fn rejects_invalid_custom_colorscheme_base() {
+            let mut config = Config::default();
+            config.ui.colorschemes.insert(
+                "gruvbox".to_owned(),
+                UiColorschemeConfig {
+                    base: Some("nope".to_owned()),
+                    ..UiColorschemeConfig::default()
+                },
+            );
+
+            let error = validate_config(&config).expect_err("invalid colorscheme base should fail");
+            assert!(error.to_string().contains(
+                "[ui.colorschemes.gruvbox].base must be one of: builtin_light, builtin_dark"
+            ));
         }
     }
 
@@ -1513,12 +1810,30 @@ mod tests {
         }
 
         #[test]
+        fn colorscheme_validation_errors_include_source_context() {
+            let raw = "[ui]\ncolorscheme = \"gruvbox\"\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("colorscheme = \"gruvbox\""));
+            assert!(rendered.contains("[ui].colorscheme must be `system`"));
+        }
+
+        #[test]
         fn raw_spans_accept_full_ui_block_for_validation() {
             let raw = r##"
 [ui]
 show_header = true
 cycle_selection = false
+colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
+
+[ui.colorschemes.builtin_light]
 accent = "#c77b49"
 background = "#f3ede5"
 panel = "#fffaf3"
@@ -1569,12 +1884,8 @@ icon_size = 46
             let raw = r##"
 [ui]
 show_header = true
+colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
-accent = "#c77b49"
-background = "#f3ede5"
-panel = "#fffaf3"
-text = "#1f1a16"
-muted = "#756759"
 bogus = true
 "##;
 

@@ -63,6 +63,7 @@
   --canvas-hidden-item-hover: __LIGHT_CANVAS_HIDDEN_ITEM_HOVER__;
   --canvas-hidden-item-selected-bg: __LIGHT_CANVAS_HIDDEN_ITEM_SELECTED_BG__;
   --canvas-hidden-config-error-bg: __LIGHT_CANVAS_HIDDEN_CONFIG_ERROR_BG__;
+  --document-color-scheme: __DOCUMENT_COLOR_SCHEME__;
 }
 
 @media (prefers-color-scheme: dark) {
@@ -119,7 +120,7 @@ html, body {
   background: transparent;
   color: var(--text);
   font-family: var(--font);
-  color-scheme: light dark;
+  color-scheme: var(--document-color-scheme);
   -webkit-font-smoothing: antialiased;
   user-select: none;
 }
