@@ -1,10 +1,229 @@
 //! Embeds the static frontend templates into a themed HTML document.
 
-use crate::config::UiConfig;
+use crate::config::{UiColorOverridesConfig, UiConfig};
 
 const HTML_TEMPLATE: &str = include_str!("../ui/index.html");
 const STYLE_TEMPLATE: &str = include_str!("../ui/styles.css");
 const SCRIPT_SOURCE: &str = include_str!("../ui/app.js");
+
+struct ResolvedUiColors {
+    accent: String,
+    background: String,
+    panel: String,
+    text: String,
+    muted: String,
+    shell_bg: String,
+    shell_shadow: String,
+    shell_border: String,
+    label_strong: String,
+    input_bg: String,
+    input_border: String,
+    input_shadow: String,
+    placeholder: String,
+    scrollbar: String,
+    item_bg: String,
+    item_hover: String,
+    item_selected_bg: String,
+    item_selected_shadow: String,
+    badge_bg: String,
+    badge_border: String,
+    badge_text: String,
+    badge_icon_bg: String,
+    chip_text: String,
+    chip_bg: String,
+    chip_border: String,
+    config_error_bg: String,
+    config_error_border: String,
+    config_error_shadow: String,
+    config_error_title: String,
+    config_error_copy: String,
+    canvas_hidden_input_bg: String,
+    canvas_hidden_input_border: String,
+    canvas_hidden_input_shadow: String,
+    canvas_hidden_item_bg: String,
+    canvas_hidden_item_hover: String,
+    canvas_hidden_item_selected_bg: String,
+    canvas_hidden_config_error_bg: String,
+}
+
+impl ResolvedUiColors {
+    fn light(theme: &UiConfig) -> Self {
+        Self {
+            accent: theme.accent.clone(),
+            background: theme.background.clone(),
+            panel: theme.panel.clone(),
+            text: theme.text.clone(),
+            muted: theme.muted.clone(),
+            shell_bg: "linear-gradient(180deg, rgb(255 255 255), rgb(252 246 238))".to_owned(),
+            shell_shadow: "inset 0 1px 0 rgba(255, 255, 255, 0.72)".to_owned(),
+            shell_border: "rgba(140, 102, 67, 0.16)".to_owned(),
+            label_strong: "color-mix(in srgb, var(--text) 88%, white)".to_owned(),
+            input_bg: "linear-gradient(180deg, rgba(255,255,255,0.92), rgba(248,240,230,0.9))"
+                .to_owned(),
+            input_border: "rgba(140, 102, 67, 0.14)".to_owned(),
+            input_shadow: "inset 0 1px 0 rgba(255,255,255,0.72)".to_owned(),
+            placeholder: "color-mix(in srgb, var(--muted) 78%, white)".to_owned(),
+            scrollbar: "rgba(134, 98, 66, 0.18)".to_owned(),
+            item_bg: "rgba(255,255,255,0.45)".to_owned(),
+            item_hover: "rgba(255,255,255,0.86)".to_owned(),
+            item_selected_bg:
+                "linear-gradient(135deg, rgba(199, 123, 73, 0.15), rgba(255,255,255,0.94))"
+                    .to_owned(),
+            item_selected_shadow:
+                "0 18px 44px rgba(139, 87, 46, 0.14), inset 0 0 0 1px rgba(199, 123, 73, 0.22)"
+                    .to_owned(),
+            badge_bg:
+                "linear-gradient(180deg, color-mix(in srgb, var(--accent) 18%, white), rgba(255,255,255,0.95))"
+                    .to_owned(),
+            badge_border: "rgba(199, 123, 73, 0.18)".to_owned(),
+            badge_text: "color-mix(in srgb, var(--accent) 72%, black)".to_owned(),
+            badge_icon_bg: "rgba(15, 22, 31, 0.78)".to_owned(),
+            chip_text: "color-mix(in srgb, var(--muted) 80%, white)".to_owned(),
+            chip_bg: "rgba(255,255,255,0.68)".to_owned(),
+            chip_border: "rgba(140, 102, 67, 0.12)".to_owned(),
+            config_error_bg:
+                "linear-gradient(180deg, rgba(199, 123, 73, 0.12), rgba(255,255,255,0.04))"
+                    .to_owned(),
+            config_error_border: "color-mix(in srgb, var(--accent) 30%, transparent)".to_owned(),
+            config_error_shadow:
+                "0 18px 44px rgba(139, 87, 46, 0.12), inset 0 1px 0 rgba(255,255,255,0.06)"
+                    .to_owned(),
+            config_error_title: "color-mix(in srgb, var(--text) 92%, white)".to_owned(),
+            config_error_copy: "color-mix(in srgb, var(--text) 84%, white)".to_owned(),
+            canvas_hidden_input_bg:
+                "linear-gradient(180deg, color-mix(in srgb, var(--panel) 98%, white), color-mix(in srgb, var(--panel) 96%, black))"
+                    .to_owned(),
+            canvas_hidden_input_border:
+                "color-mix(in srgb, var(--text) 14%, transparent)".to_owned(),
+            canvas_hidden_input_shadow:
+                "0 10px 28px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08)"
+                    .to_owned(),
+            canvas_hidden_item_bg:
+                "color-mix(in srgb, var(--panel) 94%, transparent)".to_owned(),
+            canvas_hidden_item_hover:
+                "color-mix(in srgb, var(--panel) 98%, var(--accent) 2%)".to_owned(),
+            canvas_hidden_item_selected_bg:
+                "linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--panel)), color-mix(in srgb, var(--panel) 98%, white))"
+                    .to_owned(),
+            canvas_hidden_config_error_bg:
+                "linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--panel)), color-mix(in srgb, var(--panel) 96%, black))"
+                    .to_owned(),
+        }
+    }
+
+    fn dark() -> Self {
+        Self {
+            accent: "#d7a17b".to_owned(),
+            background: "#10151d".to_owned(),
+            panel: "#18202b".to_owned(),
+            text: "#eef2fb".to_owned(),
+            muted: "#99a6bc".to_owned(),
+            shell_bg: "linear-gradient(180deg, rgb(28 37 50), rgb(16 22 31))".to_owned(),
+            shell_shadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05)".to_owned(),
+            shell_border: "rgba(128, 164, 214, 0.18)".to_owned(),
+            label_strong: "color-mix(in srgb, var(--text) 94%, white)".to_owned(),
+            input_bg: "linear-gradient(180deg, rgba(24, 31, 43, 0.98), rgba(18, 25, 35, 0.98))"
+                .to_owned(),
+            input_border: "rgba(128, 164, 214, 0.14)".to_owned(),
+            input_shadow: "inset 0 1px 0 rgba(255,255,255,0.03)".to_owned(),
+            placeholder: "color-mix(in srgb, var(--muted) 88%, black)".to_owned(),
+            scrollbar: "rgba(128, 164, 214, 0.26)".to_owned(),
+            item_bg: "rgba(180, 206, 244, 0.035)".to_owned(),
+            item_hover: "rgba(162, 195, 242, 0.08)".to_owned(),
+            item_selected_bg:
+                "linear-gradient(135deg, rgba(103, 148, 210, 0.24), rgba(31, 41, 56, 0.98))"
+                    .to_owned(),
+            item_selected_shadow:
+                "0 18px 44px rgba(0, 0, 0, 0.22), inset 0 0 0 1px rgba(117, 160, 222, 0.24)"
+                    .to_owned(),
+            badge_bg:
+                "linear-gradient(180deg, rgba(118, 154, 206, 0.18), rgba(255,255,255,0.02))"
+                    .to_owned(),
+            badge_border: "rgba(128, 164, 214, 0.18)".to_owned(),
+            badge_text: "color-mix(in srgb, #b9d4f4 86%, white)".to_owned(),
+            badge_icon_bg: "rgba(255,255,255,0.66)".to_owned(),
+            chip_text: "color-mix(in srgb, var(--muted) 86%, white)".to_owned(),
+            chip_bg: "rgba(150, 182, 230, 0.05)".to_owned(),
+            chip_border: "rgba(128, 164, 214, 0.14)".to_owned(),
+            config_error_bg:
+                "linear-gradient(180deg, rgba(103, 148, 210, 0.18), rgba(16,22,31,0.22))"
+                    .to_owned(),
+            config_error_border: "color-mix(in srgb, var(--accent) 24%, transparent)".to_owned(),
+            config_error_shadow:
+                "0 18px 44px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.03)"
+                    .to_owned(),
+            config_error_title: "color-mix(in srgb, var(--text) 94%, white)".to_owned(),
+            config_error_copy: "color-mix(in srgb, var(--text) 86%, white)".to_owned(),
+            canvas_hidden_input_bg:
+                "linear-gradient(180deg, color-mix(in srgb, var(--panel) 98%, white), color-mix(in srgb, var(--panel) 96%, black))"
+                    .to_owned(),
+            canvas_hidden_input_border:
+                "color-mix(in srgb, var(--text) 14%, transparent)".to_owned(),
+            canvas_hidden_input_shadow:
+                "0 10px 28px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08)"
+                    .to_owned(),
+            canvas_hidden_item_bg:
+                "color-mix(in srgb, var(--panel) 94%, transparent)".to_owned(),
+            canvas_hidden_item_hover:
+                "color-mix(in srgb, var(--panel) 98%, var(--accent) 2%)".to_owned(),
+            canvas_hidden_item_selected_bg:
+                "linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--panel)), color-mix(in srgb, var(--panel) 98%, white))"
+                    .to_owned(),
+            canvas_hidden_config_error_bg:
+                "linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--panel)), color-mix(in srgb, var(--panel) 96%, black))"
+                    .to_owned(),
+        }
+    }
+
+    fn with_overrides(mut self, overrides: &UiColorOverridesConfig) -> Self {
+        macro_rules! apply {
+            ($field:ident) => {
+                if let Some(value) = &overrides.$field {
+                    self.$field = value.clone();
+                }
+            };
+        }
+
+        apply!(accent);
+        apply!(background);
+        apply!(panel);
+        apply!(text);
+        apply!(muted);
+        apply!(shell_bg);
+        apply!(shell_shadow);
+        apply!(shell_border);
+        apply!(label_strong);
+        apply!(input_bg);
+        apply!(input_border);
+        apply!(input_shadow);
+        apply!(placeholder);
+        apply!(scrollbar);
+        apply!(item_bg);
+        apply!(item_hover);
+        apply!(item_selected_bg);
+        apply!(item_selected_shadow);
+        apply!(badge_bg);
+        apply!(badge_border);
+        apply!(badge_text);
+        apply!(badge_icon_bg);
+        apply!(chip_text);
+        apply!(chip_bg);
+        apply!(chip_border);
+        apply!(config_error_bg);
+        apply!(config_error_border);
+        apply!(config_error_shadow);
+        apply!(config_error_title);
+        apply!(config_error_copy);
+        apply!(canvas_hidden_input_bg);
+        apply!(canvas_hidden_input_border);
+        apply!(canvas_hidden_input_shadow);
+        apply!(canvas_hidden_item_bg);
+        apply!(canvas_hidden_item_hover);
+        apply!(canvas_hidden_item_selected_bg);
+        apply!(canvas_hidden_config_error_bg);
+        self
+    }
+}
 
 /// Returns the full HTML document served into the embedded webview.
 pub fn html(theme: &UiConfig) -> String {
@@ -28,6 +247,8 @@ pub fn html(theme: &UiConfig) -> String {
 
 /// Returns the theme-expanded CSS used by the embedded webview.
 pub fn theme_css(theme: &UiConfig) -> String {
+    let light = ResolvedUiColors::light(theme).with_overrides(&theme.colors);
+    let dark = ResolvedUiColors::dark().with_overrides(&theme.dark_colors);
     let header_display = if theme.show_header { "flex" } else { "none" };
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
     let canvas_radius = format!("{}px", theme.canvas.radius);
@@ -56,11 +277,155 @@ pub fn theme_css(theme: &UiConfig) -> String {
     let icon_size = format!("{}px", theme.layout.icon_size);
 
     let replacements = [
-        ("__ACCENT__", theme.accent.as_str()),
-        ("__BACKGROUND__", theme.background.as_str()),
-        ("__PANEL__", theme.panel.as_str()),
-        ("__TEXT__", theme.text.as_str()),
-        ("__MUTED__", theme.muted.as_str()),
+        ("__LIGHT_ACCENT__", light.accent.as_str()),
+        ("__LIGHT_BACKGROUND__", light.background.as_str()),
+        ("__LIGHT_PANEL__", light.panel.as_str()),
+        ("__LIGHT_TEXT__", light.text.as_str()),
+        ("__LIGHT_MUTED__", light.muted.as_str()),
+        ("__LIGHT_SHELL_BG__", light.shell_bg.as_str()),
+        ("__LIGHT_SHELL_SHADOW__", light.shell_shadow.as_str()),
+        ("__LIGHT_SHELL_BORDER__", light.shell_border.as_str()),
+        ("__LIGHT_LABEL_STRONG__", light.label_strong.as_str()),
+        ("__LIGHT_INPUT_BG__", light.input_bg.as_str()),
+        ("__LIGHT_INPUT_BORDER__", light.input_border.as_str()),
+        ("__LIGHT_INPUT_SHADOW__", light.input_shadow.as_str()),
+        ("__LIGHT_PLACEHOLDER__", light.placeholder.as_str()),
+        ("__LIGHT_SCROLLBAR__", light.scrollbar.as_str()),
+        ("__LIGHT_ITEM_BG__", light.item_bg.as_str()),
+        ("__LIGHT_ITEM_HOVER__", light.item_hover.as_str()),
+        (
+            "__LIGHT_ITEM_SELECTED_BG__",
+            light.item_selected_bg.as_str(),
+        ),
+        (
+            "__LIGHT_ITEM_SELECTED_SHADOW__",
+            light.item_selected_shadow.as_str(),
+        ),
+        ("__LIGHT_BADGE_BG__", light.badge_bg.as_str()),
+        ("__LIGHT_BADGE_BORDER__", light.badge_border.as_str()),
+        ("__LIGHT_BADGE_TEXT__", light.badge_text.as_str()),
+        ("__LIGHT_BADGE_ICON_BG__", light.badge_icon_bg.as_str()),
+        ("__LIGHT_CHIP_TEXT__", light.chip_text.as_str()),
+        ("__LIGHT_CHIP_BG__", light.chip_bg.as_str()),
+        ("__LIGHT_CHIP_BORDER__", light.chip_border.as_str()),
+        ("__LIGHT_CONFIG_ERROR_BG__", light.config_error_bg.as_str()),
+        (
+            "__LIGHT_CONFIG_ERROR_BORDER__",
+            light.config_error_border.as_str(),
+        ),
+        (
+            "__LIGHT_CONFIG_ERROR_SHADOW__",
+            light.config_error_shadow.as_str(),
+        ),
+        (
+            "__LIGHT_CONFIG_ERROR_TITLE__",
+            light.config_error_title.as_str(),
+        ),
+        (
+            "__LIGHT_CONFIG_ERROR_COPY__",
+            light.config_error_copy.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_INPUT_BG__",
+            light.canvas_hidden_input_bg.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_INPUT_BORDER__",
+            light.canvas_hidden_input_border.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_INPUT_SHADOW__",
+            light.canvas_hidden_input_shadow.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_ITEM_BG__",
+            light.canvas_hidden_item_bg.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_ITEM_HOVER__",
+            light.canvas_hidden_item_hover.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_ITEM_SELECTED_BG__",
+            light.canvas_hidden_item_selected_bg.as_str(),
+        ),
+        (
+            "__LIGHT_CANVAS_HIDDEN_CONFIG_ERROR_BG__",
+            light.canvas_hidden_config_error_bg.as_str(),
+        ),
+        ("__DARK_ACCENT__", dark.accent.as_str()),
+        ("__DARK_BACKGROUND__", dark.background.as_str()),
+        ("__DARK_PANEL__", dark.panel.as_str()),
+        ("__DARK_TEXT__", dark.text.as_str()),
+        ("__DARK_MUTED__", dark.muted.as_str()),
+        ("__DARK_SHELL_BG__", dark.shell_bg.as_str()),
+        ("__DARK_SHELL_SHADOW__", dark.shell_shadow.as_str()),
+        ("__DARK_SHELL_BORDER__", dark.shell_border.as_str()),
+        ("__DARK_LABEL_STRONG__", dark.label_strong.as_str()),
+        ("__DARK_INPUT_BG__", dark.input_bg.as_str()),
+        ("__DARK_INPUT_BORDER__", dark.input_border.as_str()),
+        ("__DARK_INPUT_SHADOW__", dark.input_shadow.as_str()),
+        ("__DARK_PLACEHOLDER__", dark.placeholder.as_str()),
+        ("__DARK_SCROLLBAR__", dark.scrollbar.as_str()),
+        ("__DARK_ITEM_BG__", dark.item_bg.as_str()),
+        ("__DARK_ITEM_HOVER__", dark.item_hover.as_str()),
+        ("__DARK_ITEM_SELECTED_BG__", dark.item_selected_bg.as_str()),
+        (
+            "__DARK_ITEM_SELECTED_SHADOW__",
+            dark.item_selected_shadow.as_str(),
+        ),
+        ("__DARK_BADGE_BG__", dark.badge_bg.as_str()),
+        ("__DARK_BADGE_BORDER__", dark.badge_border.as_str()),
+        ("__DARK_BADGE_TEXT__", dark.badge_text.as_str()),
+        ("__DARK_BADGE_ICON_BG__", dark.badge_icon_bg.as_str()),
+        ("__DARK_CHIP_TEXT__", dark.chip_text.as_str()),
+        ("__DARK_CHIP_BG__", dark.chip_bg.as_str()),
+        ("__DARK_CHIP_BORDER__", dark.chip_border.as_str()),
+        ("__DARK_CONFIG_ERROR_BG__", dark.config_error_bg.as_str()),
+        (
+            "__DARK_CONFIG_ERROR_BORDER__",
+            dark.config_error_border.as_str(),
+        ),
+        (
+            "__DARK_CONFIG_ERROR_SHADOW__",
+            dark.config_error_shadow.as_str(),
+        ),
+        (
+            "__DARK_CONFIG_ERROR_TITLE__",
+            dark.config_error_title.as_str(),
+        ),
+        (
+            "__DARK_CONFIG_ERROR_COPY__",
+            dark.config_error_copy.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_INPUT_BG__",
+            dark.canvas_hidden_input_bg.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_INPUT_BORDER__",
+            dark.canvas_hidden_input_border.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_INPUT_SHADOW__",
+            dark.canvas_hidden_input_shadow.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_ITEM_BG__",
+            dark.canvas_hidden_item_bg.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_ITEM_HOVER__",
+            dark.canvas_hidden_item_hover.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_ITEM_SELECTED_BG__",
+            dark.canvas_hidden_item_selected_bg.as_str(),
+        ),
+        (
+            "__DARK_CANVAS_HIDDEN_CONFIG_ERROR_BG__",
+            dark.canvas_hidden_config_error_bg.as_str(),
+        ),
         ("__FONT_FAMILY__", theme.font_family.as_str()),
         ("__HEADER_DISPLAY__", header_display),
         ("__CANVAS_DISPLAY__", canvas_display),
@@ -122,6 +487,8 @@ mod tests {
         theme.canvas.opacity = 0.72;
         theme.canvas.background_opacity = 0.91;
         theme.entries.opacity = 0.64;
+        theme.colors.shell_bg = Some("linear-gradient(180deg, #111111, #222222)".to_owned());
+        theme.dark_colors.badge_icon_bg = Some("rgba(4, 5, 6, 0.7)".to_owned());
         theme.font_sizes.input = 34;
         theme.font_sizes.title = 18;
         theme.font_sizes.config_error_body = 17;
@@ -137,6 +504,8 @@ mod tests {
         assert!(css.contains("--canvas-opacity: 0.72;"));
         assert!(css.contains("--canvas-background-opacity: 0.91;"));
         assert!(css.contains("--entry-opacity: 0.64;"));
+        assert!(css.contains("--shell-bg: linear-gradient(180deg, #111111, #222222);"));
+        assert!(css.contains("--badge-icon-bg: rgba(4, 5, 6, 0.7);"));
         assert!(css.contains("--input-font-size: 34px;"));
         assert!(css.contains("--title-font-size: 18px;"));
         assert!(css.contains("--config-error-body-font-size: 17px;"));

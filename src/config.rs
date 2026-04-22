@@ -80,6 +80,9 @@ background = "#f3ede5"
 panel = "#fffaf3"
 text = "#1f1a16"
 muted = "#756759"
+# Full light/dark token overrides can be configured under:
+# [ui.colors]
+# [ui.dark_colors]
 
 [ui.canvas]
 show = true
@@ -252,10 +255,55 @@ pub struct UiConfig {
     pub panel: String,
     pub text: String,
     pub muted: String,
+    pub colors: UiColorOverridesConfig,
+    pub dark_colors: UiColorOverridesConfig,
     pub canvas: UiCanvasConfig,
     pub entries: UiEntriesConfig,
     pub font_sizes: UiFontSizesConfig,
     pub layout: UiLayoutConfig,
+}
+
+/// Full per-scheme UI color-token overrides.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiColorOverridesConfig {
+    pub accent: Option<String>,
+    pub background: Option<String>,
+    pub panel: Option<String>,
+    pub text: Option<String>,
+    pub muted: Option<String>,
+    pub shell_bg: Option<String>,
+    pub shell_shadow: Option<String>,
+    pub shell_border: Option<String>,
+    pub label_strong: Option<String>,
+    pub input_bg: Option<String>,
+    pub input_border: Option<String>,
+    pub input_shadow: Option<String>,
+    pub placeholder: Option<String>,
+    pub scrollbar: Option<String>,
+    pub item_bg: Option<String>,
+    pub item_hover: Option<String>,
+    pub item_selected_bg: Option<String>,
+    pub item_selected_shadow: Option<String>,
+    pub badge_bg: Option<String>,
+    pub badge_border: Option<String>,
+    pub badge_text: Option<String>,
+    pub badge_icon_bg: Option<String>,
+    pub chip_text: Option<String>,
+    pub chip_bg: Option<String>,
+    pub chip_border: Option<String>,
+    pub config_error_bg: Option<String>,
+    pub config_error_border: Option<String>,
+    pub config_error_shadow: Option<String>,
+    pub config_error_title: Option<String>,
+    pub config_error_copy: Option<String>,
+    pub canvas_hidden_input_bg: Option<String>,
+    pub canvas_hidden_input_border: Option<String>,
+    pub canvas_hidden_input_shadow: Option<String>,
+    pub canvas_hidden_item_bg: Option<String>,
+    pub canvas_hidden_item_hover: Option<String>,
+    pub canvas_hidden_item_selected_bg: Option<String>,
+    pub canvas_hidden_config_error_bg: Option<String>,
 }
 
 /// Canvas tokens injected into the embedded UI theme.
@@ -330,6 +378,8 @@ struct RawUiSpans {
     panel: String,
     text: String,
     muted: String,
+    colors: UiColorOverridesConfig,
+    dark_colors: UiColorOverridesConfig,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
     font_sizes: UiFontSizesConfig,
@@ -854,6 +904,8 @@ impl Default for UiConfig {
             panel: "#fffaf3".to_owned(),
             text: "#1f1a16".to_owned(),
             muted: "#756759".to_owned(),
+            colors: UiColorOverridesConfig::default(),
+            dark_colors: UiColorOverridesConfig::default(),
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),
             font_sizes: UiFontSizesConfig::default(),
@@ -1241,6 +1293,7 @@ mod tests {
 
     mod ui_tests {
         use super::Config;
+        use crate::config::UiColorOverridesConfig;
 
         #[test]
         fn defaults_to_current_ui_font_sizes() {
@@ -1252,6 +1305,8 @@ mod tests {
             assert_eq!(config.ui.canvas.opacity, 1.0);
             assert_eq!(config.ui.canvas.background_opacity, 0.97);
             assert_eq!(config.ui.entries.opacity, 1.0);
+            assert_eq!(config.ui.colors, UiColorOverridesConfig::default());
+            assert_eq!(config.ui.dark_colors, UiColorOverridesConfig::default());
             assert_eq!(config.ui.font_sizes.label, 10);
             assert_eq!(config.ui.font_sizes.input, 30);
             assert_eq!(config.ui.font_sizes.title, 16);
@@ -1317,6 +1372,36 @@ mod tests {
             assert_eq!(config.ui.layout.badge_size, 48);
             assert_eq!(config.ui.layout.badge_radius, 16);
             assert_eq!(config.ui.layout.icon_size, 40);
+        }
+
+        #[test]
+        fn accepts_full_ui_color_overrides() {
+            let config: Config = toml::from_str(
+                "[ui.colors]\naccent = \"#111111\"\nshell_bg = \"linear-gradient(180deg, #111, #222)\"\nconfig_error_title = \"#fefefe\"\ncanvas_hidden_input_bg = \"#222222\"\n[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\nbadge_icon_bg = \"rgba(0,0,0,0.9)\"\n",
+            )
+            .expect("custom ui color overrides should parse");
+
+            assert_eq!(config.ui.colors.accent.as_deref(), Some("#111111"));
+            assert_eq!(
+                config.ui.colors.shell_bg.as_deref(),
+                Some("linear-gradient(180deg, #111, #222)")
+            );
+            assert_eq!(
+                config.ui.colors.config_error_title.as_deref(),
+                Some("#fefefe")
+            );
+            assert_eq!(
+                config.ui.colors.canvas_hidden_input_bg.as_deref(),
+                Some("#222222")
+            );
+            assert_eq!(
+                config.ui.dark_colors.item_bg.as_deref(),
+                Some("rgba(1,2,3,0.4)")
+            );
+            assert_eq!(
+                config.ui.dark_colors.badge_icon_bg.as_deref(),
+                Some("rgba(0,0,0,0.9)")
+            );
         }
     }
 
