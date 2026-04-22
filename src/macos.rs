@@ -109,6 +109,7 @@ unsafe extern "C" {
         element: AXUIElementRef,
         timeout_in_seconds: c_float,
     ) -> AXError;
+    fn _AXUIElementGetWindow(element: AXUIElementRef, out: *mut u32) -> AXError;
 }
 
 /// Snapshot of the app that was frontmost before Runx appeared.
@@ -194,16 +195,19 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
 pub fn focus_window(
     app_name: &str,
     window_title: &str,
+    window_id: u32,
     behavior: WindowFocusBehavior,
 ) -> Result<Option<String>> {
     match behavior {
         WindowFocusBehavior::ActivateAppOnly => activate_or_open_application(app_name),
         WindowFocusBehavior::ActivateAppThenFocusWindow => {
-            activate_then_focus_window(app_name, window_title)
+            activate_then_focus_window(app_name, window_title, window_id)
         }
-        WindowFocusBehavior::FocusWindowOnly => focus_window_only(app_name, window_title),
+        WindowFocusBehavior::FocusWindowOnly => {
+            focus_window_only(app_name, window_title, window_id)
+        }
         WindowFocusBehavior::FocusWindowThenActivateFallback => {
-            focus_window_then_activate_fallback(app_name, window_title)
+            focus_window_then_activate_fallback(app_name, window_title, window_id)
         }
     }
 }
@@ -536,7 +540,11 @@ fn activate_or_open_application(app_name: &str) -> Result<Option<String>> {
     Ok(Some(format!("Activated {}", app_name)))
 }
 
-fn activate_then_focus_window(app_name: &str, window_title: &str) -> Result<Option<String>> {
+fn activate_then_focus_window(
+    app_name: &str,
+    window_title: &str,
+    window_id: u32,
+) -> Result<Option<String>> {
     let Some(pid) = activate_running_application_by_name(app_name)? else {
         open_named_application(app_name)
             .with_context(|| format!("failed to activate {app_name} for window focus"))?;
@@ -551,7 +559,7 @@ fn activate_then_focus_window(app_name: &str, window_title: &str) -> Result<Opti
         )));
     }
 
-    match focus_window_for_pid(pid, window_title) {
+    match focus_window_for_pid(pid, window_id) {
         Ok(()) => Ok(Some(format!("Focused {}", window_title))),
         Err(error) => Ok(Some(format!(
             "Activated {} (direct window focus unavailable: {})",
@@ -560,7 +568,7 @@ fn activate_then_focus_window(app_name: &str, window_title: &str) -> Result<Opti
     }
 }
 
-fn focus_window_only(app_name: &str, window_title: &str) -> Result<Option<String>> {
+fn focus_window_only(app_name: &str, window_title: &str, window_id: u32) -> Result<Option<String>> {
     let Some(pid) = running_application_pid_by_name(app_name) else {
         bail!(
             "window is no longer available because {} is not running",
@@ -575,26 +583,27 @@ fn focus_window_only(app_name: &str, window_title: &str) -> Result<Option<String
         );
     }
 
-    focus_window_for_pid(pid, window_title)?;
+    focus_window_for_pid(pid, window_id)?;
     Ok(Some(format!("Focused {}", window_title)))
 }
 
 fn focus_window_then_activate_fallback(
     app_name: &str,
     window_title: &str,
+    window_id: u32,
 ) -> Result<Option<String>> {
     if let Some(pid) = running_application_pid_by_name(app_name) {
         if ensure_accessibility_trusted(true) {
-            match focus_window_for_pid(pid, window_title) {
+            match focus_window_for_pid(pid, window_id) {
                 Ok(()) => {
                     activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
-                    let _ = focus_window_for_pid(pid, window_title);
+                    let _ = focus_window_for_pid(pid, window_id);
                     return Ok(Some(format!("Focused {}", window_title)));
                 }
                 Err(error) => {
                     debug_log::append(format!(
-                        "focus_window_then_activate_fallback direct focus failed app={:?} title={:?} error={error:#}",
-                        app_name, window_title
+                        "focus_window_then_activate_fallback direct focus failed app={:?} title={:?} window_id={} error={error:#}",
+                        app_name, window_title, window_id
                     ));
                 }
             }
@@ -634,7 +643,7 @@ fn activate_running_application(app: &NSRunningApplication, mode: AppActivationM
     bail!("failed to activate {label}")
 }
 
-fn focus_window_for_pid(pid: c_int, window_title: &str) -> Result<()> {
+fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<()> {
     let app_element = OwnedAxElement::application(pid)
         .ok_or_else(|| anyhow::anyhow!("failed to create accessibility handle for pid {pid}"))?;
     let _ = app_element.set_messaging_timeout(AX_MESSAGING_TIMEOUT_SECONDS);
@@ -648,8 +657,10 @@ fn focus_window_for_pid(pid: c_int, window_title: &str) -> Result<()> {
 
     for raw_window in windows.get_all_values() {
         let window = raw_window.cast();
-        let title = copy_ax_string_attribute(window, ax_title_attribute().as_concrete_TypeRef())?;
-        if title.as_deref() != Some(window_title) {
+        let Some(candidate_window_id) = copy_ax_window_id(window)? else {
+            continue;
+        };
+        if candidate_window_id != window_id {
             continue;
         }
 
@@ -697,10 +708,6 @@ fn ax_main_attribute() -> CFString {
 
 fn ax_raise_action() -> CFString {
     CFString::from_static_string("AXRaise")
-}
-
-fn ax_title_attribute() -> CFString {
-    CFString::from_static_string("AXTitle")
 }
 
 fn ax_windows_attribute() -> CFString {
@@ -771,17 +778,13 @@ fn post_command_v() -> Result<()> {
     Ok(())
 }
 
-fn copy_ax_string_attribute(
-    element: AXUIElementRef,
-    attribute: CFStringRef,
-) -> Result<Option<String>> {
-    match copy_ax_attribute_value(element, attribute) {
-        Ok(Some(value)) => Ok(value
-            .downcast_into::<CFString>()
-            .map(|text| text.to_string())),
-        Ok(None) => Ok(None),
-        Err(K_AX_ERROR_ATTRIBUTE_UNSUPPORTED | K_AX_ERROR_NO_VALUE) => Ok(None),
-        Err(error) => bail!(ax_error_message(error)),
+fn copy_ax_window_id(element: AXUIElementRef) -> Result<Option<u32>> {
+    let mut value = 0_u32;
+    let error = unsafe { _AXUIElementGetWindow(element, &mut value) };
+    match error {
+        K_AX_ERROR_SUCCESS => Ok(Some(value)),
+        K_AX_ERROR_ATTRIBUTE_UNSUPPORTED | K_AX_ERROR_NO_VALUE => Ok(None),
+        other => bail!(ax_error_message(other)),
     }
 }
 

@@ -34,7 +34,8 @@ pub fn execute_action(
         Action::FocusWindow {
             app_name,
             window_title,
-        } => macos::focus_window(app_name, window_title, window_focus_behavior),
+            window_id,
+        } => macos::focus_window(app_name, window_title, *window_id, window_focus_behavior),
         Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload, context),
     }
 }

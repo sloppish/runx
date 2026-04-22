@@ -12,7 +12,8 @@ use core_foundation::{
 use core_foundation_sys::string::CFStringRef;
 use core_graphics::window::{
     copy_window_info, kCGNullWindowID, kCGWindowLayer, kCGWindowListExcludeDesktopElements,
-    kCGWindowListOptionOnScreenOnly, kCGWindowName, kCGWindowOwnerName, kCGWindowOwnerPID,
+    kCGWindowListOptionOnScreenOnly, kCGWindowName, kCGWindowNumber, kCGWindowOwnerName,
+    kCGWindowOwnerPID,
 };
 
 use crate::{
@@ -33,6 +34,7 @@ struct WindowRecord {
     title: String,
     owner: String,
     pid: i64,
+    window_id: u32,
     z_index: usize,
 }
 
@@ -100,7 +102,7 @@ impl WindowsProvider {
         Ok(items
             .into_iter()
             .map(|(score, window)| SearchItem {
-                id: format!("window:{}:{}:{}", window.pid, window.owner, window.title),
+                id: format!("window:{}:{}", window.pid, window.window_id),
                 provider: "windows".to_owned(),
                 badge: "WIN".to_owned(),
                 icon: self.icons.icon_for_pid(window.pid),
@@ -111,6 +113,7 @@ impl WindowsProvider {
                 action: Action::FocusWindow {
                     app_name: window.owner,
                     window_title: window.title,
+                    window_id: window.window_id,
                 },
             })
             .collect())
@@ -168,6 +171,7 @@ fn read_windows() -> Vec<WindowRecord> {
         let owner = get_string(&dict, unsafe { kCGWindowOwnerName }).unwrap_or_default();
         let title = get_string(&dict, unsafe { kCGWindowName }).unwrap_or_default();
         let pid = get_number(&dict, unsafe { kCGWindowOwnerPID }).unwrap_or_default();
+        let window_id = get_number(&dict, unsafe { kCGWindowNumber }).unwrap_or_default() as u32;
 
         if owner.is_empty() || title.is_empty() {
             continue;
@@ -184,6 +188,7 @@ fn read_windows() -> Vec<WindowRecord> {
             title,
             owner,
             pid,
+            window_id,
             z_index: index,
         });
     }

@@ -88,6 +88,7 @@ pub enum Action {
     FocusWindow {
         app_name: String,
         window_title: String,
+        window_id: u32,
     },
     Plugin {
         plugin_id: String,
