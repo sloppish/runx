@@ -13,16 +13,16 @@ pub(super) enum Dir {
     /// bits, allowing boundary rows/columns to be bulk-zeroed with
     /// `write_bytes(0)` instead of a scalar loop.
     None = 0,
-    /// Diagonal: match or mismatch (came from [i-1][j-1])
+    /// Diagonal: match or mismatch (came from `\[i-1]\[j-1]`)
     Diag = 1,
-    /// Up: gap in choice (came from [i-1][j], skip pattern char)
+    /// Up: gap in choice (came from `\[i-1]\[j]`, skip pattern char)
     Up = 2,
-    /// Left: gap in pattern (came from [i][j-1], skip choice char)
+    /// Left: gap in pattern (came from `\[i]\[j-1]`, skip choice char)
     Left = 3,
 }
 
-/// Packed cell stored as a `u32`: bits [15:0] = score (as u16 bitcast from
-/// i16), bits [17:16] = direction tag.  This gives 4 bytes per cell with no
+/// Packed cell stored as a `u32`: bits `\[15:0]` = score (as u16 bitcast from
+/// i16), bits `\[17:16]` = direction tag.  This gives 4 bytes per cell with no
 /// padding and enables branchless direction extraction via bitmask.
 #[derive(Copy, Clone)]
 pub(super) struct Cell(u32);
