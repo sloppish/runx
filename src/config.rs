@@ -79,6 +79,15 @@ panel = "#fffaf3"
 text = "#1f1a16"
 muted = "#756759"
 
+[ui.canvas]
+show = true
+radius = 24
+opacity = 1.0
+background_opacity = 0.97
+
+[ui.entries]
+opacity = 1.0
+
 [ui.font_sizes]
 label = 10
 input = 30
@@ -229,7 +238,7 @@ pub struct PluginsConfig {
 }
 
 /// Theme tokens injected into the embedded HTML/CSS UI templates.
-#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
     pub show_header: bool,
@@ -239,8 +248,27 @@ pub struct UiConfig {
     pub panel: String,
     pub text: String,
     pub muted: String,
+    pub canvas: UiCanvasConfig,
+    pub entries: UiEntriesConfig,
     pub font_sizes: UiFontSizesConfig,
     pub layout: UiLayoutConfig,
+}
+
+/// Canvas tokens injected into the embedded UI theme.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiCanvasConfig {
+    pub show: bool,
+    pub radius: u16,
+    pub opacity: f64,
+    pub background_opacity: f64,
+}
+
+/// Entry background tokens injected into the embedded UI theme.
+#[derive(Debug, Clone, Deserialize, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiEntriesConfig {
+    pub opacity: f64,
 }
 
 /// Font-size tokens injected into the embedded UI theme.
@@ -284,7 +312,38 @@ struct RawConfigSpans {
     timing: TimingConfig,
     plugins: PluginsConfig,
     plugin: HashMap<String, Table>,
-    ui: UiConfig,
+    ui: RawUiSpans,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawUiSpans {
+    show_header: bool,
+    font_family: String,
+    accent: String,
+    background: String,
+    panel: String,
+    text: String,
+    muted: String,
+    canvas: RawUiCanvasSpans,
+    entries: RawUiEntriesSpans,
+    font_sizes: UiFontSizesConfig,
+    layout: UiLayoutConfig,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawUiCanvasSpans {
+    show: bool,
+    radius: u16,
+    opacity: Option<Spanned<f64>>,
+    background_opacity: Option<Spanned<f64>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawUiEntriesSpans {
+    opacity: Option<Spanned<f64>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -391,6 +450,18 @@ fn validate_config(config: &Config) -> Result<()> {
         &config.ranking.empty_query_providers,
         "[ranking].empty_query_providers",
     )?;
+    validate_opacity(
+        config.ui.canvas.opacity,
+        "[ui.canvas].opacity must be between 0.0 and 1.0",
+    )?;
+    validate_opacity(
+        config.ui.canvas.background_opacity,
+        "[ui.canvas].background_opacity must be between 0.0 and 1.0",
+    )?;
+    validate_opacity(
+        config.ui.entries.opacity,
+        "[ui.entries].opacity must be between 0.0 and 1.0",
+    )?;
 
     for provider in config.ranking.provider_score_boosts.keys() {
         validate_provider_name(provider, "[ranking.provider_score_boosts] key")?;
@@ -449,7 +520,57 @@ fn validate_config_with_spans(config_path: &Path, raw: &str, spans: &RawConfigSp
         )?;
     }
 
+    if let Some(opacity) = &spans.ui.canvas.opacity
+        && let Err(error) = validate_opacity(
+            *opacity.get_ref(),
+            "[ui.canvas].opacity must be between 0.0 and 1.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            opacity.span(),
+        )));
+    }
+
+    if let Some(opacity) = &spans.ui.canvas.background_opacity
+        && let Err(error) = validate_opacity(
+            *opacity.get_ref(),
+            "[ui.canvas].background_opacity must be between 0.0 and 1.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            opacity.span(),
+        )));
+    }
+
+    if let Some(opacity) = &spans.ui.entries.opacity
+        && let Err(error) = validate_opacity(
+            *opacity.get_ref(),
+            "[ui.entries].opacity must be between 0.0 and 1.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            opacity.span(),
+        )));
+    }
+
     Ok(())
+}
+
+fn validate_opacity(opacity: f64, context: &str) -> Result<()> {
+    if (0.0..=1.0).contains(&opacity) {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
 }
 
 #[cfg(test)]
@@ -726,9 +847,28 @@ impl Default for UiConfig {
             panel: "#fffaf3".to_owned(),
             text: "#1f1a16".to_owned(),
             muted: "#756759".to_owned(),
+            canvas: UiCanvasConfig::default(),
+            entries: UiEntriesConfig::default(),
             font_sizes: UiFontSizesConfig::default(),
             layout: UiLayoutConfig::default(),
         }
+    }
+}
+
+impl Default for UiCanvasConfig {
+    fn default() -> Self {
+        Self {
+            show: true,
+            radius: 24,
+            opacity: 1.0,
+            background_opacity: 0.97,
+        }
+    }
+}
+
+impl Default for UiEntriesConfig {
+    fn default() -> Self {
+        Self { opacity: 1.0 }
     }
 }
 
@@ -1091,6 +1231,11 @@ mod tests {
         fn defaults_to_current_ui_font_sizes() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert!(config.ui.show_header);
+            assert!(config.ui.canvas.show);
+            assert_eq!(config.ui.canvas.radius, 24);
+            assert_eq!(config.ui.canvas.opacity, 1.0);
+            assert_eq!(config.ui.canvas.background_opacity, 0.97);
+            assert_eq!(config.ui.entries.opacity, 1.0);
             assert_eq!(config.ui.font_sizes.label, 10);
             assert_eq!(config.ui.font_sizes.input, 30);
             assert_eq!(config.ui.font_sizes.title, 16);
@@ -1116,11 +1261,16 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui]\nshow_header = false\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[ui]\nshow_header = false\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
             assert!(!config.ui.show_header);
+            assert!(!config.ui.canvas.show);
+            assert_eq!(config.ui.canvas.radius, 18);
+            assert_eq!(config.ui.canvas.opacity, 0.75);
+            assert_eq!(config.ui.canvas.background_opacity, 0.9);
+            assert_eq!(config.ui.entries.opacity, 0.64);
             assert_eq!(config.ui.font_sizes.label, 11);
             assert_eq!(config.ui.font_sizes.input, 34);
             assert_eq!(config.ui.font_sizes.title, 18);
@@ -1181,6 +1331,123 @@ mod tests {
             assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
             assert!(rendered.contains("provider_order = [\"windows\", \"asdfasdf\"]"));
             assert!(rendered.contains("unknown provider `asdfasdf`"));
+        }
+
+        #[test]
+        fn canvas_opacity_validation_errors_include_source_context() {
+            let raw = "[ui.canvas]\nopacity = 1.2\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("opacity = 1.2"));
+            assert!(rendered.contains("[ui.canvas].opacity must be between 0.0 and 1.0"));
+        }
+
+        #[test]
+        fn canvas_background_opacity_validation_errors_include_source_context() {
+            let raw = "[ui.canvas]\nbackground_opacity = 1.2\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("background_opacity = 1.2"));
+            assert!(
+                rendered.contains("[ui.canvas].background_opacity must be between 0.0 and 1.0",)
+            );
+        }
+
+        #[test]
+        fn entry_opacity_validation_errors_include_source_context() {
+            let raw = "[ui.entries]\nopacity = -0.1\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("opacity = -0.1"));
+            assert!(rendered.contains("[ui.entries].opacity must be between 0.0 and 1.0"));
+        }
+
+        #[test]
+        fn raw_spans_accept_full_ui_block_for_validation() {
+            let raw = r##"
+[ui]
+show_header = true
+font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
+accent = "#c77b49"
+background = "#f3ede5"
+panel = "#fffaf3"
+text = "#1f1a16"
+muted = "#756759"
+
+[ui.canvas]
+show = true
+radius = 24
+opacity = 1.0
+background_opacity = 0.97
+
+[ui.entries]
+opacity = 0.92
+
+[ui.font_sizes]
+label = 10
+input = 20
+title = 16
+subtitle = 12
+badge = 11
+accelerator = 12
+config_error_title = 24
+config_error_body = 15
+
+[ui.layout]
+section_gap = 14
+input_padding_y = 8
+input_padding_x = 8
+input_radius = 0
+list_gap = 2
+entry_padding_y = 5
+entry_padding_x = 5
+entry_gap = 8
+row_radius = 0
+badge_size = 46
+badge_radius = 14
+icon_size = 46
+"##;
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans should accept a valid ui block");
+            validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                .expect("validation should pass");
+        }
+
+        #[test]
+        fn raw_spans_reject_unknown_ui_fields() {
+            let raw = r##"
+[ui]
+show_header = true
+font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
+accent = "#c77b49"
+background = "#f3ede5"
+panel = "#fffaf3"
+text = "#1f1a16"
+muted = "#756759"
+bogus = true
+"##;
+
+            let error =
+                toml::from_str::<RawConfigSpans>(raw).expect_err("unknown ui field should fail");
+            assert!(error.message().contains("unknown field `bogus`"));
         }
     }
 }
