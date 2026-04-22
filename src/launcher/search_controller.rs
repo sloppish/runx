@@ -67,6 +67,10 @@ impl SearchController {
         let provider_count =
             providers.provider_count_for_query(&query, &ranking.empty_query_providers);
         let generation = state.session_mut().begin_search(provider_count);
+        if provider_count == 0 {
+            let _ = proxy.send_event(AppEvent::Render);
+            return;
+        }
         providers.spawn_search(proxy, generation, query, &ranking.empty_query_providers);
     }
 

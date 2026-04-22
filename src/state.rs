@@ -132,6 +132,7 @@ impl SearchSession {
     /// Starts a new provider search generation.
     pub fn begin_search(&mut self, provider_count: usize) -> u64 {
         self.generation = self.generation.wrapping_add(1);
+        self.provider_items.clear();
         self.pending_providers = provider_count;
         self.generation
     }
@@ -314,6 +315,40 @@ mod tests {
     }
 
     #[test]
+    fn new_search_generation_drops_previous_provider_results() {
+        let mut state = AppState::new();
+        state.show();
+        state.session_mut().set_query("alpha".to_owned());
+        let generation = state.session_mut().begin_search(2);
+        assert!(state.session_mut().apply_provider_items(
+            generation,
+            "windows".to_owned(),
+            vec![item("window alpha", 100)],
+        ));
+        assert!(state.session_mut().apply_provider_items(
+            generation,
+            "apps".to_owned(),
+            vec![app_item("app alpha", 90)],
+        ));
+        state
+            .session_mut()
+            .refresh_rendered_items(&default_ranking());
+
+        state.session_mut().set_query(String::new());
+        let generation = state.session_mut().begin_search(1);
+        assert!(state.session_mut().apply_provider_items(
+            generation,
+            "windows".to_owned(),
+            Vec::new(),
+        ));
+        state
+            .session_mut()
+            .refresh_rendered_items(&default_ranking());
+
+        assert!(state.session().rendered_item(0).is_none());
+    }
+
+    #[test]
     fn provider_error_replaces_previous_results_with_error_item() {
         let mut state = AppState::new();
         state.show();
@@ -416,6 +451,22 @@ mod tests {
             raw_score,
             action: Action::OpenPath {
                 path: format!("/tmp/{id}"),
+            },
+        }
+    }
+
+    fn app_item(id: &str, raw_score: i64) -> SearchItem {
+        SearchItem {
+            id: format!("app:{id}"),
+            provider: "apps".to_owned(),
+            badge: "APP".to_owned(),
+            icon: None,
+            title: id.to_owned(),
+            subtitle: "/Applications/Test.app".to_owned(),
+            compact: false,
+            raw_score,
+            action: Action::OpenPath {
+                path: format!("/Applications/{id}.app"),
             },
         }
     }
