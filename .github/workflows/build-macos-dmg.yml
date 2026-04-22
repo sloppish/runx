@@ -1,12 +1,6 @@
 name: build-macos-dmg
 
 on:
-  push:
-    branches:
-      - master
-    tags:
-      - "v*"
-  pull_request:
   workflow_dispatch:
   release:
     types:
