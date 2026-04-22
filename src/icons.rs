@@ -16,6 +16,7 @@ use std::{
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use directories::BaseDirs;
+use image::{ExtendedColorType, ImageReader, codecs::webp::WebPEncoder};
 use objc2_app_kit::NSRunningApplication;
 use plist::{Dictionary, Value};
 use wry::http::{
@@ -29,7 +30,7 @@ const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
 ];
 const ICON_PROTOCOL_SCHEME: &str = "runx";
 const ICON_PROTOCOL_HOST: &str = "localhost";
-const ICON_CACHE_FORMAT_VERSION: &str = "png-v1";
+const ICON_CACHE_FORMAT_VERSION: &str = "webp-v1";
 const ICON_RENDER_SIZE: u32 = 64;
 
 /// In-memory and on-disk cache for bundle and process icons.
@@ -115,22 +116,22 @@ impl IconCache {
         };
         let icon_key = stable_hash(bundle_path);
 
-        let png_path = self.png_path_for_key(&icon_key);
-        if !png_path.exists() {
-            render_png_icon(&icon_source, &png_path)?;
+        let webp_path = self.webp_path_for_key(&icon_key);
+        if !webp_path.exists() {
+            render_webp_icon(&icon_source, &webp_path)?;
         }
 
         Ok(Some(icon_protocol_url(&icon_key)))
     }
 
-    /// Resolves a `runx://localhost/icon/<hash>.png` request into an image response.
+    /// Resolves a `runx://localhost/icon/<hash>.webp` request into an image response.
     pub fn protocol_response(&self, request: &Request<Vec<u8>>) -> Response<Cow<'static, [u8]>> {
         let Some(icon_key) = icon_key_from_request_path(request.uri().path()) else {
             return response_with_status(StatusCode::NOT_FOUND, "text/plain", b"Not found");
         };
 
-        let png_path = self.png_path_for_key(icon_key);
-        let bytes = match fs::read(&png_path) {
+        let webp_path = self.webp_path_for_key(icon_key);
+        let bytes = match fs::read(&webp_path) {
             Ok(bytes) => bytes,
             Err(_) => {
                 return response_with_status(StatusCode::NOT_FOUND, "text/plain", b"Not found");
@@ -139,7 +140,7 @@ impl IconCache {
 
         Response::builder()
             .status(StatusCode::OK)
-            .header(CONTENT_TYPE, "image/png")
+            .header(CONTENT_TYPE, "image/webp")
             .header(CACHE_CONTROL, "public, max-age=86400")
             .body(Cow::Owned(bytes))
             .unwrap_or_else(|_| {
@@ -151,9 +152,9 @@ impl IconCache {
             })
     }
 
-    fn png_path_for_key(&self, icon_key: &str) -> PathBuf {
+    fn webp_path_for_key(&self, icon_key: &str) -> PathBuf {
         self.cache_dir.join(format!(
-            "{}-{}-{}px.png",
+            "{}-{}-{}px.webp",
             icon_key, ICON_CACHE_FORMAT_VERSION, ICON_RENDER_SIZE
         ))
     }
@@ -265,7 +266,8 @@ fn icon_file_candidates(resources_dir: &Path, icon_name: &str) -> Vec<PathBuf> {
     candidates
 }
 
-fn render_png_icon(icon_source: &Path, png_path: &Path) -> Result<()> {
+fn render_webp_icon(icon_source: &Path, webp_path: &Path) -> Result<()> {
+    let temp_png_path = webp_path.with_extension("tmp.png");
     let size = ICON_RENDER_SIZE.to_string();
     let output = Command::new("sips")
         .args([
@@ -276,29 +278,45 @@ fn render_png_icon(icon_source: &Path, png_path: &Path) -> Result<()> {
             "png",
             &icon_source.to_string_lossy(),
             "--out",
-            &png_path.to_string_lossy(),
+            &temp_png_path.to_string_lossy(),
         ])
         .stdin(Stdio::null())
         .output()
         .with_context(|| format!("failed to run `sips` for {}", icon_source.display()))?;
 
-    if output.status.success() {
-        return Ok(());
+    if !output.status.success() {
+        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
+        if stderr.is_empty() {
+            anyhow::bail!("`sips` exited with status {}", output.status);
+        }
+        anyhow::bail!("{stderr}");
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    if stderr.is_empty() {
-        anyhow::bail!("`sips` exited with status {}", output.status);
-    }
-    anyhow::bail!("{stderr}");
+    let encode_result = (|| -> Result<()> {
+        let image = ImageReader::open(&temp_png_path)
+            .with_context(|| format!("failed to open {}", temp_png_path.display()))?
+            .decode()
+            .with_context(|| format!("failed to decode {}", temp_png_path.display()))?
+            .into_rgba8();
+        let (width, height) = image.dimensions();
+        let mut output = fs::File::create(webp_path)
+            .with_context(|| format!("failed to create {}", webp_path.display()))?;
+        WebPEncoder::new_lossless(&mut output)
+            .encode(image.as_raw(), width, height, ExtendedColorType::Rgba8)
+            .with_context(|| format!("failed to encode {}", webp_path.display()))?;
+        Ok(())
+    })();
+
+    let _ = fs::remove_file(&temp_png_path);
+    encode_result
 }
 
 fn icon_protocol_url(icon_key: &str) -> String {
-    format!("{ICON_PROTOCOL_SCHEME}://{ICON_PROTOCOL_HOST}/icon/{icon_key}.png")
+    format!("{ICON_PROTOCOL_SCHEME}://{ICON_PROTOCOL_HOST}/icon/{icon_key}.webp")
 }
 
 fn icon_key_from_request_path(path: &str) -> Option<&str> {
-    let key = path.strip_prefix("/icon/")?.strip_suffix(".png")?;
+    let key = path.strip_prefix("/icon/")?.strip_suffix(".webp")?;
     key.chars().all(|ch| ch.is_ascii_hexdigit()).then_some(key)
 }
 
@@ -347,8 +365,14 @@ fn system_settings_fallback_icon() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bundle_root_from_executable, icon_key_from_request_path};
-    use std::path::Path;
+    use super::{bundle_root_from_executable, icon_key_from_request_path, render_webp_icon};
+    use base64::{Engine as _, engine::general_purpose::STANDARD};
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+        process,
+        time::{SystemTime, UNIX_EPOCH},
+    };
 
     #[test]
     fn finds_app_bundle_from_executable_path() {
@@ -368,15 +392,49 @@ mod tests {
     #[test]
     fn extracts_icon_key_from_protocol_path() {
         assert_eq!(
-            icon_key_from_request_path("/icon/deadbeef00cafe42.png"),
+            icon_key_from_request_path("/icon/deadbeef00cafe42.webp"),
             Some("deadbeef00cafe42")
         );
     }
 
     #[test]
     fn rejects_non_icon_protocol_paths() {
-        assert!(icon_key_from_request_path("/icons/deadbeef.png").is_none());
-        assert!(icon_key_from_request_path("/icon/not-hex.png").is_none());
+        assert!(icon_key_from_request_path("/icons/deadbeef.webp").is_none());
+        assert!(icon_key_from_request_path("/icon/not-hex.webp").is_none());
         assert!(icon_key_from_request_path("/icon/deadbeef.svg").is_none());
+    }
+
+    #[test]
+    fn renders_webp_cache_entries() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+
+        let source_path = temp_dir.join("source.png");
+        let output_path = temp_dir.join("icon.webp");
+        fs::write(&source_path, tiny_png_bytes()).expect("source png should be written");
+
+        render_webp_icon(&source_path, &output_path).expect("webp render should succeed");
+
+        let bytes = fs::read(&output_path).expect("webp output should exist");
+        assert!(bytes.starts_with(b"RIFF"));
+        assert_eq!(&bytes[8..12], b"WEBP");
+
+        let _ = fs::remove_file(&source_path);
+        let _ = fs::remove_file(&output_path);
+        let _ = fs::remove_dir(&temp_dir);
+    }
+
+    fn unique_temp_dir() -> PathBuf {
+        let nanos = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .expect("current time should be after epoch")
+            .as_nanos();
+        std::env::temp_dir().join(format!("runx-icon-test-{}-{nanos}", process::id()))
+    }
+
+    fn tiny_png_bytes() -> Vec<u8> {
+        STANDARD
+            .decode("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR4nGP4////fwAJ+wP9KobjigAAAABJRU5ErkJggg==")
+            .expect("embedded png should decode")
     }
 }
