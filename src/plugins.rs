@@ -206,6 +206,11 @@ impl PluginHost {
             .unwrap_or_else(empty_plugin_config)
     }
 
+    /// Returns whether the query matches any configured command route.
+    pub fn is_routed_query(&self, query: &str) -> bool {
+        self.match_route(query).is_some()
+    }
+
     fn match_route<'a>(&'a self, query: &'a str) -> Option<(&'a PluginRoute, &'a str)> {
         self.routes
             .iter()

@@ -32,6 +32,7 @@ use self::{
 
 #[derive(Clone)]
 pub struct ProviderSet {
+    plugins_host: Arc<PluginHost>,
     windows_provider: Arc<WindowsProvider>,
     windows: ProviderWorker,
     apps: ProviderWorker,
@@ -56,6 +57,7 @@ impl ProviderSet {
         let spotlight = Arc::new(SpotlightProvider::new(icons));
 
         Ok(Self {
+            plugins_host: plugins.clone(),
             windows_provider: windows.clone(),
             windows: ProviderWorker::new("windows", {
                 let provider = windows;
@@ -93,7 +95,11 @@ impl ProviderSet {
 
     /// Returns how many provider responses a session should wait for.
     pub fn provider_count_for_query(&self, query: &str, empty_query_providers: &[String]) -> usize {
-        let enabled = enabled_providers_for_query(query, empty_query_providers);
+        let enabled = enabled_providers_for_query(
+            query,
+            empty_query_providers,
+            self.plugins_host.is_routed_query(query),
+        );
         ["windows", "apps", "settings", "plugins", "spotlight"]
             .into_iter()
             .filter(|provider| enabled.contains(provider))
@@ -108,7 +114,11 @@ impl ProviderSet {
         query: String,
         empty_query_providers: &[String],
     ) {
-        let enabled = enabled_providers_for_query(&query, empty_query_providers);
+        let enabled = enabled_providers_for_query(
+            &query,
+            empty_query_providers,
+            self.plugins_host.is_routed_query(&query),
+        );
 
         if enabled.contains("windows") {
             self.windows
@@ -134,14 +144,50 @@ impl ProviderSet {
 fn enabled_providers_for_query<'a>(
     query: &str,
     empty_query_providers: &'a [String],
+    routed_plugin_query: bool,
 ) -> std::collections::HashSet<&'a str> {
     if !query.trim().is_empty() {
+        if routed_plugin_query {
+            return ["plugins"].into_iter().collect();
+        }
         return ["windows", "apps", "settings", "plugins", "spotlight"]
             .into_iter()
             .collect();
     }
 
     empty_query_providers.iter().map(String::as_str).collect()
+}
+
+#[cfg(test)]
+mod tests {
+    use std::collections::HashSet;
+
+    use super::enabled_providers_for_query;
+
+    #[test]
+    fn routed_plugin_queries_only_run_plugin_provider() {
+        let enabled = enabled_providers_for_query("pass secret", &[], true);
+
+        assert_eq!(enabled, HashSet::from(["plugins"]));
+    }
+
+    #[test]
+    fn normal_non_empty_queries_keep_full_provider_fanout() {
+        let enabled = enabled_providers_for_query("safari", &[], false);
+
+        assert_eq!(
+            enabled,
+            HashSet::from(["windows", "apps", "settings", "plugins", "spotlight"])
+        );
+    }
+
+    #[test]
+    fn empty_queries_still_use_configured_provider_list() {
+        let configured = ["windows".to_owned()];
+        let enabled = enabled_providers_for_query("", &configured, true);
+
+        assert_eq!(enabled, HashSet::from(["windows"]));
+    }
 }
 
 #[derive(Clone)]
