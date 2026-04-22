@@ -15,6 +15,7 @@ pub fn html(theme: &UiConfig) -> String {
 
 /// Returns the theme-expanded CSS used by the embedded webview.
 pub fn theme_css(theme: &UiConfig) -> String {
+    let header_display = if theme.show_header { "flex" } else { "none" };
     let label_font_size = format!("{}px", theme.font_sizes.label);
     let input_font_size = format!("{}px", theme.font_sizes.input);
     let title_font_size = format!("{}px", theme.font_sizes.title);
@@ -23,6 +24,7 @@ pub fn theme_css(theme: &UiConfig) -> String {
     let accelerator_font_size = format!("{}px", theme.font_sizes.accelerator);
     let config_error_title_font_size = format!("{}px", theme.font_sizes.config_error_title);
     let config_error_body_font_size = format!("{}px", theme.font_sizes.config_error_body);
+    let section_gap = format!("{}px", theme.layout.section_gap);
     let input_padding_y = format!("{}px", theme.layout.input_padding_y);
     let input_padding_x = format!("{}px", theme.layout.input_padding_x);
     let input_radius = format!("{}px", theme.layout.input_radius);
@@ -42,6 +44,7 @@ pub fn theme_css(theme: &UiConfig) -> String {
         ("__TEXT__", theme.text.as_str()),
         ("__MUTED__", theme.muted.as_str()),
         ("__FONT_FAMILY__", theme.font_family.as_str()),
+        ("__HEADER_DISPLAY__", header_display),
         ("__LABEL_FONT_SIZE__", label_font_size.as_str()),
         ("__INPUT_FONT_SIZE__", input_font_size.as_str()),
         ("__TITLE_FONT_SIZE__", title_font_size.as_str()),
@@ -56,6 +59,7 @@ pub fn theme_css(theme: &UiConfig) -> String {
             "__CONFIG_ERROR_BODY_FONT_SIZE__",
             config_error_body_font_size.as_str(),
         ),
+        ("__SECTION_GAP__", section_gap.as_str()),
         ("__INPUT_PADDING_Y__", input_padding_y.as_str()),
         ("__INPUT_PADDING_X__", input_padding_x.as_str()),
         ("__INPUT_RADIUS__", input_radius.as_str()),
@@ -83,18 +87,24 @@ mod tests {
 
     #[test]
     fn theme_css_includes_configured_font_sizes() {
-        let mut theme = UiConfig::default();
+        let mut theme = UiConfig {
+            show_header: false,
+            ..UiConfig::default()
+        };
         theme.font_sizes.input = 34;
         theme.font_sizes.title = 18;
         theme.font_sizes.config_error_body = 17;
+        theme.layout.section_gap = 16;
         theme.layout.input_radius = 22;
         theme.layout.badge_size = 52;
 
         let css = theme_css(&theme);
 
+        assert!(css.contains("--header-display: none;"));
         assert!(css.contains("--input-font-size: 34px;"));
         assert!(css.contains("--title-font-size: 18px;"));
         assert!(css.contains("--config-error-body-font-size: 17px;"));
+        assert!(css.contains("--section-gap: 16px;"));
         assert!(css.contains("--input-radius: 22px;"));
         assert!(css.contains("--badge-size: 52px;"));
     }

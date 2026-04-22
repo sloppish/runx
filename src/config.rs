@@ -71,6 +71,7 @@ search_paths = []
 # Per-plugin configuration can live under `[plugin.<id>]`.
 # Command routing can be configured under `[plugin.<id>.commands]`.
 [ui]
+show_header = true
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 accent = "#c77b49"
 background = "#f3ede5"
@@ -89,6 +90,7 @@ config_error_title = 24
 config_error_body = 15
 
 [ui.layout]
+section_gap = 14
 input_padding_y = 14
 input_padding_x = 18
 input_radius = 18
@@ -230,6 +232,7 @@ pub struct PluginsConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
+    pub show_header: bool,
     pub font_family: String,
     pub accent: String,
     pub background: String,
@@ -258,6 +261,7 @@ pub struct UiFontSizesConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiLayoutConfig {
+    pub section_gap: u16,
     pub input_padding_y: u16,
     pub input_padding_x: u16,
     pub input_radius: u16,
@@ -714,6 +718,7 @@ impl RankingConfig {
 impl Default for UiConfig {
     fn default() -> Self {
         Self {
+            show_header: true,
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
             accent: "#c77b49".to_owned(),
@@ -745,6 +750,7 @@ impl Default for UiFontSizesConfig {
 impl Default for UiLayoutConfig {
     fn default() -> Self {
         Self {
+            section_gap: 14,
             input_padding_y: 14,
             input_padding_x: 18,
             input_radius: 18,
@@ -1084,6 +1090,7 @@ mod tests {
         #[test]
         fn defaults_to_current_ui_font_sizes() {
             let config: Config = toml::from_str("").expect("empty config should parse");
+            assert!(config.ui.show_header);
             assert_eq!(config.ui.font_sizes.label, 10);
             assert_eq!(config.ui.font_sizes.input, 30);
             assert_eq!(config.ui.font_sizes.title, 16);
@@ -1095,6 +1102,7 @@ mod tests {
             assert_eq!(config.ui.layout.input_padding_y, 14);
             assert_eq!(config.ui.layout.input_padding_x, 18);
             assert_eq!(config.ui.layout.input_radius, 18);
+            assert_eq!(config.ui.layout.section_gap, 14);
             assert_eq!(config.ui.layout.list_gap, 8);
             assert_eq!(config.ui.layout.entry_padding_y, 13);
             assert_eq!(config.ui.layout.entry_padding_x, 14);
@@ -1108,10 +1116,11 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[ui]\nshow_header = false\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
+            assert!(!config.ui.show_header);
             assert_eq!(config.ui.font_sizes.label, 11);
             assert_eq!(config.ui.font_sizes.input, 34);
             assert_eq!(config.ui.font_sizes.title, 18);
@@ -1125,10 +1134,11 @@ mod tests {
         #[test]
         fn accepts_custom_ui_layout() {
             let config: Config = toml::from_str(
-                "[ui.layout]\ninput_padding_y = 16\ninput_padding_x = 20\ninput_radius = 20\nlist_gap = 10\nentry_padding_y = 14\nentry_padding_x = 16\nentry_gap = 15\nrow_radius = 20\nbadge_size = 48\nbadge_radius = 16\nicon_size = 40\n",
+                "[ui.layout]\nsection_gap = 16\ninput_padding_y = 16\ninput_padding_x = 20\ninput_radius = 20\nlist_gap = 10\nentry_padding_y = 14\nentry_padding_x = 16\nentry_gap = 15\nrow_radius = 20\nbadge_size = 48\nbadge_radius = 16\nicon_size = 40\n",
             )
             .expect("custom ui layout should parse");
 
+            assert_eq!(config.ui.layout.section_gap, 16);
             assert_eq!(config.ui.layout.input_padding_y, 16);
             assert_eq!(config.ui.layout.input_padding_x, 20);
             assert_eq!(config.ui.layout.input_radius, 20);

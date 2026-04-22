@@ -5,6 +5,7 @@
   --text: __TEXT__;
   --muted: __MUTED__;
   --font: __FONT_FAMILY__;
+  --header-display: __HEADER_DISPLAY__;
   --label-font-size: __LABEL_FONT_SIZE__;
   --input-font-size: __INPUT_FONT_SIZE__;
   --title-font-size: __TITLE_FONT_SIZE__;
@@ -13,6 +14,7 @@
   --accelerator-font-size: __ACCELERATOR_FONT_SIZE__;
   --config-error-title-font-size: __CONFIG_ERROR_TITLE_FONT_SIZE__;
   --config-error-body-font-size: __CONFIG_ERROR_BODY_FONT_SIZE__;
+  --section-gap: __SECTION_GAP__;
   --input-padding-y: __INPUT_PADDING_Y__;
   --input-padding-x: __INPUT_PADDING_X__;
   --input-radius: __INPUT_RADIUS__;
@@ -103,7 +105,7 @@ body {
   height: 100%;
   display: flex;
   flex-direction: column;
-  gap: 14px;
+  gap: var(--section-gap);
   padding: 18px;
   border-radius: 24px;
   overflow: hidden;
@@ -113,7 +115,7 @@ body {
 }
 
 .label {
-  display: flex;
+  display: var(--header-display);
   justify-content: space-between;
   align-items: center;
   text-transform: uppercase;
