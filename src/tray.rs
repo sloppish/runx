@@ -13,7 +13,7 @@ use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem},
 };
 
-use crate::{assets::tray_icon_path, macos, types::AppEvent};
+use crate::{assets::tray_icon_path, debug_log, macos, types::AppEvent};
 
 const TRAY_ID: &str = "runx-tray";
 const MENU_OPEN_ID: &str = "tray-open";
@@ -34,12 +34,26 @@ impl TrayState {
     pub fn install(proxy: EventLoopProxy<AppEvent>) -> Result<Self> {
         let menu = Menu::new();
         let autostart_supported = macos::current_app_supports_login_item();
+        let autostart_enabled = if autostart_supported {
+            match macos::current_app_login_item_enabled() {
+                Ok(Some(enabled)) => enabled,
+                Ok(None) => false,
+                Err(error) => {
+                    debug_log::append(format!(
+                        "tray install could not read launch at login status: {error:#}"
+                    ));
+                    false
+                }
+            }
+        } else {
+            false
+        };
         let open_item = MenuItem::with_id(MENU_OPEN_ID, "Open Runx", true, None);
         let autostart_item = CheckMenuItem::with_id(
             MENU_AUTOSTART_ID,
             "Launch at Login",
             autostart_supported,
-            false,
+            autostart_enabled,
             None,
         );
         let quit_item = MenuItem::with_id(MENU_QUIT_ID, "Quit Runx", true, None);

@@ -46,25 +46,44 @@ const LOGIN_ITEM_SCRIPT: &str = r#"on run argv
 
   tell application "System Events"
     if actionName is "enable" then
-      repeat with existingItem in login items
-        if name of existingItem is appName then
+      set itemCount to count login items
+      repeat with i from itemCount to 1 by -1
+        set existingItem to login item i
+        set itemPath to ""
+        try
+          set itemPath to path of existingItem as text
+        end try
+        if itemPath is appPath then
           delete existingItem
-          exit repeat
         end if
       end repeat
       make login item at end with properties {name:appName, path:appPath, hidden:false}
       return "enabled"
     else if actionName is "disable" then
-      repeat with existingItem in login items
-        if name of existingItem is appName then
+      set removedAny to false
+      set itemCount to count login items
+      repeat with i from itemCount to 1 by -1
+        set existingItem to login item i
+        set itemPath to ""
+        try
+          set itemPath to path of existingItem as text
+        end try
+        if itemPath is appPath then
           delete existingItem
-          return "disabled"
+          set removedAny to true
         end if
       end repeat
+      if removedAny then return "disabled"
       return "missing"
     else if actionName is "status" then
-      repeat with existingItem in login items
-        if name of existingItem is appName then
+      set itemCount to count login items
+      repeat with i from 1 to itemCount
+        set existingItem to login item i
+        set itemPath to ""
+        try
+          set itemPath to path of existingItem as text
+        end try
+        if itemPath is appPath then
           return "enabled"
         end if
       end repeat
@@ -488,6 +507,14 @@ pub fn has_screen_capture_access() -> bool {
 /// Returns whether the running executable is packaged as a `.app` bundle and can be used as a login item.
 pub fn current_app_supports_login_item() -> bool {
     current_login_item_target().is_some()
+}
+
+/// Returns whether the current app bundle is configured to launch at login.
+pub fn current_app_login_item_enabled() -> Result<Option<bool>> {
+    let Some(target) = current_login_item_target() else {
+        return Ok(None);
+    };
+    Ok(Some(login_item_status(&target)?))
 }
 
 /// Toggles whether the current app bundle is opened at login and returns the new enabled state.
