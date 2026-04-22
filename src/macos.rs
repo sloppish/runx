@@ -237,6 +237,56 @@ pub fn focus_window(
     }
 }
 
+pub fn focus_window_and_activate_all_windows(
+    app_name: &str,
+    window_title: &str,
+    window_id: u32,
+) -> Result<Option<String>> {
+    if let Some(pid) = running_application_pid_by_name(app_name) {
+        let accessibility_trusted = ensure_accessibility_trusted(true);
+        if accessibility_trusted {
+            if let Err(error) = focus_window_for_pid(pid, window_id) {
+                debug_log::append(format!(
+                    "focus_window_and_activate_all_windows initial focus failed app={:?} title={:?} window_id={} error={error:#}",
+                    app_name, window_title, window_id
+                ));
+            }
+        } else {
+            open_accessibility_settings();
+        }
+
+        activate_running_application_by_pid_with_mode(pid, AppActivationMode::AllWindows)?;
+
+        if accessibility_trusted {
+            match focus_window_for_pid(pid, window_id) {
+                Ok(()) => {
+                    return Ok(Some(format!(
+                        "Focused {} and activated all {} windows",
+                        window_title, app_name
+                    )));
+                }
+                Err(error) => {
+                    debug_log::append(format!(
+                        "focus_window_and_activate_all_windows final focus failed app={:?} title={:?} window_id={} error={error:#}",
+                        app_name, window_title, window_id
+                    ));
+                }
+            }
+        } else {
+            return Ok(Some(format!(
+                "Activated all {} windows (window focus requires Accessibility permission)",
+                app_name
+            )));
+        }
+
+        return Ok(Some(format!("Activated all {} windows", app_name)));
+    }
+
+    open_named_application(app_name)
+        .with_context(|| format!("failed to activate {app_name} for all-window focus"))?;
+    Ok(Some(format!("Activated {}", app_name)))
+}
+
 /// Types text into the app that was focused before Runx was shown.
 pub fn type_text_into_previous_app(
     text: &str,

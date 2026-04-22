@@ -144,7 +144,7 @@ pub enum AppEvent {
 pub enum FrontendCommand {
     Ready,
     QueryChanged { query: String },
-    Activate { index: usize },
+    Activate { index: usize, all_windows: bool },
     Hide,
 }
 

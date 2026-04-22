@@ -50,20 +50,27 @@ impl ActionRunner {
         runtime: &Runtime,
         proxy: tao::event_loop::EventLoopProxy<AppEvent>,
         item: SearchItem,
+        all_windows: bool,
         context: PluginExecutionContext,
     ) {
         let plugins = self.plugins.clone();
         let window_focus_behavior = self.window_focus_behavior;
         runtime.handle().spawn_blocking(move || {
-            let result = execute_action(&item.action, window_focus_behavior, &plugins, &context);
+            let result = execute_action(
+                &item.action,
+                window_focus_behavior,
+                all_windows,
+                &plugins,
+                &context,
+            );
             let (message, is_error) = match result {
                 Ok(Some(message)) => (message, false),
                 Ok(None) => ("Action completed".to_owned(), false),
                 Err(error) => (error.to_string(), true),
             };
             debug_log::append(format!(
-                "activate outcome is_error={} message={:?}",
-                is_error, message
+                "activate outcome all_windows={} is_error={} message={:?}",
+                all_windows, is_error, message
             ));
             let _ = proxy.send_event(AppEvent::ActionOutcome { message, is_error });
         });

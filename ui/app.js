@@ -153,7 +153,7 @@
         </div>
         <div class="accelerator">${item.accelerator ? escapeHtml(item.accelerator) : ""}</div>
       `;
-      row.addEventListener("click", () => send({ type: "activate", index }));
+      row.addEventListener("click", () => send({ type: "activate", index, all_windows: false }));
       resultsEl.appendChild(row);
     }
 
@@ -206,7 +206,7 @@
 
     if (event.key === "Enter") {
       event.preventDefault();
-      send({ type: "activate", index: state.selectedIndex });
+      send({ type: "activate", index: state.selectedIndex, all_windows: event.altKey });
       return;
     }
 
@@ -220,7 +220,7 @@
       const index = Number(event.code.slice("Digit".length)) - 1;
       if (index < state.items.length) {
         event.preventDefault();
-        send({ type: "activate", index });
+        send({ type: "activate", index, all_windows: false });
       }
     }
   });

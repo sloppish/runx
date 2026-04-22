@@ -320,7 +320,7 @@ impl Launcher {
                 &self.runtime,
                 self.proxy.clone(),
             ),
-            FrontendCommand::Activate { index } => self.activate(index),
+            FrontendCommand::Activate { index, all_windows } => self.activate(index, all_windows),
             FrontendCommand::Hide => self.hide()?,
         }
         Ok(())
@@ -340,13 +340,14 @@ impl Launcher {
         Ok(())
     }
 
-    fn activate(&mut self, index: usize) {
+    fn activate(&mut self, index: usize, all_windows: bool) {
         let Some(item) = self.state.session().rendered_item(index).cloned() else {
             debug_log::append(format!("activate ignored missing index={index}"));
             return;
         };
         debug_log::append(format!(
-            "activate index={index} title={:?} provider={} action={:?} previous_app={:?}",
+            "activate index={index} all_windows={} title={:?} provider={} action={:?} previous_app={:?}",
+            all_windows,
             item.title,
             item.provider,
             item.action,
@@ -367,8 +368,13 @@ impl Launcher {
             return;
         }
 
-        self.actions
-            .spawn(&self.runtime, self.proxy.clone(), item, context);
+        self.actions.spawn(
+            &self.runtime,
+            self.proxy.clone(),
+            item,
+            all_windows,
+            context,
+        );
     }
 }
 

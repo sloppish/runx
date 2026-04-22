@@ -14,6 +14,7 @@ use crate::types::Action;
 pub fn execute_action(
     action: &Action,
     window_focus_behavior: WindowFocusBehavior,
+    all_windows: bool,
     plugins: &PluginHost,
     context: &PluginExecutionContext,
 ) -> Result<Option<String>> {
@@ -35,7 +36,13 @@ pub fn execute_action(
             app_name,
             window_title,
             window_id,
-        } => macos::focus_window(app_name, window_title, *window_id, window_focus_behavior),
+        } => {
+            if all_windows {
+                macos::focus_window_and_activate_all_windows(app_name, window_title, *window_id)
+            } else {
+                macos::focus_window(app_name, window_title, *window_id, window_focus_behavior)
+            }
+        }
         Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload, context),
     }
 }
