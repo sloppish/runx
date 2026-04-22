@@ -183,7 +183,7 @@ impl Launcher {
                     .windows
                     .should_hide_on_blur(&self.loaded.config.window, &self.state) =>
             {
-                self.hide()?;
+                self.hide_without_focus_restore()?;
             }
             _ => {}
         }
@@ -299,12 +299,35 @@ impl Launcher {
     }
 
     fn hide(&mut self) -> Result<()> {
+        self.hide_with_focus_restore(true)
+    }
+
+    fn hide_without_focus_restore(&mut self) -> Result<()> {
+        self.hide_with_focus_restore(false)
+    }
+
+    fn hide_with_focus_restore(&mut self, restore_previous_focus: bool) -> Result<()> {
+        let previous_app = restore_previous_focus
+            .then(|| self.windows.previous_app())
+            .flatten();
         self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
         self.search.cancel_pending_render();
         self.windows.hide_window(&self.window);
         self.search
             .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+        if let Some(previous_app) = previous_app.as_ref()
+            && let Err(error) = macos::restore_previous_app_focus(Some(previous_app))
+        {
+            debug_log::append(format!(
+                "restore_previous_app_focus failed after hide name={:?} bundle_id={:?} path={:?} pid={:?} window_id={:?} error={error:#}",
+                previous_app.name,
+                previous_app.bundle_id,
+                previous_app.path,
+                previous_app.pid,
+                previous_app.window_id
+            ));
+        }
         Ok(())
     }
 
@@ -363,7 +386,7 @@ impl Launcher {
         let context = PluginExecutionContext {
             previous_app: self.windows.previous_app(),
         };
-        if let Err(error) = self.hide() {
+        if let Err(error) = self.hide_without_focus_restore() {
             self.set_error(error.to_string());
             return;
         }

@@ -119,6 +119,8 @@ pub struct FrontmostApp {
     pub name: Option<String>,
     pub bundle_id: Option<String>,
     pub path: Option<String>,
+    pub pid: Option<c_int>,
+    pub window_id: Option<u32>,
 }
 
 /// Direct CoreGraphics snapshot of the display currently containing the mouse cursor.
@@ -189,6 +191,14 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
                     .and_then(|url| url.path().map(|path| path.to_string()))
                     .and_then(|path| bundle_root_from_executable_path(&path))
             }),
+        pid: Some(app.processIdentifier()),
+        window_id: None,
+    };
+    let app = FrontmostApp {
+        window_id: app
+            .pid
+            .and_then(|pid| capture_focused_window_id_for_pid(pid).ok().flatten()),
+        ..app
     };
 
     if app.name.is_none() && app.bundle_id.is_none() && app.path.is_none() {
@@ -196,6 +206,47 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     }
 
     Ok(Some(app))
+}
+
+/// Restores focus to the app and, when possible, the exact window that was frontmost before Runx appeared.
+pub fn restore_previous_app_focus(previous_app: Option<&FrontmostApp>) -> Result<()> {
+    let Some(app) = previous_app else {
+        debug_log::append("restore_previous_app_focus skipped: no previous app");
+        return Ok(());
+    };
+
+    if let (Some(pid), Some(window_id)) = (app.pid, app.window_id) {
+        if ensure_accessibility_trusted(false) {
+            match activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default) {
+                Ok(()) => match focus_window_for_pid(pid, window_id) {
+                    Ok(()) => {
+                        debug_log::append(format!(
+                            "restore_previous_app_focus restored exact window name={:?} bundle_id={:?} path={:?} pid={} window_id={}",
+                            app.name, app.bundle_id, app.path, pid, window_id
+                        ));
+                        return Ok(());
+                    }
+                    Err(error) => {
+                        debug_log::append(format!(
+                            "restore_previous_app_focus exact window restore failed name={:?} bundle_id={:?} path={:?} pid={} window_id={} error={error:#}",
+                            app.name, app.bundle_id, app.path, pid, window_id
+                        ));
+                    }
+                },
+                Err(error) => debug_log::append(format!(
+                    "restore_previous_app_focus pid activation failed name={:?} bundle_id={:?} path={:?} pid={} window_id={} error={error:#}",
+                    app.name, app.bundle_id, app.path, pid, window_id
+                )),
+            }
+        } else {
+            debug_log::append(format!(
+                "restore_previous_app_focus falling back to app restore without Accessibility name={:?} bundle_id={:?} path={:?} pid={} window_id={}",
+                app.name, app.bundle_id, app.path, pid, window_id
+            ));
+        }
+    }
+
+    reactivate_previous_app(Some(app))
 }
 
 /// Returns the display currently containing the mouse cursor using CoreGraphics.
@@ -761,6 +812,23 @@ fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<()> {
     bail!("window not found")
 }
 
+fn capture_focused_window_id_for_pid(pid: c_int) -> Result<Option<u32>> {
+    let app_element = OwnedAxElement::application(pid)
+        .ok_or_else(|| anyhow::anyhow!("failed to create accessibility handle for pid {pid}"))?;
+    let _ = app_element.set_messaging_timeout(AX_MESSAGING_TIMEOUT_SECONDS);
+
+    let Some(window) = copy_ax_attribute_value(
+        app_element.as_ptr(),
+        ax_focused_window_attribute().as_concrete_TypeRef(),
+    )
+    .map_err(|error| anyhow::anyhow!(ax_error_message(error)))?
+    else {
+        return Ok(None);
+    };
+
+    copy_ax_window_id(window.as_CFTypeRef() as AXUIElementRef)
+}
+
 fn bundle_root_from_executable_path(executable_path: &str) -> Option<String> {
     std::path::Path::new(executable_path)
         .ancestors()
@@ -775,6 +843,10 @@ fn bundle_root_from_executable_path(executable_path: &str) -> Option<String> {
 
 fn ax_focused_attribute() -> CFString {
     CFString::from_static_string("AXFocused")
+}
+
+fn ax_focused_window_attribute() -> CFString {
+    CFString::from_static_string("AXFocusedWindow")
 }
 
 fn ax_main_attribute() -> CFString {
@@ -1015,6 +1087,8 @@ mod tests {
             name: None,
             bundle_id: None,
             path: Some("/Applications/SampleApp.app".to_owned()),
+            pid: None,
+            window_id: None,
         };
         assert_eq!(app.display_name(), "/Applications/SampleApp.app");
         assert_eq!(
