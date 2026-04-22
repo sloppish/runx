@@ -41,6 +41,7 @@ height = 520
 hide_on_blur = true
 always_on_top = true
 show_on = "primary"
+include_other_desktops = false
 focus_behavior = "focus_window_then_activate_fallback"
 
 [ranking]
@@ -154,6 +155,7 @@ pub struct WindowConfig {
     pub hide_on_blur: bool,
     pub always_on_top: bool,
     pub show_on: WindowDisplayTarget,
+    pub include_other_desktops: bool,
     pub focus_behavior: WindowFocusBehavior,
 }
 
@@ -788,6 +790,7 @@ impl Default for WindowConfig {
             hide_on_blur: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Primary,
+            include_other_desktops: false,
             focus_behavior: WindowFocusBehavior::FocusWindowThenActivateFallback,
         }
     }
@@ -1041,6 +1044,7 @@ mod tests {
         fn defaults_to_primary() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert_eq!(config.window.show_on, WindowDisplayTarget::Primary);
+            assert!(!config.window.include_other_desktops);
         }
 
         #[test]
@@ -1048,6 +1052,13 @@ mod tests {
             let cursor: Config =
                 toml::from_str("[window]\nshow_on = \"cursor\"\n").expect("cursor should parse");
             assert_eq!(cursor.window.show_on, WindowDisplayTarget::Cursor);
+        }
+
+        #[test]
+        fn accepts_include_other_desktops() {
+            let config: Config = toml::from_str("[window]\ninclude_other_desktops = true\n")
+                .expect("include_other_desktops should parse");
+            assert!(config.window.include_other_desktops);
         }
     }
 

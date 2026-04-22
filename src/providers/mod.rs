@@ -47,7 +47,10 @@ impl ProviderSet {
         plugins: Arc<PluginHost>,
         icons: Arc<IconCache>,
     ) -> anyhow::Result<Self> {
-        let windows = Arc::new(WindowsProvider::new(icons.clone()));
+        let windows = Arc::new(WindowsProvider::new(
+            icons.clone(),
+            config.window.include_other_desktops,
+        ));
         let apps = Arc::new(AppProvider::new(icons.clone())?);
         let settings = Arc::new(SettingsProvider::new(icons.clone())?);
         let spotlight = Arc::new(SpotlightProvider::new(icons));
