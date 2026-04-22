@@ -21,6 +21,21 @@ test("selection can wrap from first to last and last to first", () => {
   assert.equal(state.selectedIndex, 0);
 });
 
+test("ctrl-n and ctrl-p use physical key codes so they survive non-latin layouts", () => {
+  assert.equal(
+    ui.isCtrlNextShortcut({ key: "т", code: "KeyN", ctrlKey: true, metaKey: false, altKey: false }),
+    true,
+  );
+  assert.equal(
+    ui.isCtrlPreviousShortcut({ key: "з", code: "KeyP", ctrlKey: true, metaKey: false, altKey: false }),
+    true,
+  );
+  assert.equal(
+    ui.isCtrlNextShortcut({ key: "n", code: "KeyN", ctrlKey: false, metaKey: false, altKey: false }),
+    false,
+  );
+});
+
 test("typing resets selection to the first item", () => {
   const state = ui.createState();
   state.items = [{}, {}, {}];

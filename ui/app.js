@@ -36,6 +36,14 @@
     state.selectedIndex = 0;
   }
 
+  function isCtrlNextShortcut(event) {
+    return event.key === "ArrowDown" || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyN");
+  }
+
+  function isCtrlPreviousShortcut(event) {
+    return event.key === "ArrowUp" || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyP");
+  }
+
   function applyRenderPayload(state, payload, environment) {
     const payloadQuery = typeof payload.query === "string" ? payload.query : "";
     state.configError = typeof payload.config_error === "string" ? payload.config_error : null;
@@ -78,6 +86,8 @@
     escapeAttr,
     escapeHtml,
     inputChanged,
+    isCtrlNextShortcut,
+    isCtrlPreviousShortcut,
     moveSelection,
   };
 
@@ -198,16 +208,14 @@
   });
 
   inputEl.addEventListener("keydown", (event) => {
-    const ctrlDown = event.ctrlKey && !event.metaKey && !event.altKey;
-
-    if (event.key === "ArrowDown" || (ctrlDown && event.key.toLowerCase() === "n")) {
+    if (isCtrlNextShortcut(event)) {
       event.preventDefault();
       moveSelection(state, 1, cycleSelectionEnabled());
       render();
       return;
     }
 
-    if (event.key === "ArrowUp" || (ctrlDown && event.key.toLowerCase() === "p")) {
+    if (isCtrlPreviousShortcut(event)) {
       event.preventDefault();
       moveSelection(state, -1, cycleSelectionEnabled());
       render();
