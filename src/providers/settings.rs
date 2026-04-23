@@ -96,7 +96,7 @@ impl SettingsProvider {
                     icon: setting
                         .bundle_path
                         .as_deref()
-                        .and_then(|path| self.icons.icon_for_bundle(path))
+                        .and_then(|path| self.icons.icon_for_bundle_resource(path))
                         .or_else(|| self.icons.system_settings_icon()),
                     title: setting.title.clone(),
                     subtitle: setting.subtitle.clone(),

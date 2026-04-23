@@ -9,7 +9,7 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Arc, Mutex, MutexGuard},
+    sync::{Arc, Condvar, Mutex, MutexGuard},
     thread,
     time::UNIX_EPOCH,
 };
@@ -18,8 +18,12 @@ use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use directories::BaseDirs;
 use image::{ExtendedColorType, ImageReader, codecs::webp::WebPEncoder};
-use objc2_app_kit::{NSRunningApplication, NSWorkspace};
-use objc2_foundation::NSString;
+use objc2::AnyThread;
+use objc2_app_kit::{
+    NSBitmapImageRep, NSCompositingOperation, NSDeviceRGBColorSpace, NSGraphicsContext, NSImage,
+    NSRunningApplication, NSWorkspace,
+};
+use objc2_foundation::{NSPoint, NSRect, NSSize, NSString};
 use plist::{Dictionary, Value};
 use tao::event_loop::EventLoopProxy;
 use wry::http::{
@@ -37,12 +41,14 @@ const ICON_PROTOCOL_SCHEME: &str = "runx";
 const ICON_PROTOCOL_HOST: &str = "localhost";
 const ICON_CACHE_FORMAT_VERSION: &str = "webp-v1";
 const ICON_RENDER_SIZE: u32 = 64;
+const MAX_ICON_RENDER_WORKERS: usize = 2;
 
 /// In-memory and on-disk cache for bundle and process icons.
 pub struct IconCache {
     cache_dir: PathBuf,
     icons: Arc<Mutex<HashMap<String, IconState>>>,
     process_bundles: Mutex<HashMap<i64, Option<PathBuf>>>,
+    render_limiter: Arc<RenderLimiter>,
     proxy: Option<EventLoopProxy<AppEvent>>,
 }
 
@@ -51,6 +57,61 @@ enum IconState {
     Ready(String),
     Pending,
     Missing,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+enum IconLookupMode {
+    Full,
+    DirectResourceOnly,
+}
+
+impl IconLookupMode {
+    fn cache_namespace(self) -> &'static str {
+        match self {
+            Self::Full => "full",
+            Self::DirectResourceOnly => "resource",
+        }
+    }
+}
+
+struct RenderLimiter {
+    active: Mutex<usize>,
+    available: Condvar,
+}
+
+struct RenderPermit {
+    limiter: Arc<RenderLimiter>,
+}
+
+impl RenderLimiter {
+    fn new() -> Self {
+        Self {
+            active: Mutex::new(0),
+            available: Condvar::new(),
+        }
+    }
+
+    fn acquire(self: &Arc<Self>) -> RenderPermit {
+        let mut active = lock_or_recover(&self.active);
+        while *active >= MAX_ICON_RENDER_WORKERS {
+            active = self
+                .available
+                .wait(active)
+                .unwrap_or_else(|poison| poison.into_inner());
+        }
+        *active += 1;
+        RenderPermit {
+            limiter: Arc::clone(self),
+        }
+    }
+}
+
+impl Drop for RenderPermit {
+    fn drop(&mut self) {
+        let mut active = lock_or_recover(&self.limiter.active);
+        *active = active.saturating_sub(1);
+        self.limiter.available.notify_one();
+    }
 }
 
 impl IconCache {
@@ -66,6 +127,7 @@ impl IconCache {
             cache_dir,
             icons: Arc::new(Mutex::new(HashMap::new())),
             process_bundles: Mutex::new(HashMap::new()),
+            render_limiter: Arc::new(RenderLimiter::new()),
             proxy,
         })
     }
@@ -73,7 +135,25 @@ impl IconCache {
     /// Resolves an icon for an application bundle path and returns a protocol URL when ready.
     pub fn icon_for_bundle<P: AsRef<Path>>(&self, bundle_path: P) -> Option<String> {
         let bundle_path = bundle_path.as_ref();
-        let key = format!("bundle:{}", bundle_path.display());
+        self.icon_for_bundle_with_mode(bundle_path, IconLookupMode::Full)
+    }
+
+    /// Resolves an icon only when the bundle exposes a concrete icon file.
+    pub fn icon_for_bundle_resource<P: AsRef<Path>>(&self, bundle_path: P) -> Option<String> {
+        let bundle_path = bundle_path.as_ref();
+        self.icon_for_bundle_with_mode(bundle_path, IconLookupMode::DirectResourceOnly)
+    }
+
+    fn icon_for_bundle_with_mode(
+        &self,
+        bundle_path: &Path,
+        mode: IconLookupMode,
+    ) -> Option<String> {
+        let key = format!(
+            "bundle:{}:{}",
+            mode.cache_namespace(),
+            bundle_path.display()
+        );
 
         {
             let mut cache = lock_or_recover(&self.icons);
@@ -86,7 +166,7 @@ impl IconCache {
             }
         }
 
-        self.resolve_or_schedule_bundle_icon(key, bundle_path)
+        self.resolve_or_schedule_bundle_icon(key, bundle_path, mode)
     }
 
     /// Resolves an icon for the owning app of a process id.
@@ -125,8 +205,20 @@ impl IconCache {
         cache.insert(key, state);
     }
 
-    fn resolve_or_schedule_bundle_icon(&self, key: String, bundle_path: &Path) -> Option<String> {
+    fn resolve_or_schedule_bundle_icon(
+        &self,
+        key: String,
+        bundle_path: &Path,
+        mode: IconLookupMode,
+    ) -> Option<String> {
         if !bundle_path.exists() {
+            self.store_icon_state(key, IconState::Missing);
+            return None;
+        }
+
+        if mode == IconLookupMode::DirectResourceOnly
+            && !matches!(find_bundle_icon_source(bundle_path), Ok(Some(_)))
+        {
             self.store_icon_state(key, IconState::Missing);
             return None;
         }
@@ -139,7 +231,7 @@ impl IconCache {
             return Some(url);
         }
 
-        self.spawn_bundle_icon_render(key, bundle_path.to_path_buf(), webp_path, url);
+        self.spawn_bundle_icon_render(key, bundle_path.to_path_buf(), webp_path, url, mode);
         None
     }
 
@@ -149,8 +241,10 @@ impl IconCache {
         bundle_path: PathBuf,
         webp_path: PathBuf,
         url: String,
+        mode: IconLookupMode,
     ) {
         let icons = Arc::clone(&self.icons);
+        let render_limiter = Arc::clone(&self.render_limiter);
         let proxy = self.proxy.clone();
         let temp_webp_path = webp_path.with_extension("tmp.webp");
         let thread_key = key.clone();
@@ -158,7 +252,8 @@ impl IconCache {
         let spawn_result = thread::Builder::new()
             .name("runx-icon-render".to_owned())
             .spawn(move || {
-                let render_result = render_bundle_icon_to_webp(&bundle_path, &temp_webp_path)
+                let _permit = render_limiter.acquire();
+                let render_result = render_bundle_icon_to_webp(&bundle_path, &temp_webp_path, mode)
                     .and_then(|()| {
                         fs::rename(&temp_webp_path, &webp_path).with_context(|| {
                             format!(
@@ -384,14 +479,30 @@ fn icon_file_candidates(resources_dir: &Path, icon_name: &str) -> Vec<PathBuf> {
     candidates
 }
 
-fn render_bundle_icon_to_webp(bundle_path: &Path, webp_path: &Path) -> Result<()> {
+fn render_bundle_icon_to_webp(
+    bundle_path: &Path,
+    webp_path: &Path,
+    mode: IconLookupMode,
+) -> Result<()> {
     let source_error = match find_bundle_icon_source(bundle_path)? {
+        Some(icon_source)
+            if mode == IconLookupMode::Full && should_render_with_workspace_icon(&icon_source) =>
+        {
+            match render_workspace_icon_to_webp(bundle_path, webp_path) {
+                Ok(()) => return Ok(()),
+                Err(error) => Some(error),
+            }
+        }
         Some(icon_source) => match render_webp_icon(&icon_source, webp_path) {
             Ok(()) => return Ok(()),
             Err(error) => Some(error),
         },
         None => None,
     };
+
+    if mode == IconLookupMode::DirectResourceOnly {
+        anyhow::bail!("no direct icon resource found in {}", bundle_path.display());
+    }
 
     match render_workspace_icon_to_webp(bundle_path, webp_path) {
         Ok(()) => Ok(()),
@@ -407,15 +518,58 @@ fn render_bundle_icon_to_webp(bundle_path: &Path, webp_path: &Path) -> Result<()
     }
 }
 
+fn should_render_with_workspace_icon(icon_source: &Path) -> bool {
+    icon_source.extension().and_then(|value| value.to_str()) == Some("icns")
+        && icon_source
+            .parent()
+            .is_some_and(|parent| parent.join("Assets.car").exists())
+}
+
 fn render_workspace_icon_to_webp(bundle_path: &Path, webp_path: &Path) -> Result<()> {
-    let temp_tiff_path = webp_path.with_extension("tmp.tiff");
     let bundle_path_text = bundle_path.to_string_lossy();
     let bundle_path = NSString::from_str(&bundle_path_text);
     let workspace = NSWorkspace::sharedWorkspace();
     let icon = workspace.iconForFile(&bundle_path);
-    let tiff = icon
+    render_nsimage_to_webp(&icon, webp_path)
+}
+
+fn render_nsimage_to_webp(icon: &NSImage, webp_path: &Path) -> Result<()> {
+    let temp_tiff_path = webp_path.with_extension("tmp.tiff");
+    let size = f64::from(ICON_RENDER_SIZE);
+    let bitmap = unsafe {
+        NSBitmapImageRep::initWithBitmapDataPlanes_pixelsWide_pixelsHigh_bitsPerSample_samplesPerPixel_hasAlpha_isPlanar_colorSpaceName_bytesPerRow_bitsPerPixel(
+            NSBitmapImageRep::alloc(),
+            std::ptr::null_mut(),
+            ICON_RENDER_SIZE as isize,
+            ICON_RENDER_SIZE as isize,
+            8,
+            4,
+            true,
+            false,
+            NSDeviceRGBColorSpace,
+            0,
+            0,
+        )
+    }
+    .context("failed to create bitmap image representation")?;
+    let context = NSGraphicsContext::graphicsContextWithBitmapImageRep(&bitmap)
+        .context("failed to create bitmap graphics context")?;
+    let rect = NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(size, size));
+
+    NSGraphicsContext::saveGraphicsState_class();
+    NSGraphicsContext::setCurrentContext(Some(&context));
+    icon.setSize(NSSize::new(size, size));
+    icon.drawInRect_fromRect_operation_fraction(
+        rect,
+        NSRect::new(NSPoint::new(0.0, 0.0), NSSize::new(0.0, 0.0)),
+        NSCompositingOperation::Copy,
+        1.0,
+    );
+    NSGraphicsContext::restoreGraphicsState_class();
+
+    let tiff = bitmap
         .TIFFRepresentation()
-        .context("macOS returned an icon without a TIFF representation")?;
+        .context("macOS failed to rasterize icon into a TIFF representation")?;
     fs::write(&temp_tiff_path, tiff.to_vec())
         .with_context(|| format!("failed to create {}", temp_tiff_path.display()))?;
 
@@ -629,8 +783,8 @@ fn system_settings_fallback_icon() -> String {
 #[cfg(test)]
 mod tests {
     use super::{
-        IconCache, bundle_root_from_executable, cache_key_for_bundle, find_bundle_icon_source,
-        icon_key_from_request_path, icon_protocol_url, render_webp_icon,
+        IconCache, RenderLimiter, bundle_root_from_executable, cache_key_for_bundle,
+        find_bundle_icon_source, icon_key_from_request_path, icon_protocol_url, render_webp_icon,
     };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::{
@@ -735,6 +889,7 @@ mod tests {
             cache_dir: temp_dir.clone(),
             icons: Arc::new(Mutex::new(HashMap::new())),
             process_bundles: Mutex::new(HashMap::new()),
+            render_limiter: Arc::new(RenderLimiter::new()),
             proxy: None,
         };
         let icon_key = cache_key_for_bundle(&bundle_path);

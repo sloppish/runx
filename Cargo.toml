@@ -15,7 +15,8 @@ image = { version = "0.25", default-features = false, features = ["png", "webp"]
 memchr = "2.7"
 miette = { version = "7.6", features = ["fancy"] }
 mlua = { version = "0.11.6", features = ["lua54", "send", "serde", "vendored"] }
-objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSImage", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
+objc2 = "0.6"
+objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSBitmapImageRep", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
 objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL"] }
 plist = "1.7"
 png = "0.17"
