@@ -538,10 +538,12 @@ impl Launcher {
         } else {
             "false"
         };
+        let activate_all_windows_shortcut = ui::activate_all_windows_shortcut_json(theme);
         let script = format!(
-            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; }})()",
+            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; }})()",
             serde_json::to_string(&css)?,
-            cycle_selection
+            cycle_selection,
+            activate_all_windows_shortcut
         );
         self.webview
             .evaluate_script(&script)

@@ -17,7 +17,7 @@ use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 use miette::{
     GraphicalReportHandler, GraphicalTheme, LabeledSpan, MietteDiagnostic, NamedSource, Report,
 };
-use serde::Deserialize;
+use serde::{Deserialize, Deserializer, Serialize};
 use serde_json::Value as JsonValue;
 use toml::{Spanned, Table};
 
@@ -96,6 +96,9 @@ background_opacity = 0.97
 
 [ui.entries]
 opacity = 1.0
+
+[ui.shortcuts]
+activate_all_windows = "Option+Enter"
 
 [ui.font_sizes]
 label = 10
@@ -291,6 +294,7 @@ pub struct UiConfig {
     pub dark_colors: UiColorOverridesConfig,
     pub canvas: UiCanvasConfig,
     pub entries: UiEntriesConfig,
+    pub shortcuts: UiShortcutsConfig,
     pub font_sizes: UiFontSizesConfig,
     pub layout: UiLayoutConfig,
 }
@@ -414,6 +418,28 @@ pub struct UiEntriesConfig {
     pub opacity: f64,
 }
 
+/// Keyboard shortcuts handled inside the launcher UI.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct UiShortcutsConfig {
+    #[serde(
+        default = "default_activate_all_windows_shortcut",
+        deserialize_with = "deserialize_ui_shortcut"
+    )]
+    pub activate_all_windows: Option<UiShortcutConfig>,
+}
+
+/// A browser-keyboard shortcut passed through to the embedded UI.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct UiShortcutConfig {
+    pub key: Option<String>,
+    pub code: Option<String>,
+    pub alt: bool,
+    pub ctrl: bool,
+    pub meta: bool,
+    pub shift: bool,
+}
+
 /// Font-size tokens injected into the embedded UI theme.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
@@ -476,6 +502,7 @@ struct RawUiSpans {
     dark_colors: UiColorOverridesConfig,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
+    shortcuts: UiShortcutsConfig,
     font_sizes: UiFontSizesConfig,
     layout: UiLayoutConfig,
 }
@@ -1142,6 +1169,7 @@ impl Default for UiConfig {
             dark_colors: UiColorOverridesConfig::default(),
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),
+            shortcuts: UiShortcutsConfig::default(),
             font_sizes: UiFontSizesConfig::default(),
             layout: UiLayoutConfig::default(),
         }
@@ -1181,6 +1209,25 @@ impl Default for UiEntriesConfig {
     fn default() -> Self {
         Self { opacity: 1.0 }
     }
+}
+
+impl Default for UiShortcutsConfig {
+    fn default() -> Self {
+        Self {
+            activate_all_windows: default_activate_all_windows_shortcut(),
+        }
+    }
+}
+
+fn default_activate_all_windows_shortcut() -> Option<UiShortcutConfig> {
+    Some(UiShortcutConfig {
+        key: Some("Enter".to_owned()),
+        code: None,
+        alt: true,
+        ctrl: false,
+        meta: false,
+        shift: false,
+    })
 }
 
 impl Default for UiFontSizesConfig {
@@ -1233,6 +1280,107 @@ fn resolve_path(root_dir: &Path, home_dir: &Path, raw: &str) -> PathBuf {
 fn dedup_paths(paths: &mut Vec<PathBuf>) {
     let mut seen = HashSet::new();
     paths.retain(|path| seen.insert(path.clone()));
+}
+
+fn deserialize_ui_shortcut<'de, D>(
+    deserializer: D,
+) -> std::result::Result<Option<UiShortcutConfig>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = String::deserialize(deserializer)?;
+    parse_ui_shortcut(&value).map_err(serde::de::Error::custom)
+}
+
+fn parse_ui_shortcut(value: &str) -> std::result::Result<Option<UiShortcutConfig>, String> {
+    let value = value.trim();
+    if value.is_empty()
+        || value.eq_ignore_ascii_case("none")
+        || value.eq_ignore_ascii_case("disabled")
+        || value.eq_ignore_ascii_case("off")
+    {
+        return Ok(None);
+    }
+
+    let mut shortcut = UiShortcutConfig {
+        key: None,
+        code: None,
+        alt: false,
+        ctrl: false,
+        meta: false,
+        shift: false,
+    };
+
+    for part in value.split('+') {
+        let token = part.trim();
+        if token.is_empty() {
+            return Err(format!("invalid UI shortcut `{value}`"));
+        }
+
+        match token.to_ascii_lowercase().as_str() {
+            "alt" | "option" => shortcut.alt = true,
+            "control" | "ctrl" => shortcut.ctrl = true,
+            "command" | "cmd" | "super" | "meta" => shortcut.meta = true,
+            "shift" => shortcut.shift = true,
+            _ => {
+                if shortcut.key.is_some() || shortcut.code.is_some() {
+                    return Err(format!("UI shortcut `{value}` contains more than one key"));
+                }
+
+                let (key, code) = parse_ui_shortcut_key(token)
+                    .ok_or_else(|| format!("unsupported UI shortcut key `{token}`"))?;
+                shortcut.key = key;
+                shortcut.code = code;
+            }
+        }
+    }
+
+    if shortcut.key.is_none() && shortcut.code.is_none() {
+        return Err(format!("UI shortcut `{value}` is missing a key"));
+    }
+
+    Ok(Some(shortcut))
+}
+
+fn parse_ui_shortcut_key(token: &str) -> Option<(Option<String>, Option<String>)> {
+    let normalized = token.trim();
+    let lower = normalized.to_ascii_lowercase();
+    let key = match lower.as_str() {
+        "enter" | "return" => return Some((Some("Enter".to_owned()), None)),
+        "escape" | "esc" => return Some((Some("Escape".to_owned()), None)),
+        "tab" => return Some((Some("Tab".to_owned()), None)),
+        "space" => return Some((None, Some("Space".to_owned()))),
+        "backspace" => return Some((Some("Backspace".to_owned()), None)),
+        "delete" => return Some((Some("Delete".to_owned()), None)),
+        "up" | "arrowup" => "ArrowUp",
+        "down" | "arrowdown" => "ArrowDown",
+        "left" | "arrowleft" => "ArrowLeft",
+        "right" | "arrowright" => "ArrowRight",
+        "numpadenter" => "NumpadEnter",
+        _ => {
+            if lower.len() == 1 {
+                let ch = lower.chars().next()?;
+                if ch.is_ascii_alphabetic() {
+                    return Some((None, Some(format!("Key{}", ch.to_ascii_uppercase()))));
+                }
+                if ch.is_ascii_digit() {
+                    return Some((None, Some(format!("Digit{ch}"))));
+                }
+            }
+
+            if normalized.starts_with("Key")
+                || normalized.starts_with("Digit")
+                || normalized.starts_with("Numpad")
+                || normalized.starts_with("Arrow")
+            {
+                return Some((None, Some(normalized.to_owned())));
+            }
+
+            return None;
+        }
+    };
+
+    Some((None, Some(key.to_owned())))
 }
 
 fn parse_modifier(value: &str) -> Result<Modifiers> {
@@ -1585,6 +1733,17 @@ mod tests {
             assert_eq!(config.ui.canvas.opacity, 1.0);
             assert_eq!(config.ui.canvas.background_opacity, 0.97);
             assert_eq!(config.ui.entries.opacity, 1.0);
+            assert_eq!(
+                config.ui.shortcuts.activate_all_windows,
+                Some(crate::config::UiShortcutConfig {
+                    key: Some("Enter".to_owned()),
+                    code: None,
+                    alt: true,
+                    ctrl: false,
+                    meta: false,
+                    shift: false,
+                })
+            );
             assert!(config.ui.colorschemes.contains_key("builtin_light"));
             assert!(config.ui.colorschemes.contains_key("builtin_dark"));
             assert_eq!(config.ui.colors, UiColorOverridesConfig::default());
@@ -1655,6 +1814,34 @@ mod tests {
             assert_eq!(config.ui.layout.badge_size, 48);
             assert_eq!(config.ui.layout.badge_radius, 16);
             assert_eq!(config.ui.layout.icon_size, 40);
+        }
+
+        #[test]
+        fn accepts_custom_ui_shortcut() {
+            let config: Config =
+                toml::from_str("[ui.shortcuts]\nactivate_all_windows = \"Cmd+Shift+Enter\"\n")
+                    .expect("custom UI shortcut should parse");
+
+            assert_eq!(
+                config.ui.shortcuts.activate_all_windows,
+                Some(crate::config::UiShortcutConfig {
+                    key: Some("Enter".to_owned()),
+                    code: None,
+                    alt: false,
+                    ctrl: false,
+                    meta: true,
+                    shift: true,
+                })
+            );
+        }
+
+        #[test]
+        fn accepts_disabled_ui_shortcut() {
+            let config: Config =
+                toml::from_str("[ui.shortcuts]\nactivate_all_windows = \"none\"\n")
+                    .expect("disabled UI shortcut should parse");
+
+            assert_eq!(config.ui.shortcuts.activate_all_windows, None);
         }
 
         #[test]

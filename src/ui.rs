@@ -266,8 +266,20 @@ pub fn html(theme: &UiConfig) -> String {
     HTML_TEMPLATE
         .replace("__SHELL_CLASS__", shell_class)
         .replace("__RUNX_CYCLE_SELECTION_VALUE__", cycle_selection_value)
+        .replace(
+            "__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT_VALUE__",
+            &activate_all_windows_shortcut_json(theme),
+        )
         .replace("__RUNX_STYLE__", &theme_css(theme))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
+}
+
+/// Returns the JSON value consumed by the frontend shortcut matcher.
+pub fn activate_all_windows_shortcut_json(theme: &UiConfig) -> String {
+    match serde_json::to_string(&theme.shortcuts.activate_all_windows) {
+        Ok(value) => value,
+        Err(_) => "null".to_owned(),
+    }
 }
 
 /// Returns the theme-expanded CSS used by the embedded webview.
@@ -598,5 +610,14 @@ mod tests {
         let document = html(&theme);
 
         assert!(document.contains("window.__RUNX_CYCLE_SELECTION__ = true;"));
+    }
+
+    #[test]
+    fn html_exposes_activate_all_windows_shortcut() {
+        let document = html(&UiConfig::default());
+
+        assert!(document.contains(
+            r#"window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {"key":"Enter","code":null,"alt":true,"ctrl":false,"meta":false,"shift":false};"#
+        ));
     }
 }

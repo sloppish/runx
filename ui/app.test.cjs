@@ -36,6 +36,26 @@ test("ctrl-n and ctrl-p use physical key codes so they survive non-latin layouts
   );
 });
 
+test("shortcut matcher supports configurable option-enter", () => {
+  const shortcut = {
+    key: "Enter",
+    code: null,
+    alt: true,
+    ctrl: false,
+    meta: false,
+    shift: false,
+  };
+
+  assert.equal(
+    ui.matchesShortcut({ key: "Enter", code: "Enter", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false }, shortcut),
+    true,
+  );
+  assert.equal(
+    ui.matchesShortcut({ key: "Enter", code: "Enter", altKey: false, ctrlKey: false, metaKey: false, shiftKey: false }, shortcut),
+    false,
+  );
+});
+
 test("typing resets selection to the first item", () => {
   const state = ui.createState();
   state.items = [{}, {}, {}];

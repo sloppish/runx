@@ -44,6 +44,23 @@
     return event.key === "ArrowUp" || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyP");
   }
 
+  function matchesShortcut(event, shortcut) {
+    if (!shortcut) {
+      return false;
+    }
+
+    const keyMatches = !shortcut.key || event.key === shortcut.key;
+    const codeMatches = !shortcut.code || event.code === shortcut.code;
+    return (
+      keyMatches &&
+      codeMatches &&
+      !!event.altKey === !!shortcut.alt &&
+      !!event.ctrlKey === !!shortcut.ctrl &&
+      !!event.metaKey === !!shortcut.meta &&
+      !!event.shiftKey === !!shortcut.shift
+    );
+  }
+
   function applyRenderPayload(state, payload, environment) {
     const payloadQuery = typeof payload.query === "string" ? payload.query : "";
     state.configError = typeof payload.config_error === "string" ? payload.config_error : null;
@@ -88,6 +105,7 @@
     inputChanged,
     isCtrlNextShortcut,
     isCtrlPreviousShortcut,
+    matchesShortcut,
     moveSelection,
   };
 
@@ -109,6 +127,10 @@
 
   function cycleSelectionEnabled() {
     return !!root.__RUNX_CYCLE_SELECTION__;
+  }
+
+  function activateAllWindowsShortcut() {
+    return root.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ || null;
   }
 
   function inConfigErrorMode() {
@@ -222,9 +244,15 @@
       return;
     }
 
+    if (matchesShortcut(event, activateAllWindowsShortcut())) {
+      event.preventDefault();
+      send({ type: "activate", index: state.selectedIndex, all_windows: true });
+      return;
+    }
+
     if (event.key === "Enter") {
       event.preventDefault();
-      send({ type: "activate", index: state.selectedIndex, all_windows: event.altKey });
+      send({ type: "activate", index: state.selectedIndex, all_windows: false });
       return;
     }
 
