@@ -107,7 +107,7 @@ impl Launcher {
             plugin_config,
             plugin_routes,
         ));
-        let icons = Arc::new(IconCache::new()?);
+        let icons = Arc::new(IconCache::new(Some(proxy.clone()))?);
         let providers = ProviderSet::new(config.clone(), plugins.clone(), icons.clone())?;
         let window = build_window(event_loop, &config)?;
         let html = ui::html(&config.ui);
@@ -207,6 +207,18 @@ impl Launcher {
                     &self.loaded.config.ranking,
                     &self.webview,
                 )?;
+            }
+            AppEvent::IconReady => {
+                if self.state.is_visible() {
+                    let token = self.state.session().search_token();
+                    self.search.handle_start_search(
+                        &mut self.state,
+                        token,
+                        &self.loaded.config.ranking,
+                        &self.providers,
+                        self.proxy.clone(),
+                    );
+                }
             }
             AppEvent::StartSearch { token } => self.search.handle_start_search(
                 &mut self.state,

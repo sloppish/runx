@@ -110,6 +110,7 @@ impl Action {
 pub enum AppEvent {
     Frontend(FrontendCommand),
     Render,
+    IconReady,
     StartSearch {
         token: u64,
     },

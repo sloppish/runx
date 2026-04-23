@@ -5,24 +5,29 @@
 
 use std::{
     borrow::Cow,
-    collections::{HashMap, hash_map::DefaultHasher},
+    collections::HashMap,
     fs,
-    hash::{Hash, Hasher},
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::{Mutex, MutexGuard},
+    sync::{Arc, Mutex, MutexGuard},
+    thread,
+    time::UNIX_EPOCH,
 };
 
 use anyhow::{Context, Result};
 use base64::{Engine as _, engine::general_purpose::STANDARD};
 use directories::BaseDirs;
 use image::{ExtendedColorType, ImageReader, codecs::webp::WebPEncoder};
-use objc2_app_kit::NSRunningApplication;
+use objc2_app_kit::{NSRunningApplication, NSWorkspace};
+use objc2_foundation::NSString;
 use plist::{Dictionary, Value};
+use tao::event_loop::EventLoopProxy;
 use wry::http::{
     Request, Response, StatusCode,
     header::{CACHE_CONTROL, CONTENT_TYPE},
 };
+
+use crate::{debug_log, types::AppEvent};
 
 const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
     "/System/Applications/System Settings.app",
@@ -36,13 +41,21 @@ const ICON_RENDER_SIZE: u32 = 64;
 /// In-memory and on-disk cache for bundle and process icons.
 pub struct IconCache {
     cache_dir: PathBuf,
-    icons: Mutex<HashMap<String, Option<String>>>,
+    icons: Arc<Mutex<HashMap<String, IconState>>>,
     process_bundles: Mutex<HashMap<i64, Option<PathBuf>>>,
+    proxy: Option<EventLoopProxy<AppEvent>>,
+}
+
+#[derive(Clone, Debug)]
+enum IconState {
+    Ready(String),
+    Pending,
+    Missing,
 }
 
 impl IconCache {
     /// Creates the icon cache rooted in the user's cache directory.
-    pub fn new() -> Result<Self> {
+    pub fn new(proxy: Option<EventLoopProxy<AppEvent>>) -> Result<Self> {
         let base_dirs =
             BaseDirs::new().context("could not resolve the current user's home directory")?;
         let cache_dir = base_dirs.cache_dir().join("runx/icons");
@@ -51,22 +64,29 @@ impl IconCache {
 
         Ok(Self {
             cache_dir,
-            icons: Mutex::new(HashMap::new()),
+            icons: Arc::new(Mutex::new(HashMap::new())),
             process_bundles: Mutex::new(HashMap::new()),
+            proxy,
         })
     }
 
-    /// Resolves an icon for an application bundle path and returns a data URL.
+    /// Resolves an icon for an application bundle path and returns a protocol URL when ready.
     pub fn icon_for_bundle<P: AsRef<Path>>(&self, bundle_path: P) -> Option<String> {
         let bundle_path = bundle_path.as_ref();
         let key = format!("bundle:{}", bundle_path.display());
-        if let Some(icon) = self.cached_icon(&key) {
-            return icon;
+
+        {
+            let mut cache = lock_or_recover(&self.icons);
+            match cache.get(&key).cloned() {
+                Some(IconState::Ready(url)) => return Some(url),
+                Some(IconState::Pending | IconState::Missing) => return None,
+                None => {
+                    cache.insert(key.clone(), IconState::Pending);
+                }
+            }
         }
 
-        let icon = self.load_bundle_icon(bundle_path).ok().flatten();
-        self.store_icon(key, icon.clone());
-        icon
+        self.resolve_or_schedule_bundle_icon(key, bundle_path)
     }
 
     /// Resolves an icon for the owning app of a process id.
@@ -100,28 +120,83 @@ impl IconCache {
         Some(system_settings_fallback_icon())
     }
 
-    fn cached_icon(&self, key: &str) -> Option<Option<String>> {
-        let cache = lock_or_recover(&self.icons);
-        cache.get(key).cloned()
-    }
-
-    fn store_icon(&self, key: String, value: Option<String>) {
+    fn store_icon_state(&self, key: String, state: IconState) {
         let mut cache = lock_or_recover(&self.icons);
-        cache.insert(key, value);
+        cache.insert(key, state);
     }
 
-    fn load_bundle_icon(&self, bundle_path: &Path) -> Result<Option<String>> {
-        let Some(icon_source) = find_bundle_icon_source(bundle_path)? else {
-            return Ok(None);
-        };
-        let icon_key = stable_hash(bundle_path);
-
-        let webp_path = self.webp_path_for_key(&icon_key);
-        if !webp_path.exists() {
-            render_webp_icon(&icon_source, &webp_path)?;
+    fn resolve_or_schedule_bundle_icon(&self, key: String, bundle_path: &Path) -> Option<String> {
+        if !bundle_path.exists() {
+            self.store_icon_state(key, IconState::Missing);
+            return None;
         }
 
-        Ok(Some(icon_protocol_url(&icon_key)))
+        let icon_key = cache_key_for_bundle(bundle_path);
+        let webp_path = self.webp_path_for_key(&icon_key);
+        let url = icon_protocol_url(&icon_key);
+        if webp_path.exists() {
+            self.store_icon_state(key, IconState::Ready(url.clone()));
+            return Some(url);
+        }
+
+        self.spawn_bundle_icon_render(key, bundle_path.to_path_buf(), webp_path, url);
+        None
+    }
+
+    fn spawn_bundle_icon_render(
+        &self,
+        key: String,
+        bundle_path: PathBuf,
+        webp_path: PathBuf,
+        url: String,
+    ) {
+        let icons = Arc::clone(&self.icons);
+        let proxy = self.proxy.clone();
+        let temp_webp_path = webp_path.with_extension("tmp.webp");
+        let thread_key = key.clone();
+
+        let spawn_result = thread::Builder::new()
+            .name("runx-icon-render".to_owned())
+            .spawn(move || {
+                let render_result = render_bundle_icon_to_webp(&bundle_path, &temp_webp_path)
+                    .and_then(|()| {
+                        fs::rename(&temp_webp_path, &webp_path).with_context(|| {
+                            format!(
+                                "failed to move {} to {}",
+                                temp_webp_path.display(),
+                                webp_path.display()
+                            )
+                        })
+                    });
+
+                let ready = render_result.is_ok();
+                if let Err(error) = render_result {
+                    debug_log::append(format!(
+                        "icon render failed bundle={} error={error:#}",
+                        bundle_path.display()
+                    ));
+                    let _ = fs::remove_file(&temp_webp_path);
+                }
+
+                let mut cache = lock_or_recover(&icons);
+                cache.insert(
+                    thread_key,
+                    if ready {
+                        IconState::Ready(url)
+                    } else {
+                        IconState::Missing
+                    },
+                );
+                drop(cache);
+
+                if ready && let Some(proxy) = proxy {
+                    let _ = proxy.send_event(AppEvent::IconReady);
+                }
+            });
+
+        if spawn_result.is_err() {
+            self.store_icon_state(key, IconState::Missing);
+        }
     }
 
     /// Resolves a `runx://localhost/icon/<hash>.webp` request into an image response.
@@ -190,27 +265,61 @@ fn bundle_root_from_executable(path: &Path) -> Option<PathBuf> {
 }
 
 fn find_bundle_icon_source(bundle_path: &Path) -> Result<Option<PathBuf>> {
-    let info_path = bundle_path.join("Contents/Info.plist");
-    if !info_path.exists() {
-        return Ok(None);
-    }
+    for layout in bundle_icon_layouts(bundle_path) {
+        let plist = Value::from_file(&layout.info_path)
+            .with_context(|| format!("failed to parse {}", layout.info_path.display()))?;
+        let Some(dict) = plist.as_dictionary() else {
+            continue;
+        };
 
-    let plist = Value::from_file(&info_path)
-        .with_context(|| format!("failed to parse {}", info_path.display()))?;
-    let Some(dict) = plist.as_dictionary() else {
-        return Ok(None);
-    };
-
-    let resources_dir = bundle_path.join("Contents/Resources");
-    for candidate in icon_name_candidates(dict) {
-        for path in icon_file_candidates(&resources_dir, &candidate) {
-            if path.exists() {
-                return Ok(Some(path));
+        for candidate in icon_name_candidates(dict) {
+            for path in icon_file_candidates(&layout.resources_dir, &candidate) {
+                if path.exists() {
+                    return Ok(Some(path));
+                }
             }
         }
     }
 
     Ok(None)
+}
+
+struct IconBundleLayout {
+    info_path: PathBuf,
+    resources_dir: PathBuf,
+}
+
+fn bundle_icon_layouts(bundle_path: &Path) -> Vec<IconBundleLayout> {
+    let mut layouts = Vec::new();
+    let standard_info_path = bundle_path.join("Contents/Info.plist");
+    if standard_info_path.exists() {
+        layouts.push(IconBundleLayout {
+            info_path: standard_info_path,
+            resources_dir: bundle_path.join("Contents/Resources"),
+        });
+    }
+
+    let wrapper_dir = bundle_path.join("Wrapper");
+    let Ok(entries) = fs::read_dir(wrapper_dir) else {
+        return layouts;
+    };
+
+    for entry in entries.flatten() {
+        let path = entry.path();
+        if path.extension().and_then(|value| value.to_str()) != Some("app") {
+            continue;
+        }
+
+        let info_path = path.join("Info.plist");
+        if info_path.exists() {
+            layouts.push(IconBundleLayout {
+                info_path,
+                resources_dir: path,
+            });
+        }
+    }
+
+    layouts
 }
 
 fn icon_name_candidates(dict: &Dictionary) -> Vec<String> {
@@ -257,13 +366,62 @@ fn icon_file_candidates(resources_dir: &Path, icon_name: &str) -> Vec<PathBuf> {
     if has_extension {
         candidates.push(resources_dir.join(path));
     } else {
-        for extension in ["icns", "png", "jpg", "jpeg"] {
-            candidates.push(resources_dir.join(format!("{icon_name}.{extension}")));
+        for suffix in [
+            ".icns",
+            "@3x.png",
+            "@2x.png",
+            "@3x~ipad.png",
+            "@2x~ipad.png",
+            ".png",
+            ".jpg",
+            ".jpeg",
+        ] {
+            candidates.push(resources_dir.join(format!("{icon_name}{suffix}")));
         }
         candidates.push(resources_dir.join(path));
     }
 
     candidates
+}
+
+fn render_bundle_icon_to_webp(bundle_path: &Path, webp_path: &Path) -> Result<()> {
+    let source_error = match find_bundle_icon_source(bundle_path)? {
+        Some(icon_source) => match render_webp_icon(&icon_source, webp_path) {
+            Ok(()) => return Ok(()),
+            Err(error) => Some(error),
+        },
+        None => None,
+    };
+
+    match render_workspace_icon_to_webp(bundle_path, webp_path) {
+        Ok(()) => Ok(()),
+        Err(error) => {
+            if let Some(source_error) = source_error {
+                Err(error.context(format!(
+                    "NSWorkspace fallback failed after plist icon render failed: {source_error:#}"
+                )))
+            } else {
+                Err(error)
+            }
+        }
+    }
+}
+
+fn render_workspace_icon_to_webp(bundle_path: &Path, webp_path: &Path) -> Result<()> {
+    let temp_tiff_path = webp_path.with_extension("tmp.tiff");
+    let bundle_path_text = bundle_path.to_string_lossy();
+    let bundle_path = NSString::from_str(&bundle_path_text);
+    let workspace = NSWorkspace::sharedWorkspace();
+    let icon = workspace.iconForFile(&bundle_path);
+    let tiff = icon
+        .TIFFRepresentation()
+        .context("macOS returned an icon without a TIFF representation")?;
+    fs::write(&temp_tiff_path, tiff.to_vec())
+        .with_context(|| format!("failed to create {}", temp_tiff_path.display()))?;
+
+    let render_result = render_webp_icon(&temp_tiff_path, webp_path);
+    let _ = fs::remove_file(&temp_tiff_path);
+    render_result
 }
 
 fn render_webp_icon(icon_source: &Path, webp_path: &Path) -> Result<()> {
@@ -332,10 +490,115 @@ fn response_with_status(
         .unwrap_or_else(|_| Response::new(Cow::Borrowed(body)))
 }
 
-fn stable_hash(path: &Path) -> String {
-    let mut hasher = DefaultHasher::new();
-    path.hash(&mut hasher);
+fn cache_key_for_bundle(path: &Path) -> String {
+    let signature = bundle_metadata_signature(path);
+    let mut hasher = StableCacheHasher::new();
+    hasher.update_str(ICON_CACHE_FORMAT_VERSION);
+    hasher.update_str(&path.to_string_lossy());
+    hasher.update_optional_u128(signature.bundle_modified_at);
+    hasher.update_optional_str(signature.bundle_version.as_deref());
     format!("{:016x}", hasher.finish())
+}
+
+fn bundle_metadata_signature(path: &Path) -> BundleMetadataSignature {
+    BundleMetadataSignature {
+        bundle_modified_at: modified_at(path),
+        bundle_version: bundle_version(path),
+    }
+}
+
+struct BundleMetadataSignature {
+    bundle_modified_at: Option<u128>,
+    bundle_version: Option<String>,
+}
+
+struct StableCacheHasher {
+    state: u64,
+}
+
+impl StableCacheHasher {
+    fn new() -> Self {
+        Self {
+            state: 0xcbf2_9ce4_8422_2325,
+        }
+    }
+
+    fn update_str(&mut self, value: &str) {
+        self.update_field(value.as_bytes());
+    }
+
+    fn update_optional_str(&mut self, value: Option<&str>) {
+        match value {
+            Some(value) => {
+                self.update(&[1]);
+                self.update_str(value);
+            }
+            None => self.update(&[0]),
+        }
+    }
+
+    fn update_optional_u128(&mut self, value: Option<u128>) {
+        match value {
+            Some(value) => {
+                self.update(&[1]);
+                self.update_field(&value.to_le_bytes());
+            }
+            None => self.update(&[0]),
+        }
+    }
+
+    fn update_field(&mut self, bytes: &[u8]) {
+        self.update(&bytes.len().to_le_bytes());
+        self.update(bytes);
+    }
+
+    fn update(&mut self, bytes: &[u8]) {
+        for byte in bytes {
+            self.state ^= u64::from(*byte);
+            self.state = self.state.wrapping_mul(0x0000_0100_0000_01b3);
+        }
+    }
+
+    fn finish(self) -> u64 {
+        self.state
+    }
+}
+
+fn modified_at(path: &Path) -> Option<u128> {
+    fs::metadata(path)
+        .ok()?
+        .modified()
+        .ok()?
+        .duration_since(UNIX_EPOCH)
+        .ok()
+        .map(|duration| duration.as_nanos())
+}
+
+fn bundle_version(path: &Path) -> Option<String> {
+    for layout in bundle_icon_layouts(path) {
+        let Ok(plist) = Value::from_file(layout.info_path) else {
+            continue;
+        };
+        let Some(dict) = plist.as_dictionary() else {
+            continue;
+        };
+
+        let identifier = dict
+            .get("CFBundleIdentifier")
+            .and_then(Value::as_string)
+            .unwrap_or_default();
+        let version = dict
+            .get("CFBundleVersion")
+            .or_else(|| dict.get("CFBundleShortVersionString"))
+            .and_then(Value::as_string)
+            .unwrap_or_default();
+
+        if !identifier.is_empty() || !version.is_empty() {
+            return Some(format!("{identifier}:{version}"));
+        }
+    }
+
+    None
 }
 
 fn system_settings_fallback_icon() -> String {
@@ -365,14 +628,20 @@ fn system_settings_fallback_icon() -> String {
 
 #[cfg(test)]
 mod tests {
-    use super::{bundle_root_from_executable, icon_key_from_request_path, render_webp_icon};
+    use super::{
+        IconCache, bundle_root_from_executable, cache_key_for_bundle, find_bundle_icon_source,
+        icon_key_from_request_path, icon_protocol_url, render_webp_icon,
+    };
     use base64::{Engine as _, engine::general_purpose::STANDARD};
     use std::{
+        collections::HashMap,
         fs,
         path::{Path, PathBuf},
         process,
+        sync::{Arc, Mutex},
         time::{SystemTime, UNIX_EPOCH},
     };
+    use wry::http::{Request, StatusCode};
 
     #[test]
     fn finds_app_bundle_from_executable_path() {
@@ -402,6 +671,92 @@ mod tests {
         assert!(icon_key_from_request_path("/icons/deadbeef.webp").is_none());
         assert!(icon_key_from_request_path("/icon/not-hex.webp").is_none());
         assert!(icon_key_from_request_path("/icon/deadbeef.svg").is_none());
+    }
+
+    #[test]
+    fn finds_icons_in_wrapped_app_bundles() {
+        let temp_dir = unique_temp_dir();
+        let bundle_path = temp_dir.join("Outer.app");
+        let wrapped_path = bundle_path.join("Wrapper/Inner.app");
+        fs::create_dir_all(&wrapped_path).expect("wrapped app should be created");
+        let icon_path = wrapped_path.join("AppIcon60x60@2x.png");
+        fs::write(&icon_path, tiny_png_bytes()).expect("wrapped icon should be written");
+        fs::write(
+            wrapped_path.join("Info.plist"),
+            r#"<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleIdentifier</key>
+  <string>com.example.wrapped</string>
+  <key>CFBundleVersion</key>
+  <string>1</string>
+  <key>CFBundleIcons</key>
+  <dict>
+    <key>CFBundlePrimaryIcon</key>
+    <dict>
+      <key>CFBundleIconFiles</key>
+      <array>
+        <string>AppIcon60x60</string>
+      </array>
+    </dict>
+  </dict>
+</dict>
+</plist>
+"#,
+        )
+        .expect("wrapped plist should be written");
+
+        assert_eq!(
+            find_bundle_icon_source(&bundle_path).expect("icon lookup should succeed"),
+            Some(icon_path.clone())
+        );
+        assert_ne!(
+            cache_key_for_bundle(&bundle_path),
+            cache_key_for_bundle(&temp_dir)
+        );
+
+        let _ = fs::remove_file(&icon_path);
+        let _ = fs::remove_file(wrapped_path.join("Info.plist"));
+        let _ = fs::remove_dir(&wrapped_path);
+        let _ = fs::remove_dir(bundle_path.join("Wrapper"));
+        let _ = fs::remove_dir(&bundle_path);
+        let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn returns_ready_disk_cache_entry_without_rendering() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let bundle_path = temp_dir.join("Sample.app");
+        fs::create_dir_all(&bundle_path).expect("bundle dir should be created");
+
+        let cache = IconCache {
+            cache_dir: temp_dir.clone(),
+            icons: Arc::new(Mutex::new(HashMap::new())),
+            process_bundles: Mutex::new(HashMap::new()),
+            proxy: None,
+        };
+        let icon_key = cache_key_for_bundle(&bundle_path);
+        let webp_path = cache.webp_path_for_key(&icon_key);
+        fs::write(&webp_path, b"RIFFxxxxWEBP").expect("cached webp should be written");
+
+        assert_eq!(
+            cache.icon_for_bundle(&bundle_path),
+            Some(icon_protocol_url(&icon_key))
+        );
+
+        let request = Request::builder()
+            .uri(format!("runx://localhost/icon/{icon_key}.webp"))
+            .body(Vec::new())
+            .expect("request should build");
+        let response = cache.protocol_response(&request);
+        assert_eq!(response.status(), StatusCode::OK);
+        assert_eq!(response.body().as_ref(), b"RIFFxxxxWEBP");
+
+        let _ = fs::remove_file(&webp_path);
+        let _ = fs::remove_dir(&bundle_path);
+        let _ = fs::remove_dir(&temp_dir);
     }
 
     #[test]

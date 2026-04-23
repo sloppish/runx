@@ -143,6 +143,10 @@ fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
                 continue;
             }
 
+            if is_nested_app_bundle(path) {
+                continue;
+            }
+
             let normalized = path.to_string_lossy().to_string();
             if !seen.insert(normalized.clone()) {
                 continue;
@@ -164,6 +168,14 @@ fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
 
     apps.sort_by(|left, right| left.name.cmp(&right.name));
     apps
+}
+
+fn is_nested_app_bundle(path: &Path) -> bool {
+    path.parent().is_some_and(|parent| {
+        parent
+            .ancestors()
+            .any(|ancestor| ancestor.extension().and_then(|value| value.to_str()) == Some("app"))
+    })
 }
 
 fn score_apps(
@@ -278,8 +290,9 @@ fn plist_truthy(value: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppRecord, app_match_score};
+    use super::{AppRecord, app_match_score, is_nested_app_bundle};
     use crate::config::AppsProviderConfig;
+    use std::path::Path;
 
     #[test]
     fn app_name_boosts_are_configurable() {
@@ -305,5 +318,13 @@ mod tests {
             app_match_score(&app, "ru", &config) - app_match_score(&app, "ru", &without_boosts),
             5
         );
+    }
+
+    #[test]
+    fn nested_wrapped_app_bundles_are_not_indexed_as_apps() {
+        assert!(!is_nested_app_bundle(Path::new("/Applications/Outer.app")));
+        assert!(is_nested_app_bundle(Path::new(
+            "/Applications/Outer.app/Wrapper/Inner.app"
+        )));
     }
 }
