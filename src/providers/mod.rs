@@ -5,7 +5,6 @@
 
 pub mod apps;
 pub mod settings;
-pub mod spotlight;
 pub mod windows;
 
 use std::{
@@ -25,10 +24,7 @@ use crate::{
     types::{AppEvent, SearchItem},
 };
 
-use self::{
-    apps::AppProvider, settings::SettingsProvider, spotlight::SpotlightProvider,
-    windows::WindowsProvider,
-};
+use self::{apps::AppProvider, settings::SettingsProvider, windows::WindowsProvider};
 
 #[derive(Clone)]
 pub struct ProviderSet {
@@ -38,7 +34,6 @@ pub struct ProviderSet {
     apps: ProviderWorker,
     settings: ProviderWorker,
     plugins: ProviderWorker,
-    spotlight: ProviderWorker,
 }
 
 impl ProviderSet {
@@ -54,7 +49,6 @@ impl ProviderSet {
         ));
         let apps = Arc::new(AppProvider::new(icons.clone())?);
         let settings = Arc::new(SettingsProvider::new(icons.clone())?);
-        let spotlight = Arc::new(SpotlightProvider::new(icons));
 
         Ok(Self {
             plugins_host: plugins.clone(),
@@ -75,11 +69,6 @@ impl ProviderSet {
                 move |query| provider.search(&query, limit)
             })?,
             plugins: ProviderWorker::new("plugins", move |query| plugins.search(&query))?,
-            spotlight: ProviderWorker::new("spotlight", {
-                let provider = spotlight;
-                let limit = config.ranking.result_limit;
-                move |query| provider.search(&query, limit)
-            })?,
         })
     }
 
@@ -100,7 +89,7 @@ impl ProviderSet {
             empty_query_providers,
             self.plugins_host.is_routed_query(query),
         );
-        ["windows", "apps", "settings", "plugins", "spotlight"]
+        ["windows", "apps", "settings", "plugins"]
             .into_iter()
             .filter(|provider| enabled.contains(provider))
             .count()
@@ -135,9 +124,6 @@ impl ProviderSet {
             self.plugins
                 .search(proxy.clone(), generation, query.clone());
         }
-        if enabled.contains("spotlight") {
-            self.spotlight.search(proxy, generation, query);
-        }
     }
 }
 
@@ -149,10 +135,11 @@ fn enabled_providers_for_query<'a>(
     if !query.trim().is_empty() {
         if routed_plugin_query {
             return ["plugins"].into_iter().collect();
+        } else {
+            return ["windows", "apps", "settings", "plugins"]
+                .into_iter()
+                .collect();
         }
-        return ["windows", "apps", "settings", "plugins", "spotlight"]
-            .into_iter()
-            .collect();
     }
 
     empty_query_providers.iter().map(String::as_str).collect()
@@ -177,7 +164,7 @@ mod tests {
 
         assert_eq!(
             enabled,
-            HashSet::from(["windows", "apps", "settings", "plugins", "spotlight"])
+            HashSet::from(["windows", "apps", "settings", "plugins"])
         );
     }
 

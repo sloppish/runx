@@ -29,7 +29,7 @@ const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `provider_score_boosts` lets you nudge merged scores per provider.
 # `score_rules` lets you boost or demote specific result text patterns.
 # `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
-# `focus_behavior` controls how Runx tries to surface a selected window result.
+# `providers.windows.focus_behavior` controls how Runx tries to surface a selected window result.
 
 [hotkey]
 key = "Space"
@@ -48,12 +48,12 @@ focus_behavior = "focus_window_then_activate_fallback"
 
 [ranking]
 tie_threshold = 120
-provider_order = ["windows", "apps", "settings", "plugins", "spotlight"]
+provider_order = ["windows", "apps", "settings", "plugins"]
 empty_query_providers = ["windows"]
 result_limit = 24
 # Example:
 # [ranking.provider_score_boosts]
-# spotlight = -150
+# apps = 60
 # [[ranking.score_rules]]
 # providers = ["apps", "windows"]
 # field = "title"
@@ -118,7 +118,7 @@ badge_radius = 14
 icon_size = 46
 "##;
 
-const KNOWN_PROVIDER_NAMES: [&str; 5] = ["windows", "apps", "settings", "plugins", "spotlight"];
+const KNOWN_PROVIDER_NAMES: [&str; 4] = ["windows", "apps", "settings", "plugins"];
 const BUILTIN_COLORSCHEME_NAMES: [&str; 2] = ["builtin_light", "builtin_dark"];
 
 /// Fully loaded configuration together with derived filesystem paths.
@@ -516,7 +516,6 @@ struct RawProviderScoreBoostsSpans {
     apps: Option<i64>,
     settings: Option<i64>,
     plugins: Option<i64>,
-    spotlight: Option<i64>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -1073,7 +1072,6 @@ impl Default for RankingConfig {
                 "apps".to_owned(),
                 "settings".to_owned(),
                 "plugins".to_owned(),
-                "spotlight".to_owned(),
             ],
             empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: HashMap::new(),
@@ -1413,9 +1411,9 @@ mod tests {
         #[test]
         fn accepts_provider_score_boosts() {
             let config: Config =
-                toml::from_str("[ranking.provider_score_boosts]\nspotlight = -150\napps = 60\n")
+                toml::from_str("[ranking.provider_score_boosts]\nsettings = -150\napps = 60\n")
                     .expect("provider score boosts should parse");
-            assert_eq!(config.ranking.provider_score_boost("spotlight"), -150);
+            assert_eq!(config.ranking.provider_score_boost("settings"), -150);
             assert_eq!(config.ranking.provider_score_boost("apps"), 60);
             assert_eq!(config.ranking.provider_score_boost("windows"), 0);
         }

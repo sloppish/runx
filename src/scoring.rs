@@ -190,7 +190,7 @@ mod tests {
     fn provider_score_boosts_can_override_close_scores() {
         let ranking = RankingConfig {
             tie_threshold: 0,
-            provider_order: vec!["spotlight".to_owned(), "apps".to_owned()],
+            provider_order: vec!["settings".to_owned(), "apps".to_owned()],
             empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: [("apps".to_owned(), 20)].into_iter().collect(),
             score_rules: vec![],
@@ -198,7 +198,7 @@ mod tests {
         };
 
         let items = vec![
-            item("spot", "spotlight", "Spotlight Hit", 100),
+            item("settings", "settings", "Settings Hit", 100),
             item("app", "apps", "App Hit", 90),
         ];
 
@@ -207,7 +207,7 @@ mod tests {
             .iter()
             .map(|item| item.id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(ids, vec!["app", "spot"]);
+        assert_eq!(ids, vec!["app", "settings"]);
     }
 
     #[test]
@@ -228,7 +228,7 @@ mod tests {
         };
 
         let items = vec![
-            item("spotlight", "apps", "Spotlight", 100),
+            item("settings", "apps", "Settings", 100),
             item("spotify", "apps", "Spotify", 90),
         ];
 
@@ -237,7 +237,7 @@ mod tests {
             .iter()
             .map(|item| item.id.as_str())
             .collect::<Vec<_>>();
-        assert_eq!(ids, vec!["spotify", "spotlight"]);
+        assert_eq!(ids, vec!["spotify", "settings"]);
     }
 
     fn item(id: &str, provider: &str, title: &str, raw_score: i64) -> SearchItem {
@@ -250,8 +250,8 @@ mod tests {
             subtitle: provider.to_owned(),
             compact: false,
             raw_score,
-            action: Action::OpenPath {
-                path: format!("/tmp/{id}"),
+            action: Action::OpenApplication {
+                path: format!("/Applications/{id}.app"),
             },
         }
     }

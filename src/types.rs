@@ -78,9 +78,6 @@ pub enum Action {
     OpenApplication {
         path: String,
     },
-    OpenPath {
-        path: String,
-    },
     OpenSettings {
         url: String,
         title: String,
@@ -103,9 +100,7 @@ impl Action {
             Self::Noop => false,
             Self::FocusWindow { .. } => false,
             Self::Plugin { payload, .. } => payload.likely_needs_accessibility(),
-            Self::OpenApplication { .. } | Self::OpenPath { .. } | Self::OpenSettings { .. } => {
-                false
-            }
+            Self::OpenApplication { .. } | Self::OpenSettings { .. } => false,
         }
     }
 }

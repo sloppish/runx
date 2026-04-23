@@ -24,10 +24,6 @@ pub fn execute_action(
             macos::open_application(path)?;
             Ok(Some(format!("Opened {}", display_name(path))))
         }
-        Action::OpenPath { path } => {
-            macos::open_path(path)?;
-            Ok(Some(format!("Opened {}", display_name(path))))
-        }
         Action::OpenSettings { url, title } => {
             macos::open_settings(url)?;
             Ok(Some(format!("Opened {}", title)))

@@ -234,7 +234,6 @@ fn provider_error_item(provider: &str, message: String, generation: u64) -> Sear
 fn provider_error_title(provider: &str) -> String {
     match provider {
         "plugins" => "Plugin query error".to_owned(),
-        "spotlight" => "Spotlight query error".to_owned(),
         "settings" => "Settings query error".to_owned(),
         "apps" => "App query error".to_owned(),
         "windows" => "Window query error".to_owned(),
@@ -430,7 +429,6 @@ mod tests {
                 "apps".to_owned(),
                 "settings".to_owned(),
                 "plugins".to_owned(),
-                "spotlight".to_owned(),
             ],
             empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: Default::default(),
@@ -449,8 +447,8 @@ mod tests {
             subtitle: "test".to_owned(),
             compact: false,
             raw_score,
-            action: Action::OpenPath {
-                path: format!("/tmp/{id}"),
+            action: Action::OpenApplication {
+                path: format!("/Applications/{id}.app"),
             },
         }
     }
@@ -465,7 +463,7 @@ mod tests {
             subtitle: "/Applications/Test.app".to_owned(),
             compact: false,
             raw_score,
-            action: Action::OpenPath {
+            action: Action::OpenApplication {
                 path: format!("/Applications/{id}.app"),
             },
         }

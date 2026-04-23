@@ -164,11 +164,6 @@ pub fn open_application(path: &str) -> Result<()> {
     run_quiet("open", &[path])
 }
 
-/// Opens an arbitrary path through Launch Services.
-pub fn open_path(path: &str) -> Result<()> {
-    run_quiet("open", &[path])
-}
-
 /// Opens a System Settings deep-link URL.
 pub fn open_settings(url: &str) -> Result<()> {
     run_quiet("open", &[url])
