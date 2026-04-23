@@ -47,7 +47,10 @@ impl ProviderSet {
             icons.clone(),
             config.providers.windows.include_other_desktops,
         ));
-        let apps = Arc::new(AppProvider::new(icons.clone())?);
+        let apps = Arc::new(AppProvider::new(
+            icons.clone(),
+            config.providers.apps.clone(),
+        )?);
         let settings = Arc::new(SettingsProvider::new(icons.clone())?);
 
         Ok(Self {

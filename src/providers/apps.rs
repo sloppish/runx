@@ -14,6 +14,7 @@ use plist::Value;
 use walkdir::{DirEntry, WalkDir};
 
 use crate::{
+    config::AppsProviderConfig,
     icons::IconCache,
     scoring::fuzzy_score,
     types::{Action, SearchItem},
@@ -24,6 +25,7 @@ pub struct AppProvider {
     roots: Vec<PathBuf>,
     index: Arc<Mutex<AppIndex>>,
     icons: Arc<IconCache>,
+    config: AppsProviderConfig,
 }
 
 #[derive(Clone)]
@@ -43,7 +45,7 @@ const APP_INDEX_REFRESH_COOLDOWN: Duration = Duration::from_secs(10);
 
 impl AppProvider {
     /// Scans well-known application directories and builds the in-memory index.
-    pub fn new(icons: Arc<IconCache>) -> Result<Self> {
+    pub fn new(icons: Arc<IconCache>, config: AppsProviderConfig) -> Result<Self> {
         let base_dirs = BaseDirs::new().context("could not determine the home directory")?;
         let mut roots = vec![
             PathBuf::from("/Applications"),
@@ -64,6 +66,7 @@ impl AppProvider {
                 refreshing: false,
             })),
             icons,
+            config,
         })
     }
 
@@ -78,7 +81,7 @@ impl AppProvider {
                 .index
                 .lock()
                 .unwrap_or_else(|poison| poison.into_inner());
-            score_apps(&index.apps, query, limit)
+            score_apps(&index.apps, query, limit, &self.config)
         };
 
         if !matches.is_empty() {
@@ -163,10 +166,15 @@ fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
     apps
 }
 
-fn score_apps(apps: &[AppRecord], query: &str, limit: usize) -> Vec<(i64, AppRecord)> {
+fn score_apps(
+    apps: &[AppRecord],
+    query: &str,
+    limit: usize,
+    config: &AppsProviderConfig,
+) -> Vec<(i64, AppRecord)> {
     let mut matches = Vec::new();
     for app in apps {
-        let score = fuzzy_score(&app.name, query) + app.score_adjustment;
+        let score = app_match_score(app, query, config);
         if score <= 0 {
             continue;
         }
@@ -177,6 +185,21 @@ fn score_apps(apps: &[AppRecord], query: &str, limit: usize) -> Vec<(i64, AppRec
     matches.sort_by_key(|item| std::cmp::Reverse(item.0));
     matches.truncate(limit);
     matches
+}
+
+fn app_match_score(app: &AppRecord, query: &str, config: &AppsProviderConfig) -> i64 {
+    let query = query.trim();
+    let mut score = fuzzy_score(&app.name, query) + app.score_adjustment;
+    let app_name = app.name.to_ascii_lowercase();
+    let query = query.to_ascii_lowercase();
+
+    if app_name == query {
+        score += config.exact_name_boost;
+    } else if app_name.starts_with(&query) {
+        score += config.prefix_name_boost;
+    }
+
+    score
 }
 
 fn build_items(matches: Vec<(i64, AppRecord)>, icons: &IconCache) -> Vec<SearchItem> {
@@ -250,5 +273,37 @@ fn plist_truthy(value: &Value) -> bool {
         Value::String(text) => matches!(text.to_ascii_lowercase().as_str(), "1" | "true" | "yes"),
         Value::Integer(number) => number.as_signed().is_some_and(|value| value != 0),
         _ => false,
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AppRecord, app_match_score};
+    use crate::config::AppsProviderConfig;
+
+    #[test]
+    fn app_name_boosts_are_configurable() {
+        let app = AppRecord {
+            name: "Runx".to_owned(),
+            path: "/Applications/Runx.app".to_owned(),
+            score_adjustment: 0,
+        };
+        let config = AppsProviderConfig {
+            exact_name_boost: 17,
+            prefix_name_boost: 5,
+        };
+        let without_boosts = AppsProviderConfig {
+            exact_name_boost: 0,
+            prefix_name_boost: 0,
+        };
+
+        assert_eq!(
+            app_match_score(&app, "runx", &config) - app_match_score(&app, "runx", &without_boosts),
+            17
+        );
+        assert_eq!(
+            app_match_score(&app, "ru", &config) - app_match_score(&app, "ru", &without_boosts),
+            5
+        );
     }
 }

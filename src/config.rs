@@ -46,6 +46,10 @@ show_on = "primary"
 include_other_desktops = false
 focus_behavior = "focus_window_then_activate_fallback"
 
+[providers.apps]
+exact_name_boost = 200
+prefix_name_boost = 100
+
 [ranking]
 tie_threshold = 120
 provider_order = ["windows", "apps", "settings", "plugins"]
@@ -167,6 +171,7 @@ pub struct WindowConfig {
 #[serde(default, deny_unknown_fields)]
 pub struct ProvidersConfig {
     pub windows: WindowsProviderConfig,
+    pub apps: AppsProviderConfig,
 }
 
 /// Settings for the macOS windows provider and window activation path.
@@ -175,6 +180,14 @@ pub struct ProvidersConfig {
 pub struct WindowsProviderConfig {
     pub include_other_desktops: bool,
     pub focus_behavior: WindowFocusBehavior,
+}
+
+/// Settings for installed application search ranking.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(default, deny_unknown_fields)]
+pub struct AppsProviderConfig {
+    pub exact_name_boost: i64,
+    pub prefix_name_boost: i64,
 }
 
 /// Monitor selection strategy for placing the launcher window.
@@ -1144,6 +1157,15 @@ impl Default for WindowsProviderConfig {
     }
 }
 
+impl Default for AppsProviderConfig {
+    fn default() -> Self {
+        Self {
+            exact_name_boost: 200,
+            prefix_name_boost: 100,
+        }
+    }
+}
+
 impl Default for UiCanvasConfig {
     fn default() -> Self {
         Self {
@@ -1382,6 +1404,27 @@ mod tests {
                 config.providers.windows.focus_behavior,
                 WindowFocusBehavior::FocusWindowOnly
             );
+        }
+    }
+
+    mod apps_provider_config_tests {
+        use super::Config;
+
+        #[test]
+        fn defaults_to_current_app_name_boosts() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.providers.apps.exact_name_boost, 200);
+            assert_eq!(config.providers.apps.prefix_name_boost, 100);
+        }
+
+        #[test]
+        fn accepts_custom_app_name_boosts() {
+            let config: Config = toml::from_str(
+                "[providers.apps]\nexact_name_boost = 350\nprefix_name_boost = 80\n",
+            )
+            .expect("app boosts should parse");
+            assert_eq!(config.providers.apps.exact_name_boost, 350);
+            assert_eq!(config.providers.apps.prefix_name_boost, 80);
         }
     }
 
