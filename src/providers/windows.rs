@@ -1,7 +1,7 @@
 //! Provider for currently open windows.
 
 use std::{
-    collections::HashSet,
+    collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
 };
 
@@ -60,8 +60,8 @@ impl WindowsProvider {
 
     /// Starts a new launcher-visible session and captures a fresh snapshot when permitted.
     pub fn begin_session(&self) {
-        let windows =
-            macos::has_screen_capture_access().then(|| read_windows(self.include_other_desktops));
+        let windows = macos::ensure_accessibility_trusted(false)
+            .then(|| read_windows(self.include_other_desktops));
         let mut session = lock_or_recover(&self.session);
         session.active = true;
         session.windows = windows;
@@ -136,7 +136,7 @@ impl WindowsProvider {
             }
         }
 
-        if !macos::request_screen_capture_access_once() {
+        if !macos::ensure_accessibility_trusted(true) {
             return None;
         }
 
@@ -173,7 +173,7 @@ fn read_window_entries(list_options: u32) -> Vec<WindowRecord> {
         return Vec::new();
     };
 
-    let mut windows = Vec::new();
+    let mut raw_windows = Vec::new();
 
     for raw_value in array.get_all_values() {
         let dict = unsafe { CFDictionary::<CFString, CFType>::wrap_under_get_rule(raw_value as _) };
@@ -188,7 +188,7 @@ fn read_window_entries(list_options: u32) -> Vec<WindowRecord> {
         let pid = get_number(&dict, unsafe { kCGWindowOwnerPID }).unwrap_or_default();
         let window_id = get_number(&dict, unsafe { kCGWindowNumber }).unwrap_or_default() as u32;
 
-        if owner.is_empty() || title.is_empty() {
+        if owner.is_empty() || pid == 0 || window_id == 0 {
             continue;
         }
 
@@ -199,13 +199,45 @@ fn read_window_entries(list_options: u32) -> Vec<WindowRecord> {
             continue;
         }
 
-        windows.push(WindowRecord {
+        raw_windows.push(WindowRecord {
             title,
             owner,
             pid,
             window_id,
             z_index: 0,
         });
+    }
+
+    let ax_titles = accessibility_titles_by_window(raw_windows.as_slice());
+    apply_accessibility_titles(raw_windows, &ax_titles)
+}
+
+fn accessibility_titles_by_window(windows: &[WindowRecord]) -> HashMap<(i64, u32), String> {
+    let mut titles = HashMap::new();
+    let pids: HashSet<i64> = windows.iter().map(|window| window.pid).collect();
+    for pid in pids {
+        for window in macos::accessibility_windows_for_pid(pid) {
+            if !window.title.is_empty() {
+                titles.insert((pid, window.window_id), window.title);
+            }
+        }
+    }
+    titles
+}
+
+fn apply_accessibility_titles(
+    raw_windows: Vec<WindowRecord>,
+    ax_titles: &HashMap<(i64, u32), String>,
+) -> Vec<WindowRecord> {
+    let mut windows = Vec::with_capacity(raw_windows.len());
+    for mut window in raw_windows {
+        if let Some(title) = ax_titles.get(&(window.pid, window.window_id)) {
+            window.title.clone_from(title);
+        }
+        if window.title.is_empty() {
+            window.title.clone_from(&window.owner);
+        }
+        windows.push(window);
     }
 
     windows
@@ -260,7 +292,9 @@ fn empty_query_score(window: &WindowRecord) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use super::{WindowRecord, empty_query_score, merge_window_orders};
+    use std::collections::HashMap;
+
+    use super::{WindowRecord, apply_accessibility_titles, empty_query_score, merge_window_orders};
 
     fn window(window_id: u32, z_index: usize) -> WindowRecord {
         WindowRecord {
@@ -305,5 +339,40 @@ mod tests {
         let back = window(2, 5);
 
         assert!(empty_query_score(&front) > empty_query_score(&back));
+    }
+
+    #[test]
+    fn accessibility_title_overrides_core_graphics_title() {
+        let mut ax_titles = HashMap::new();
+        ax_titles.insert((1, 10), "Accessibility title".to_owned());
+
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: "CoreGraphics title".to_owned(),
+                owner: "Example".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &ax_titles,
+        );
+
+        assert_eq!(windows[0].title, "Accessibility title");
+    }
+
+    #[test]
+    fn missing_window_title_falls_back_to_owner() {
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: String::new(),
+                owner: "Example".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &HashMap::new(),
+        );
+
+        assert_eq!(windows[0].title, "Example");
     }
 }

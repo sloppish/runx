@@ -63,8 +63,6 @@ unsafe extern "C" {
     static kAXTrustedCheckOptionPrompt: CFStringRef;
 
     fn AXIsProcessTrustedWithOptions(options: CFDictionaryRef) -> Boolean;
-    fn CGPreflightScreenCaptureAccess() -> Boolean;
-    fn CGRequestScreenCaptureAccess() -> Boolean;
     fn AXUIElementCreateApplication(pid: c_int) -> AXUIElementRef;
     fn AXUIElementCopyAttributeValue(
         element: AXUIElementRef,
@@ -96,6 +94,13 @@ pub struct FrontmostApp {
 #[derive(Debug, Clone, Copy)]
 pub struct CursorDisplayLocation {
     pub display_id: u32,
+}
+
+/// Window metadata exposed through macOS Accessibility.
+#[derive(Debug, Clone)]
+pub struct AccessibilityWindow {
+    pub window_id: u32,
+    pub title: String,
 }
 
 #[derive(Debug, Clone)]
@@ -354,20 +359,31 @@ pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) != 0 }
 }
 
-/// Requests Screen Recording access if needed and returns whether it is granted.
-pub fn request_screen_capture_access_once() -> bool {
-    if has_screen_capture_access() {
-        return true;
+/// Returns Accessibility-visible windows for a running application.
+pub fn accessibility_windows_for_pid(pid: i64) -> Vec<AccessibilityWindow> {
+    let Some(app_element) = OwnedAxElement::application(pid as c_int) else {
+        return Vec::new();
+    };
+    let _ = app_element.set_messaging_timeout(AX_MESSAGING_TIMEOUT_SECONDS);
+
+    let Ok(Some(windows)) =
+        app_element.copy_array_attribute(ax_windows_attribute().as_concrete_TypeRef())
+    else {
+        return Vec::new();
+    };
+
+    let mut output = Vec::new();
+    for raw_window in windows.get_all_values() {
+        let window = raw_window.cast();
+        let Some(window_id) = copy_ax_window_id(window).ok().flatten() else {
+            continue;
+        };
+        let title = copy_ax_string(window, ax_title_attribute().as_concrete_TypeRef())
+            .unwrap_or_default()
+            .unwrap_or_default();
+        output.push(AccessibilityWindow { window_id, title });
     }
-
-    let _ = unsafe { CGRequestScreenCaptureAccess() != 0 };
-
-    has_screen_capture_access()
-}
-
-/// Returns whether macOS currently grants Screen Recording access to Runx.
-pub fn has_screen_capture_access() -> bool {
-    unsafe { CGPreflightScreenCaptureAccess() != 0 }
+    output
 }
 
 /// Returns whether the running executable is packaged as a `.app` bundle and can be used as a login item.
@@ -720,6 +736,10 @@ fn ax_raise_action() -> CFString {
     CFString::from_static_string("AXRaise")
 }
 
+fn ax_title_attribute() -> CFString {
+    CFString::from_static_string("AXTitle")
+}
+
 fn ax_windows_attribute() -> CFString {
     CFString::from_static_string("AXWindows")
 }
@@ -796,6 +816,15 @@ fn copy_ax_window_id(element: AXUIElementRef) -> Result<Option<u32>> {
         K_AX_ERROR_ATTRIBUTE_UNSUPPORTED | K_AX_ERROR_NO_VALUE => Ok(None),
         other => bail!(ax_error_message(other)),
     }
+}
+
+fn copy_ax_string(element: AXUIElementRef, attribute: CFStringRef) -> Result<Option<String>> {
+    let Some(value) = copy_ax_attribute_value(element, attribute)
+        .map_err(|error| anyhow::anyhow!(ax_error_message(error)))?
+    else {
+        return Ok(None);
+    };
+    Ok(value.downcast::<CFString>().map(|value| value.to_string()))
 }
 
 fn copy_ax_attribute_value(
