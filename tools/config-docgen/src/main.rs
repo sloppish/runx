@@ -907,7 +907,7 @@ fn render_colorscheme_section(
     builtin_schemes: &[String],
 ) -> String {
     let intro = format!(
-        "Named colorscheme definitions. Runx always knows about {}. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Omitted keys inherit from the base palette or the built-in default. Most users only need `accent`, `background`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.",
+        "Named colorscheme definitions. Runx always knows about {}. Custom schemes can use any other name and are selected through `[ui].colorscheme`. For custom schemes, set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Built-in schemes can be partially overridden and must not set `base`. Most users only need `accent`, `background`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.",
         builtin_schemes
             .iter()
             .map(|name| format!("`{name}`"))
@@ -917,8 +917,7 @@ fn render_colorscheme_section(
     let mut rows = vec![(
         "`base`".to_string(),
         "one of: `builtin_light`, `builtin_dark`".to_string(),
-        "Base palette inherited by a custom scheme. Built-in schemes must not set this."
-            .to_string(),
+        "Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token. Built-in schemes must not set this.".to_string(),
     )];
     rows.extend(overrides.fields.iter().map(|field| {
         (

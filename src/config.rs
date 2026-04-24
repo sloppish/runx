@@ -340,10 +340,10 @@ pub struct UiConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiColorschemeConfig {
-    /// Base palette inherited by a custom colorscheme. Built-in schemes must not set this.
+    /// Base palette inherited by a custom colorscheme. Without a base, custom schemes must define every color token. Built-in schemes must not set this.
     pub base: Option<String>,
     #[serde(flatten)]
-    /// Optional token overrides applied on top of the selected base palette.
+    /// Color token values, or optional overrides when `base` is set.
     pub overrides: UiColorOverridesConfig,
 }
 
@@ -425,6 +425,60 @@ pub struct UiColorOverridesConfig {
     pub canvas_hidden_item_selected_bg: Option<String>,
     /// Config-error panel background when the outer canvas is disabled.
     pub canvas_hidden_config_error_bg: Option<String>,
+}
+
+impl UiColorOverridesConfig {
+    fn missing_required_fields(&self) -> Vec<&'static str> {
+        let mut missing = Vec::new();
+
+        macro_rules! require {
+            ($field:ident) => {
+                if self.$field.is_none() {
+                    missing.push(stringify!($field));
+                }
+            };
+        }
+
+        require!(accent);
+        require!(background);
+        require!(panel);
+        require!(text);
+        require!(muted);
+        require!(shell_bg);
+        require!(shell_shadow);
+        require!(shell_border);
+        require!(label_strong);
+        require!(input_bg);
+        require!(input_border);
+        require!(input_shadow);
+        require!(placeholder);
+        require!(scrollbar);
+        require!(item_bg);
+        require!(item_hover);
+        require!(item_selected_bg);
+        require!(item_selected_shadow);
+        require!(badge_bg);
+        require!(badge_border);
+        require!(badge_text);
+        require!(badge_icon_bg);
+        require!(chip_text);
+        require!(chip_bg);
+        require!(chip_border);
+        require!(config_error_bg);
+        require!(config_error_border);
+        require!(config_error_shadow);
+        require!(config_error_title);
+        require!(config_error_copy);
+        require!(canvas_hidden_input_bg);
+        require!(canvas_hidden_input_border);
+        require!(canvas_hidden_input_shadow);
+        require!(canvas_hidden_item_bg);
+        require!(canvas_hidden_item_hover);
+        require!(canvas_hidden_item_selected_bg);
+        require!(canvas_hidden_config_error_bg);
+
+        missing
+    }
 }
 
 /// Canvas tokens injected into the embedded UI theme.
@@ -644,6 +698,7 @@ impl LoadedConfig {
         let raw_spans: RawConfigSpans = toml::from_str(&raw)
             .map_err(|error| anyhow!(render_toml_parse_error(&config_path, &raw, &error)))?;
         validate_config_with_spans(&config_path, &raw, &raw_spans)?;
+        validate_config(&config)?;
 
         Self::from_parts(config, root_dir, plugin_dir, config_path)
     }
@@ -686,7 +741,6 @@ impl LoadedConfig {
     }
 }
 
-#[cfg(test)]
 fn validate_config(config: &Config) -> Result<()> {
     validate_provider_names(&config.providers.disabled, "[providers].disabled")?;
     validate_provider_names(&config.ranking.provider_order, "[ranking].provider_order")?;
@@ -871,7 +925,6 @@ fn validate_opacity(opacity: f64, context: &str) -> Result<()> {
     }
 }
 
-#[cfg(test)]
 fn validate_provider_names(providers: &[String], context: &str) -> Result<()> {
     for provider in providers {
         validate_provider_name(provider, context)?;
@@ -879,7 +932,6 @@ fn validate_provider_names(providers: &[String], context: &str) -> Result<()> {
     Ok(())
 }
 
-#[cfg(test)]
 fn validate_provider_name(provider: &str, context: &str) -> Result<()> {
     if KNOWN_PROVIDER_NAMES.contains(&provider) {
         Ok(())
@@ -916,7 +968,6 @@ fn validate_spanned_provider_names(
     Ok(())
 }
 
-#[cfg(test)]
 fn validate_ui_colorscheme_selector(config: &Config) -> Result<()> {
     validate_ui_colorscheme_name_impl(
         &config.ui.colorscheme,
@@ -924,7 +975,6 @@ fn validate_ui_colorscheme_selector(config: &Config) -> Result<()> {
     )
 }
 
-#[cfg(test)]
 fn validate_ui_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>) -> Result<()> {
     for (name, scheme) in colorschemes {
         if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
@@ -941,6 +991,16 @@ fn validate_ui_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>)
                 "[ui.colorschemes.{name}].base must be one of: {}",
                 BUILTIN_COLORSCHEME_NAMES.join(", ")
             );
+        }
+
+        if scheme.base.is_none() {
+            let missing = scheme.overrides.missing_required_fields();
+            if !missing.is_empty() {
+                bail!(
+                    "[ui.colorschemes.{name}] has no base, so it must define every color token. Missing: {}",
+                    missing.join(", ")
+                );
+            }
         }
     }
     Ok(())
@@ -1762,6 +1822,54 @@ mod tests {
         use super::Config;
         use crate::config::{UiColorOverridesConfig, UiColorschemeConfig, validate_config};
 
+        fn complete_color_overrides() -> UiColorOverridesConfig {
+            macro_rules! token {
+                () => {
+                    Some("#000000".to_owned())
+                };
+            }
+
+            UiColorOverridesConfig {
+                accent: token!(),
+                background: token!(),
+                panel: token!(),
+                text: token!(),
+                muted: token!(),
+                shell_bg: token!(),
+                shell_shadow: token!(),
+                shell_border: token!(),
+                label_strong: token!(),
+                input_bg: token!(),
+                input_border: token!(),
+                input_shadow: token!(),
+                placeholder: token!(),
+                scrollbar: token!(),
+                item_bg: token!(),
+                item_hover: token!(),
+                item_selected_bg: token!(),
+                item_selected_shadow: token!(),
+                badge_bg: token!(),
+                badge_border: token!(),
+                badge_text: token!(),
+                badge_icon_bg: token!(),
+                chip_text: token!(),
+                chip_bg: token!(),
+                chip_border: token!(),
+                config_error_bg: token!(),
+                config_error_border: token!(),
+                config_error_shadow: token!(),
+                config_error_title: token!(),
+                config_error_copy: token!(),
+                canvas_hidden_input_bg: token!(),
+                canvas_hidden_input_border: token!(),
+                canvas_hidden_input_shadow: token!(),
+                canvas_hidden_item_bg: token!(),
+                canvas_hidden_item_hover: token!(),
+                canvas_hidden_item_selected_bg: token!(),
+                canvas_hidden_config_error_bg: token!(),
+            }
+        }
+
         #[test]
         fn defaults_to_current_ui_font_sizes() {
             let config: Config = toml::from_str("").expect("empty config should parse");
@@ -2017,6 +2125,44 @@ mod tests {
             assert!(error.to_string().contains(
                 "[ui.colorschemes.gruvbox].base must be one of: builtin_light, builtin_dark"
             ));
+        }
+
+        #[test]
+        fn accepts_complete_custom_colorscheme_without_base() {
+            let mut config = Config::default();
+            config.ui.colorschemes.insert(
+                "gruvbox".to_owned(),
+                UiColorschemeConfig {
+                    base: None,
+                    overrides: complete_color_overrides(),
+                },
+            );
+
+            validate_config(&config).expect("complete custom colorscheme should pass");
+        }
+
+        #[test]
+        fn rejects_partial_custom_colorscheme_without_base() {
+            let mut config = Config::default();
+            config.ui.colorschemes.insert(
+                "gruvbox".to_owned(),
+                UiColorschemeConfig {
+                    base: None,
+                    overrides: UiColorOverridesConfig {
+                        accent: Some("#fabd2f".to_owned()),
+                        ..UiColorOverridesConfig::default()
+                    },
+                },
+            );
+
+            let error = validate_config(&config)
+                .expect_err("partial custom colorscheme without base should fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("[ui.colorschemes.gruvbox] has no base")
+            );
+            assert!(error.to_string().contains("background"));
         }
     }
 

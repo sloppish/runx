@@ -203,11 +203,11 @@ Layout tokens injected into the embedded UI theme.
 
 ## [ui.colorschemes.<name>]
 
-Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin_dark`. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Omitted keys inherit from the base palette or the built-in default. Most users only need `accent`, `background`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
+Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin_dark`. Custom schemes can use any other name and are selected through `[ui].colorscheme`. For custom schemes, set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Built-in schemes can be partially overridden and must not set `base`. Most users only need `accent`, `background`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
 
 | Option | Type | Description |
 | --- | --- | --- |
-| `base` | one of: `builtin_light`, `builtin_dark` | Base palette inherited by a custom scheme. Built-in schemes must not set this. |
+| `base` | one of: `builtin_light`, `builtin_dark` | Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token. Built-in schemes must not set this. |
 | `accent` | string | Accent color used for highlighted details and emphasis. |
 | `background` | string | Broad page/background tone used by the built-in palette. |
 | `panel` | string | Panel surface color used by the built-in palette. |
