@@ -11,6 +11,7 @@
   --canvas-opacity: __CANVAS_OPACITY__;
   --canvas-background-opacity: __CANVAS_BACKGROUND_OPACITY__;
   --entry-opacity: __ENTRY_OPACITY__;
+  --entry-base-bg: transparent;
   --label-font-size: __LABEL_FONT_SIZE__;
   --input-font-size: __INPUT_FONT_SIZE__;
   --title-font-size: __TITLE_FONT_SIZE__;
@@ -173,6 +174,7 @@ body {
   --item-bg: var(--canvas-hidden-item-bg);
   --item-hover: var(--canvas-hidden-item-hover);
   --item-selected-bg: var(--canvas-hidden-item-selected-bg);
+  --entry-base-bg: var(--panel);
 }
 
 .shell.canvas-hidden .config-error {
@@ -303,16 +305,25 @@ input::placeholder {
   isolation: isolate;
 }
 
-.item::before {
+.item::before,
+.item::after {
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  background: var(--item-bg);
-  opacity: var(--entry-opacity);
   transition: background 120ms ease, box-shadow 120ms ease;
   pointer-events: none;
-  z-index: -1;
+  z-index: 0;
+}
+
+.item::before {
+  background: var(--entry-base-bg);
+  opacity: var(--entry-opacity);
+}
+
+.item::after {
+  background: var(--item-bg);
+  opacity: var(--entry-opacity);
 }
 
 .item.compact {
@@ -325,7 +336,7 @@ input::placeholder {
   background: transparent;
 }
 
-.item:hover::before {
+.item:hover::after {
   background: var(--item-hover);
 }
 
@@ -333,12 +344,14 @@ input::placeholder {
   background: transparent;
 }
 
-.item.selected::before {
+.item.selected::after {
   background: var(--item-selected-bg);
   box-shadow: var(--item-selected-shadow);
 }
 
 .badge {
+  position: relative;
+  z-index: 1;
   min-width: var(--badge-size);
   height: var(--badge-size);
   padding: 0 12px;
@@ -371,6 +384,8 @@ input::placeholder {
 }
 
 .copy {
+  position: relative;
+  z-index: 1;
   min-width: 0;
 }
 
@@ -399,6 +414,8 @@ input::placeholder {
 }
 
 .accelerator {
+  position: relative;
+  z-index: 1;
   color: var(--chip-text);
   font-size: var(--accelerator-font-size);
   font-weight: 600;
