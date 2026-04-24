@@ -40,7 +40,7 @@ width = 760
 height = 520
 hide_on_blur = true
 always_on_top = true
-show_on = "primary"
+show_on = "cursor"
 
 [providers.windows]
 include_other_desktops = false
@@ -1098,7 +1098,7 @@ impl Default for WindowConfig {
             height: 520.0,
             hide_on_blur: true,
             always_on_top: true,
-            show_on: WindowDisplayTarget::Primary,
+            show_on: WindowDisplayTarget::Cursor,
         }
     }
 }
@@ -1493,9 +1493,9 @@ mod tests {
         use super::{Config, WindowDisplayTarget};
 
         #[test]
-        fn defaults_to_primary() {
+        fn defaults_to_cursor() {
             let config: Config = toml::from_str("").expect("empty config should parse");
-            assert_eq!(config.window.show_on, WindowDisplayTarget::Primary);
+            assert_eq!(config.window.show_on, WindowDisplayTarget::Cursor);
         }
 
         #[test]
