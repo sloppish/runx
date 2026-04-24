@@ -8,6 +8,7 @@ pub mod settings;
 pub mod windows;
 
 use std::{
+    collections::HashSet,
     sync::{
         Arc,
         mpsc::{self, Receiver, Sender},
@@ -29,6 +30,7 @@ use self::{apps::AppProvider, settings::SettingsProvider, windows::WindowsProvid
 #[derive(Clone)]
 pub struct ProviderSet {
     plugins_host: Arc<PluginHost>,
+    disabled_providers: HashSet<String>,
     windows_provider: Arc<WindowsProvider>,
     windows: ProviderWorker,
     apps: ProviderWorker,
@@ -52,9 +54,11 @@ impl ProviderSet {
             config.providers.apps.clone(),
         )?);
         let settings = Arc::new(SettingsProvider::new(icons.clone())?);
+        let disabled_providers = config.providers.disabled.iter().cloned().collect();
 
         Ok(Self {
             plugins_host: plugins.clone(),
+            disabled_providers,
             windows_provider: windows.clone(),
             windows: ProviderWorker::new("windows", {
                 let provider = windows;
@@ -77,7 +81,9 @@ impl ProviderSet {
 
     /// Starts a new launcher-visible session for providers that cache per-open state.
     pub fn begin_session(&self) {
-        self.windows_provider.begin_session();
+        if !self.disabled_providers.contains("windows") {
+            self.windows_provider.begin_session();
+        }
     }
 
     /// Ends the current launcher-visible session and clears any per-open provider state.
@@ -89,6 +95,7 @@ impl ProviderSet {
     pub fn provider_count_for_query(&self, query: &str, empty_query_providers: &[String]) -> usize {
         let enabled = enabled_providers_for_query(
             query,
+            &self.disabled_providers,
             empty_query_providers,
             self.plugins_host.is_routed_query(query),
         );
@@ -108,6 +115,7 @@ impl ProviderSet {
     ) {
         let enabled = enabled_providers_for_query(
             &query,
+            &self.disabled_providers,
             empty_query_providers,
             self.plugins_host.is_routed_query(&query),
         );
@@ -132,20 +140,29 @@ impl ProviderSet {
 
 fn enabled_providers_for_query<'a>(
     query: &str,
+    disabled_providers: &'a HashSet<String>,
     empty_query_providers: &'a [String],
     routed_plugin_query: bool,
 ) -> std::collections::HashSet<&'a str> {
     if !query.trim().is_empty() {
         if routed_plugin_query {
-            return ["plugins"].into_iter().collect();
+            return (!disabled_providers.contains("plugins"))
+                .then_some("plugins")
+                .into_iter()
+                .collect();
         } else {
             return ["windows", "apps", "settings", "plugins"]
                 .into_iter()
+                .filter(|provider| !disabled_providers.contains(*provider))
                 .collect();
         }
     }
 
-    empty_query_providers.iter().map(String::as_str).collect()
+    empty_query_providers
+        .iter()
+        .filter(|provider| !disabled_providers.contains(provider.as_str()))
+        .map(String::as_str)
+        .collect()
 }
 
 #[cfg(test)]
@@ -156,14 +173,16 @@ mod tests {
 
     #[test]
     fn routed_plugin_queries_only_run_plugin_provider() {
-        let enabled = enabled_providers_for_query("pass secret", &[], true);
+        let disabled = HashSet::new();
+        let enabled = enabled_providers_for_query("pass secret", &disabled, &[], true);
 
         assert_eq!(enabled, HashSet::from(["plugins"]));
     }
 
     #[test]
     fn normal_non_empty_queries_keep_full_provider_fanout() {
-        let enabled = enabled_providers_for_query("safari", &[], false);
+        let disabled = HashSet::new();
+        let enabled = enabled_providers_for_query("safari", &disabled, &[], false);
 
         assert_eq!(
             enabled,
@@ -173,10 +192,29 @@ mod tests {
 
     #[test]
     fn empty_queries_still_use_configured_provider_list() {
+        let disabled_providers = HashSet::new();
         let configured = ["windows".to_owned()];
-        let enabled = enabled_providers_for_query("", &configured, true);
+        let enabled = enabled_providers_for_query("", &disabled_providers, &configured, true);
 
         assert_eq!(enabled, HashSet::from(["windows"]));
+    }
+
+    #[test]
+    fn disabled_provider_never_runs_for_non_empty_query() {
+        let disabled = HashSet::from(["windows".to_owned()]);
+        let enabled = enabled_providers_for_query("safari", &disabled, &[], false);
+
+        assert_eq!(enabled, HashSet::from(["apps", "settings", "plugins"]));
+    }
+
+    #[test]
+    fn empty_query_filters_disabled_provider() {
+        let disabled_providers = HashSet::from(["windows".to_owned()]);
+        let empty_query_providers = ["windows".to_owned(), "apps".to_owned()];
+        let enabled =
+            enabled_providers_for_query("", &disabled_providers, &empty_query_providers, false);
+
+        assert_eq!(enabled, HashSet::from(["apps"]));
     }
 }
 

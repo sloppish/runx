@@ -41,6 +41,9 @@ hide_on_blur = true
 always_on_top = true
 show_on = "cursor"
 
+[providers]
+disabled = []
+
 [providers.windows]
 include_other_desktops = false
 
@@ -172,6 +175,7 @@ pub struct WindowConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProvidersConfig {
+    pub disabled: Vec<String>,
     pub windows: WindowsProviderConfig,
     pub apps: AppsProviderConfig,
 }
@@ -469,7 +473,7 @@ pub struct UiLayoutConfig {
 struct RawConfigSpans {
     hotkey: RawHotKeySpans,
     window: WindowConfig,
-    providers: ProvidersConfig,
+    providers: RawProvidersSpans,
     ranking: RawRankingSpans,
     timing: TimingConfig,
     plugins: PluginsConfig,
@@ -528,6 +532,14 @@ struct RawUiEntriesSpans {
 struct RawHotKeySpans {
     key: Option<Spanned<String>>,
     modifiers: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawProvidersSpans {
+    disabled: Vec<Spanned<String>>,
+    windows: WindowsProviderConfig,
+    apps: AppsProviderConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -621,6 +633,7 @@ impl LoadedConfig {
 
 #[cfg(test)]
 fn validate_config(config: &Config) -> Result<()> {
+    validate_provider_names(&config.providers.disabled, "[providers].disabled")?;
     validate_provider_names(&config.ranking.provider_order, "[ranking].provider_order")?;
     validate_provider_names(
         &config.ranking.empty_query_providers,
@@ -676,6 +689,12 @@ fn validate_config_with_spans(config_path: &Path, raw: &str, spans: &RawConfigSp
         }
     }
 
+    validate_spanned_provider_names(
+        config_path,
+        raw,
+        &spans.providers.disabled,
+        "[providers].disabled",
+    )?;
     validate_spanned_provider_names(
         config_path,
         raw,
@@ -1510,6 +1529,27 @@ mod tests {
                     .expect("include_other_desktops should parse");
             assert!(config.providers.windows.include_other_desktops);
         }
+
+        #[test]
+        fn partial_provider_tables_keep_disabled_default() {
+            let config: Config =
+                toml::from_str("[providers.windows]\ninclude_other_desktops = true\n")
+                    .expect("partial provider config should parse");
+            assert!(config.providers.disabled.is_empty());
+        }
+
+        #[test]
+        fn defaults_to_no_disabled_providers() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert!(config.providers.disabled.is_empty());
+        }
+
+        #[test]
+        fn accepts_disabled_provider_list() {
+            let config: Config = toml::from_str("[providers]\ndisabled = [\"windows\"]\n")
+                .expect("disabled providers should parse");
+            assert_eq!(config.providers.disabled, vec!["windows"]);
+        }
     }
 
     mod apps_provider_config_tests {
@@ -1620,6 +1660,19 @@ mod tests {
                 error.to_string().contains(
                     "[ranking].empty_query_providers contains unknown provider `asdfasdf`"
                 )
+            );
+        }
+
+        #[test]
+        fn rejects_unknown_provider_in_disabled_providers() {
+            let mut config = Config::default();
+            config.providers.disabled = vec!["apps".to_owned(), "asdfasdf".to_owned()];
+
+            let error = validate_config(&config).expect_err("unknown provider should fail");
+            assert!(
+                error
+                    .to_string()
+                    .contains("[providers].disabled contains unknown provider `asdfasdf`")
             );
         }
 
