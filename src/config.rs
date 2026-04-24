@@ -142,13 +142,21 @@ pub struct LoadedConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct Config {
+    /// Global launcher shortcut.
     pub hotkey: HotKeyConfig,
+    /// Geometry and behavior of the Runx window itself.
     pub window: WindowConfig,
+    /// Provider-specific search and activation behavior.
     pub providers: ProvidersConfig,
+    /// Result ranking, tie-breaking, and empty-query behavior.
     pub ranking: RankingConfig,
+    /// Search and render scheduling knobs.
     pub timing: TimingConfig,
+    /// Plugin discovery and subprocess lookup paths.
     pub plugins: PluginsConfig,
+    /// Per-plugin configuration tables under `[plugin.<id>]`.
     pub plugin: HashMap<String, Table>,
+    /// Launcher appearance and interaction settings.
     pub ui: UiConfig,
 }
 
@@ -156,7 +164,9 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct HotKeyConfig {
+    /// Trigger key for the global launcher shortcut.
     pub key: String,
+    /// Modifier keys that must be held with `key`.
     pub modifiers: Vec<String>,
 }
 
@@ -164,10 +174,15 @@ pub struct HotKeyConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowConfig {
+    /// Launcher width in logical pixels.
     pub width: f64,
+    /// Launcher height in logical pixels.
     pub height: f64,
+    /// Hide the launcher automatically when it loses focus.
     pub hide_on_blur: bool,
+    /// Keep the launcher above normal windows while it is visible.
     pub always_on_top: bool,
+    /// Choose which display Runx appears on when it opens.
     pub show_on: WindowDisplayTarget,
 }
 
@@ -175,8 +190,11 @@ pub struct WindowConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct ProvidersConfig {
+    /// Providers that should not run.
     pub disabled: Vec<String>,
+    /// Settings for the macOS windows provider.
     pub windows: WindowsProviderConfig,
+    /// Settings for installed application search ranking.
     pub apps: AppsProviderConfig,
 }
 
@@ -184,6 +202,7 @@ pub struct ProvidersConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowsProviderConfig {
+    /// Include windows from other macOS desktops/spaces in search results.
     pub include_other_desktops: bool,
 }
 
@@ -191,7 +210,9 @@ pub struct WindowsProviderConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct AppsProviderConfig {
+    /// Score added when a query exactly matches an installed app name.
     pub exact_name_boost: i64,
+    /// Score added when a query is a prefix of an installed app name.
     pub prefix_name_boost: i64,
 }
 
@@ -199,8 +220,10 @@ pub struct AppsProviderConfig {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum WindowDisplayTarget {
+    /// Always open on the primary display.
     #[default]
     Primary,
+    /// Open on the display that currently contains the mouse cursor.
     Cursor,
 }
 
@@ -208,11 +231,17 @@ pub enum WindowDisplayTarget {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct RankingConfig {
+    /// Maximum raw-score gap that still counts as a tie between providers.
     pub tie_threshold: i64,
+    /// Tie-break priority when multiple providers return similarly scored items.
     pub provider_order: Vec<String>,
+    /// Providers that should run before the query is non-empty.
     pub empty_query_providers: Vec<String>,
+    /// Per-provider additive score adjustments applied after matching.
     pub provider_score_boosts: HashMap<String, i64>,
+    /// Text-based additive score rules evaluated on merged results.
     pub score_rules: Vec<RankingScoreRule>,
+    /// Maximum number of rows shown in the launcher.
     pub result_limit: usize,
 }
 
@@ -220,11 +249,16 @@ pub struct RankingConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct RankingScoreRule {
+    /// Restrict the rule to specific providers. Empty means all providers.
     pub providers: Vec<String>,
+    /// Result field matched against `pattern`.
     pub field: RankingScoreRuleField,
     #[serde(rename = "match")]
+    /// Text-matching mode used for `pattern`.
     pub match_kind: RankingScoreRuleMatchKind,
+    /// Needle matched against the selected field.
     pub pattern: String,
+    /// Additive score applied when the rule matches.
     pub boost: i64,
 }
 
@@ -232,10 +266,14 @@ pub struct RankingScoreRule {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RankingScoreRuleField {
+    /// Match against the result title.
     #[default]
     Title,
+    /// Match against the result subtitle.
     Subtitle,
+    /// Match against the result badge text.
     Badge,
+    /// Match against the internal result id.
     Id,
 }
 
@@ -243,8 +281,11 @@ pub enum RankingScoreRuleField {
 #[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
 #[serde(rename_all = "snake_case")]
 pub enum RankingScoreRuleMatchKind {
+    /// Require an exact string match.
     Exact,
+    /// Require the field to start with `pattern`.
     Prefix,
+    /// Require the field to contain `pattern`.
     #[default]
     Contains,
 }
@@ -253,7 +294,9 @@ pub enum RankingScoreRuleMatchKind {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct TimingConfig {
+    /// Delay before a changed query starts a new search generation.
     pub search_debounce_ms: u64,
+    /// Small render delay used to coalesce provider updates.
     pub render_coalesce_ms: u64,
 }
 
@@ -261,7 +304,9 @@ pub struct TimingConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct PluginsConfig {
+    /// Extra directories that should be scanned for `.lua` plugins.
     pub directories: Vec<String>,
+    /// Extra PATH entries exposed to plugin subprocess helpers.
     pub search_paths: Vec<String>,
 }
 
@@ -269,24 +314,39 @@ pub struct PluginsConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiConfig {
+    /// Show the small header label at the top of the launcher.
     pub show_header: bool,
+    /// Wrap selection movement from end to start with arrows and Ctrl-N/Ctrl-P.
     pub cycle_selection: bool,
+    /// Selected UI colorscheme: `system`, a built-in name, or a custom scheme name.
     pub colorscheme: String,
+    /// CSS font-family stack used by the launcher UI.
     pub font_family: String,
-    // Deprecated compatibility path; merged into builtin_light.
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].accent`.
     pub accent: Option<String>,
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].background`.
     pub background: Option<String>,
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].panel`.
     pub panel: Option<String>,
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].text`.
     pub text: Option<String>,
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].muted`.
     pub muted: Option<String>,
+    /// Named built-in and custom colorscheme definitions.
     pub colorschemes: HashMap<String, UiColorschemeConfig>,
-    // Deprecated compatibility path; merged into builtin_light/builtin_dark.
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light]` overrides.
     pub colors: UiColorOverridesConfig,
+    /// Legacy compatibility alias for `[ui.colorschemes.builtin_dark]` overrides.
     pub dark_colors: UiColorOverridesConfig,
+    /// Canvas styling for the outer launcher panel.
     pub canvas: UiCanvasConfig,
+    /// Styling for individual result-row surfaces.
     pub entries: UiEntriesConfig,
+    /// Keyboard shortcuts handled inside the launcher UI.
     pub shortcuts: UiShortcutsConfig,
+    /// UI font-size tokens.
     pub font_sizes: UiFontSizesConfig,
+    /// Non-typographic layout tokens.
     pub layout: UiLayoutConfig,
 }
 
@@ -294,8 +354,10 @@ pub struct UiConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiColorschemeConfig {
+    /// Base palette inherited by a custom colorscheme. Built-in schemes must not set this.
     pub base: Option<String>,
     #[serde(flatten)]
+    /// Optional token overrides applied on top of the selected base palette.
     pub overrides: UiColorOverridesConfig,
 }
 
@@ -303,42 +365,79 @@ pub struct UiColorschemeConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiColorOverridesConfig {
+    /// Accent color used for highlighted details and emphasis.
     pub accent: Option<String>,
+    /// Broad page/background tone used by the built-in palette.
     pub background: Option<String>,
+    /// Panel surface color used by the built-in palette.
     pub panel: Option<String>,
+    /// Primary foreground text color.
     pub text: Option<String>,
+    /// Secondary or de-emphasized foreground text color.
     pub muted: Option<String>,
+    /// Background fill for the outer launcher shell.
     pub shell_bg: Option<String>,
+    /// Shadow for the outer launcher shell.
     pub shell_shadow: Option<String>,
+    /// Border color for the outer launcher shell.
     pub shell_border: Option<String>,
+    /// Stronger label color used for prominent small text.
     pub label_strong: Option<String>,
+    /// Background of the search input field.
     pub input_bg: Option<String>,
+    /// Border color of the search input field.
     pub input_border: Option<String>,
+    /// Shadow of the search input field.
     pub input_shadow: Option<String>,
+    /// Placeholder text color in the search input.
     pub placeholder: Option<String>,
+    /// Scrollbar thumb color inside the results list.
     pub scrollbar: Option<String>,
+    /// Default result-row background.
     pub item_bg: Option<String>,
+    /// Result-row background on hover.
     pub item_hover: Option<String>,
+    /// Background of the currently selected result row.
     pub item_selected_bg: Option<String>,
+    /// Shadow of the currently selected result row.
     pub item_selected_shadow: Option<String>,
+    /// Background of text badges.
     pub badge_bg: Option<String>,
+    /// Border color of text badges.
     pub badge_border: Option<String>,
+    /// Foreground text color of text badges.
     pub badge_text: Option<String>,
+    /// Background behind icon badges.
     pub badge_icon_bg: Option<String>,
+    /// Foreground color of accelerator chips.
     pub chip_text: Option<String>,
+    /// Background color of accelerator chips.
     pub chip_bg: Option<String>,
+    /// Border color of accelerator chips.
     pub chip_border: Option<String>,
+    /// Background of the dedicated config-error panel.
     pub config_error_bg: Option<String>,
+    /// Border color of the config-error panel.
     pub config_error_border: Option<String>,
+    /// Shadow of the config-error panel.
     pub config_error_shadow: Option<String>,
+    /// Title color used in the config-error view.
     pub config_error_title: Option<String>,
+    /// Body text color used in the config-error view.
     pub config_error_copy: Option<String>,
+    /// Input background when the outer canvas is disabled.
     pub canvas_hidden_input_bg: Option<String>,
+    /// Input border when the outer canvas is disabled.
     pub canvas_hidden_input_border: Option<String>,
+    /// Input shadow when the outer canvas is disabled.
     pub canvas_hidden_input_shadow: Option<String>,
+    /// Result-row background when the outer canvas is disabled.
     pub canvas_hidden_item_bg: Option<String>,
+    /// Result-row hover background when the outer canvas is disabled.
     pub canvas_hidden_item_hover: Option<String>,
+    /// Selected result-row background when the outer canvas is disabled.
     pub canvas_hidden_item_selected_bg: Option<String>,
+    /// Config-error panel background when the outer canvas is disabled.
     pub canvas_hidden_config_error_bg: Option<String>,
 }
 
@@ -396,9 +495,13 @@ impl UiColorOverridesConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiCanvasConfig {
+    /// Show the outer launcher panel behind the input and results.
     pub show: bool,
+    /// Corner radius of the outer launcher panel.
     pub radius: u16,
+    /// Overall opacity multiplier for the panel layer.
     pub opacity: f64,
+    /// Opacity of the panel fill itself, separate from border/shadow opacity.
     pub background_opacity: f64,
 }
 
@@ -406,6 +509,7 @@ pub struct UiCanvasConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiEntriesConfig {
+    /// Opacity multiplier applied to result-row background surfaces.
     pub opacity: f64,
 }
 
@@ -413,11 +517,13 @@ pub struct UiEntriesConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiShortcutsConfig {
+    /// Shortcut for activating the selected window.
     #[serde(
         default = "default_focus_window_shortcut",
         deserialize_with = "deserialize_ui_shortcut"
     )]
     pub focus_window: Option<UiShortcutConfig>,
+    /// Shortcut for activating the selected app and bringing all its windows forward.
     #[serde(
         default = "default_activate_all_windows_shortcut",
         deserialize_with = "deserialize_ui_shortcut"
@@ -440,13 +546,21 @@ pub struct UiShortcutConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiFontSizesConfig {
+    /// Size of small labels and helper text.
     pub label: u16,
+    /// Search input text size.
     pub input: u16,
+    /// Primary result title text size.
     pub title: u16,
+    /// Secondary result subtitle text size.
     pub subtitle: u16,
+    /// Badge text size.
     pub badge: u16,
+    /// Accelerator chip text size.
     pub accelerator: u16,
+    /// Config-error title text size.
     pub config_error_title: u16,
+    /// Config-error body text size.
     pub config_error_body: u16,
 }
 
@@ -454,17 +568,29 @@ pub struct UiFontSizesConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiLayoutConfig {
+    /// Gap between top-level shell sections such as input and results.
     pub section_gap: u16,
+    /// Vertical padding inside the search input.
     pub input_padding_y: u16,
+    /// Horizontal padding inside the search input.
     pub input_padding_x: u16,
+    /// Corner radius of the search input.
     pub input_radius: u16,
+    /// Vertical gap between visible result rows.
     pub list_gap: u16,
+    /// Vertical padding inside each result row.
     pub entry_padding_y: u16,
+    /// Horizontal padding inside each result row.
     pub entry_padding_x: u16,
+    /// Gap between columns inside each result row.
     pub entry_gap: u16,
+    /// Corner radius of result rows.
     pub row_radius: u16,
+    /// Size of badge containers.
     pub badge_size: u16,
+    /// Corner radius of badge containers.
     pub badge_radius: u16,
+    /// Size of icon images inside icon badges.
     pub icon_size: u16,
 }
 

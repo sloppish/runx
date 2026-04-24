@@ -1,4 +1,5 @@
 /target
+/tools/config-docgen/target
 /dist
 task_plan.md
 findings.md
