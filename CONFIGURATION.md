@@ -246,6 +246,3 @@ Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin
 | `canvas_hidden_item_selected_bg` | string | Selected result-row background when the outer canvas is disabled. |
 | `canvas_hidden_config_error_bg` | string | Config-error panel background when the outer canvas is disabled. |
 
-## Legacy Compatibility
-
-Runx still accepts the older light/dark color compatibility keys under `[ui]`, `[ui.colors]`, and `[ui.dark_colors]`, but new configs should prefer `[ui.colorschemes.<name>]`.

@@ -528,8 +528,18 @@ mod tests {
         theme.canvas.opacity = 0.72;
         theme.canvas.background_opacity = 0.91;
         theme.entries.opacity = 0.64;
-        theme.colors.shell_bg = Some("linear-gradient(180deg, #111111, #222222)".to_owned());
-        theme.dark_colors.badge_icon_bg = Some("rgba(4, 5, 6, 0.7)".to_owned());
+        theme
+            .colorschemes
+            .get_mut("builtin_light")
+            .expect("builtin light scheme should exist")
+            .overrides
+            .shell_bg = Some("linear-gradient(180deg, #111111, #222222)".to_owned());
+        theme
+            .colorschemes
+            .get_mut("builtin_dark")
+            .expect("builtin dark scheme should exist")
+            .overrides
+            .badge_icon_bg = Some("rgba(4, 5, 6, 0.7)".to_owned());
         theme.font_sizes.input = 34;
         theme.font_sizes.title = 18;
         theme.font_sizes.config_error_body = 17;

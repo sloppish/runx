@@ -322,22 +322,8 @@ pub struct UiConfig {
     pub colorscheme: String,
     /// CSS font-family stack used by the launcher UI.
     pub font_family: String,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].accent`.
-    pub accent: Option<String>,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].background`.
-    pub background: Option<String>,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].panel`.
-    pub panel: Option<String>,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].text`.
-    pub text: Option<String>,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light].muted`.
-    pub muted: Option<String>,
     /// Named built-in and custom colorscheme definitions.
     pub colorschemes: HashMap<String, UiColorschemeConfig>,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_light]` overrides.
-    pub colors: UiColorOverridesConfig,
-    /// Legacy compatibility alias for `[ui.colorschemes.builtin_dark]` overrides.
-    pub dark_colors: UiColorOverridesConfig,
     /// Canvas styling for the outer launcher panel.
     pub canvas: UiCanvasConfig,
     /// Styling for individual result-row surfaces.
@@ -439,56 +425,6 @@ pub struct UiColorOverridesConfig {
     pub canvas_hidden_item_selected_bg: Option<String>,
     /// Config-error panel background when the outer canvas is disabled.
     pub canvas_hidden_config_error_bg: Option<String>,
-}
-
-impl UiColorOverridesConfig {
-    fn merge_from(&mut self, other: &Self) {
-        macro_rules! merge {
-            ($field:ident) => {
-                if let Some(value) = &other.$field {
-                    self.$field = Some(value.clone());
-                }
-            };
-        }
-
-        merge!(accent);
-        merge!(background);
-        merge!(panel);
-        merge!(text);
-        merge!(muted);
-        merge!(shell_bg);
-        merge!(shell_shadow);
-        merge!(shell_border);
-        merge!(label_strong);
-        merge!(input_bg);
-        merge!(input_border);
-        merge!(input_shadow);
-        merge!(placeholder);
-        merge!(scrollbar);
-        merge!(item_bg);
-        merge!(item_hover);
-        merge!(item_selected_bg);
-        merge!(item_selected_shadow);
-        merge!(badge_bg);
-        merge!(badge_border);
-        merge!(badge_text);
-        merge!(badge_icon_bg);
-        merge!(chip_text);
-        merge!(chip_bg);
-        merge!(chip_border);
-        merge!(config_error_bg);
-        merge!(config_error_border);
-        merge!(config_error_shadow);
-        merge!(config_error_title);
-        merge!(config_error_copy);
-        merge!(canvas_hidden_input_bg);
-        merge!(canvas_hidden_input_border);
-        merge!(canvas_hidden_input_shadow);
-        merge!(canvas_hidden_item_bg);
-        merge!(canvas_hidden_item_hover);
-        merge!(canvas_hidden_item_selected_bg);
-        merge!(canvas_hidden_config_error_bg);
-    }
 }
 
 /// Canvas tokens injected into the embedded UI theme.
@@ -614,14 +550,7 @@ struct RawUiSpans {
     cycle_selection: bool,
     colorscheme: Option<Spanned<String>>,
     font_family: String,
-    accent: Option<String>,
-    background: Option<String>,
-    panel: Option<String>,
-    text: Option<String>,
-    muted: Option<String>,
     colorschemes: HashMap<String, RawUiColorschemeSpans>,
-    colors: UiColorOverridesConfig,
-    dark_colors: UiColorOverridesConfig,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
     shortcuts: UiShortcutsConfig,
@@ -1183,27 +1112,9 @@ impl UiConfig {
         self.colorscheme.as_str()
     }
 
-    /// Returns a named colorscheme merged with legacy built-in override fields.
+    /// Returns a named colorscheme, or an empty override set when it is not configured.
     pub fn colorscheme_config(&self, name: &str) -> UiColorschemeConfig {
-        let mut scheme = self.colorschemes.get(name).cloned().unwrap_or_default();
-
-        match name {
-            "builtin_light" => {
-                scheme.overrides.merge_from(&UiColorOverridesConfig {
-                    accent: self.accent.clone(),
-                    background: self.background.clone(),
-                    panel: self.panel.clone(),
-                    text: self.text.clone(),
-                    muted: self.muted.clone(),
-                    ..UiColorOverridesConfig::default()
-                });
-                scheme.overrides.merge_from(&self.colors);
-            }
-            "builtin_dark" => scheme.overrides.merge_from(&self.dark_colors),
-            _ => {}
-        }
-
-        scheme
+        self.colorschemes.get(name).cloned().unwrap_or_default()
     }
 }
 
@@ -1296,14 +1207,7 @@ impl Default for UiConfig {
             colorscheme: "system".to_owned(),
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
-            accent: None,
-            background: None,
-            panel: None,
-            text: None,
-            muted: None,
             colorschemes,
-            colors: UiColorOverridesConfig::default(),
-            dark_colors: UiColorOverridesConfig::default(),
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),
             shortcuts: UiShortcutsConfig::default(),
@@ -1893,8 +1797,6 @@ mod tests {
             );
             assert!(config.ui.colorschemes.contains_key("builtin_light"));
             assert!(config.ui.colorschemes.contains_key("builtin_dark"));
-            assert_eq!(config.ui.colors, UiColorOverridesConfig::default());
-            assert_eq!(config.ui.dark_colors, UiColorOverridesConfig::default());
             assert_eq!(config.ui.font_sizes.label, 10);
             assert_eq!(config.ui.font_sizes.input, 30);
             assert_eq!(config.ui.font_sizes.title, 16);
@@ -2075,19 +1977,16 @@ mod tests {
         }
 
         #[test]
-        fn legacy_light_and_dark_override_fields_still_parse() {
-            let config: Config = toml::from_str(
-                "[ui]\naccent = \"#333333\"\npanel = \"#eeeeee\"\n[ui.colors]\naccent = \"#111111\"\n[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\n",
-            )
-            .expect("legacy color overrides should still parse");
-
-            assert_eq!(config.ui.accent.as_deref(), Some("#333333"));
-            assert_eq!(config.ui.panel.as_deref(), Some("#eeeeee"));
-            assert_eq!(config.ui.colors.accent.as_deref(), Some("#111111"));
-            assert_eq!(
-                config.ui.dark_colors.item_bg.as_deref(),
-                Some("rgba(1,2,3,0.4)")
-            );
+        fn rejects_legacy_color_override_fields() {
+            for raw in [
+                "[ui]\naccent = \"#333333\"\n",
+                "[ui.colors]\naccent = \"#111111\"\n",
+                "[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\n",
+            ] {
+                let error =
+                    toml::from_str::<Config>(raw).expect_err("legacy color override should fail");
+                assert!(error.message().contains("unknown field"));
+            }
         }
 
         #[test]

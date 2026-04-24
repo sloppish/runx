@@ -589,9 +589,7 @@ fn validate_table_sections(docs: &DocMap, defaults: &Value) -> Result<()> {
                     field.rust_name
                 );
             }
-            if lookup_field_default(defaults, section, field).is_none()
-                && fallback_default(section.path).is_none()
-            {
+            if lookup_field_default(defaults, section, field).is_none() {
                 bail!(
                     "{} field `{}` has no DEFAULT_CONFIG value at `{}`",
                     section.path,
@@ -610,7 +608,7 @@ fn validate_omitted_fields_are_documented_elsewhere(
     item: &StructDef,
 ) -> Result<()> {
     for field in &item.fields {
-        if should_render_field(section, field) || is_legacy_compat_field(field) {
+        if should_render_field(section, field) {
             continue;
         }
         if !has_child_section(section, field) {
@@ -787,10 +785,6 @@ fn render_document(
         }
     }
 
-    out.push_str("## Legacy Compatibility\n\n");
-    out.push_str(
-        "Runx still accepts the older light/dark color compatibility keys under `[ui]`, `[ui.colors]`, and `[ui.dark_colors]`, but new configs should prefer `[ui.colorschemes.<name>]`.\n",
-    );
     Ok(out)
 }
 
@@ -815,7 +809,7 @@ fn render_table_section(
                 builtin_schemes,
                 enum_values,
             ),
-            format_default(default, fallback_default(section.path)),
+            format_default(default),
             field.doc.clone(),
         ));
     }
@@ -1038,17 +1032,10 @@ fn should_render_field(section: &SectionSpec, field: &FieldDef) -> bool {
     {
         return false;
     }
-    if is_legacy_compat_field(field) {
-        return false;
-    }
     if section.path == "[ui]" && is_ui_nested_table_field(field) {
         return false;
     }
     true
-}
-
-fn is_legacy_compat_field(field: &FieldDef) -> bool {
-    field.doc.starts_with("Legacy compatibility alias")
 }
 
 fn is_ui_nested_table_field(field: &FieldDef) -> bool {
@@ -1084,14 +1071,7 @@ fn lookup_field_default<'a>(
     )
 }
 
-fn fallback_default(path: &str) -> Option<&'static str> {
-    match path {
-        "[ui.colorschemes.<name>]" => Some("unset"),
-        _ => None,
-    }
-}
-
-fn format_default(value: Option<&Value>, fallback: Option<&str>) -> String {
+fn format_default(value: Option<&Value>) -> String {
     match value {
         Some(Value::String(value)) => format!("`{:?}`", value),
         Some(Value::Integer(value)) => format!("`{value}`"),
@@ -1112,9 +1092,7 @@ fn format_default(value: Option<&Value>, fallback: Option<&str>) -> String {
             format!("`[{rendered}]`")
         }
         Some(_) => "`table`".to_string(),
-        None => fallback
-            .map(|value| format!("`{value}`"))
-            .unwrap_or_else(|| "-".to_string()),
+        None => "-".to_string(),
     }
 }
 
