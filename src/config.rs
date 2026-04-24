@@ -29,7 +29,6 @@ const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `provider_score_boosts` lets you nudge merged scores per provider.
 # `score_rules` lets you boost or demote specific result text patterns.
 # `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
-# `providers.windows.focus_behavior` controls how Runx tries to surface a selected window result.
 
 [hotkey]
 key = "Space"
@@ -44,7 +43,6 @@ show_on = "cursor"
 
 [providers.windows]
 include_other_desktops = false
-focus_behavior = "focus_window_then_activate_fallback"
 
 [providers.apps]
 exact_name_boost = 200
@@ -98,6 +96,7 @@ background_opacity = 0.97
 opacity = 1.0
 
 [ui.shortcuts]
+focus_window = "Enter"
 activate_all_windows = "Option+Enter"
 
 [ui.font_sizes]
@@ -177,12 +176,11 @@ pub struct ProvidersConfig {
     pub apps: AppsProviderConfig,
 }
 
-/// Settings for the macOS windows provider and window activation path.
-#[derive(Debug, Clone, Deserialize, PartialEq)]
+/// Settings for the macOS windows provider.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowsProviderConfig {
     pub include_other_desktops: bool,
-    pub focus_behavior: WindowFocusBehavior,
 }
 
 /// Settings for installed application search ranking.
@@ -200,17 +198,6 @@ pub enum WindowDisplayTarget {
     #[default]
     Primary,
     Cursor,
-}
-
-/// Strategy for focusing a selected window result.
-#[derive(Debug, Clone, Copy, Deserialize, PartialEq, Eq, Default)]
-#[serde(rename_all = "snake_case")]
-pub enum WindowFocusBehavior {
-    ActivateAppOnly,
-    ActivateAppThenFocusWindow,
-    FocusWindowOnly,
-    #[default]
-    FocusWindowThenActivateFallback,
 }
 
 /// Ranking and truncation rules for the merged result list.
@@ -422,6 +409,11 @@ pub struct UiEntriesConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiShortcutsConfig {
+    #[serde(
+        default = "default_focus_window_shortcut",
+        deserialize_with = "deserialize_ui_shortcut"
+    )]
+    pub focus_window: Option<UiShortcutConfig>,
     #[serde(
         default = "default_activate_all_windows_shortcut",
         deserialize_with = "deserialize_ui_shortcut"
@@ -1176,15 +1168,6 @@ impl Default for UiConfig {
     }
 }
 
-impl Default for WindowsProviderConfig {
-    fn default() -> Self {
-        Self {
-            include_other_desktops: false,
-            focus_behavior: WindowFocusBehavior::FocusWindowThenActivateFallback,
-        }
-    }
-}
-
 impl Default for AppsProviderConfig {
     fn default() -> Self {
         Self {
@@ -1214,9 +1197,21 @@ impl Default for UiEntriesConfig {
 impl Default for UiShortcutsConfig {
     fn default() -> Self {
         Self {
+            focus_window: default_focus_window_shortcut(),
             activate_all_windows: default_activate_all_windows_shortcut(),
         }
     }
+}
+
+fn default_focus_window_shortcut() -> Option<UiShortcutConfig> {
+    Some(UiShortcutConfig {
+        key: Some("Enter".to_owned()),
+        code: None,
+        alt: false,
+        ctrl: false,
+        meta: false,
+        shift: false,
+    })
 }
 
 fn default_activate_all_windows_shortcut() -> Option<UiShortcutConfig> {
@@ -1458,10 +1453,7 @@ fn parse_key(value: &str) -> Result<Code> {
 mod tests {
     use std::path::Path;
 
-    use super::{
-        Config, WindowDisplayTarget, WindowFocusBehavior, parse_key, parse_modifier,
-        render_toml_parse_error,
-    };
+    use super::{Config, WindowDisplayTarget, parse_key, parse_modifier, render_toml_parse_error};
     use global_hotkey::hotkey::{Code, Modifiers};
 
     mod parse_key_tests {
@@ -1517,41 +1509,6 @@ mod tests {
                 toml::from_str("[providers.windows]\ninclude_other_desktops = true\n")
                     .expect("include_other_desktops should parse");
             assert!(config.providers.windows.include_other_desktops);
-        }
-    }
-
-    mod window_focus_behavior_tests {
-        use super::{Config, WindowFocusBehavior};
-
-        #[test]
-        fn defaults_to_focus_then_activate_fallback() {
-            let config: Config = toml::from_str("").expect("empty config should parse");
-            assert_eq!(
-                config.providers.windows.focus_behavior,
-                WindowFocusBehavior::FocusWindowThenActivateFallback
-            );
-        }
-
-        #[test]
-        fn accepts_activate_app_only() {
-            let config: Config =
-                toml::from_str("[providers.windows]\nfocus_behavior = \"activate_app_only\"\n")
-                    .expect("focus behavior should parse");
-            assert_eq!(
-                config.providers.windows.focus_behavior,
-                WindowFocusBehavior::ActivateAppOnly
-            );
-        }
-
-        #[test]
-        fn accepts_focus_window_only() {
-            let config: Config =
-                toml::from_str("[providers.windows]\nfocus_behavior = \"focus_window_only\"\n")
-                    .expect("focus behavior should parse");
-            assert_eq!(
-                config.providers.windows.focus_behavior,
-                WindowFocusBehavior::FocusWindowOnly
-            );
         }
     }
 
@@ -1734,6 +1691,17 @@ mod tests {
             assert_eq!(config.ui.canvas.background_opacity, 0.97);
             assert_eq!(config.ui.entries.opacity, 1.0);
             assert_eq!(
+                config.ui.shortcuts.focus_window,
+                Some(crate::config::UiShortcutConfig {
+                    key: Some("Enter".to_owned()),
+                    code: None,
+                    alt: false,
+                    ctrl: false,
+                    meta: false,
+                    shift: false,
+                })
+            );
+            assert_eq!(
                 config.ui.shortcuts.activate_all_windows,
                 Some(crate::config::UiShortcutConfig {
                     key: Some("Enter".to_owned()),
@@ -1818,10 +1786,22 @@ mod tests {
 
         #[test]
         fn accepts_custom_ui_shortcut() {
-            let config: Config =
-                toml::from_str("[ui.shortcuts]\nactivate_all_windows = \"Cmd+Shift+Enter\"\n")
-                    .expect("custom UI shortcut should parse");
+            let config: Config = toml::from_str(
+                "[ui.shortcuts]\nfocus_window = \"Cmd+Enter\"\nactivate_all_windows = \"Cmd+Shift+Enter\"\n",
+            )
+            .expect("custom UI shortcut should parse");
 
+            assert_eq!(
+                config.ui.shortcuts.focus_window,
+                Some(crate::config::UiShortcutConfig {
+                    key: Some("Enter".to_owned()),
+                    code: None,
+                    alt: false,
+                    ctrl: false,
+                    meta: true,
+                    shift: false,
+                })
+            );
             assert_eq!(
                 config.ui.shortcuts.activate_all_windows,
                 Some(crate::config::UiShortcutConfig {
@@ -1837,10 +1817,12 @@ mod tests {
 
         #[test]
         fn accepts_disabled_ui_shortcut() {
-            let config: Config =
-                toml::from_str("[ui.shortcuts]\nactivate_all_windows = \"none\"\n")
-                    .expect("disabled UI shortcut should parse");
+            let config: Config = toml::from_str(
+                "[ui.shortcuts]\nfocus_window = \"none\"\nactivate_all_windows = \"none\"\n",
+            )
+            .expect("disabled UI shortcut should parse");
 
+            assert_eq!(config.ui.shortcuts.focus_window, None);
             assert_eq!(config.ui.shortcuts.activate_all_windows, None);
         }
 

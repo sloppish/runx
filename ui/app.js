@@ -133,6 +133,10 @@
     return root.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ || null;
   }
 
+  function focusWindowShortcut() {
+    return root.__RUNX_FOCUS_WINDOW_SHORTCUT__ || null;
+  }
+
   function inConfigErrorMode() {
     return !!state.configError && state.query === "";
   }
@@ -250,7 +254,7 @@
       return;
     }
 
-    if (event.key === "Enter") {
+    if (matchesShortcut(event, focusWindowShortcut())) {
       event.preventDefault();
       send({ type: "activate", index: state.selectedIndex, all_windows: false });
       return;

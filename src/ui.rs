@@ -267,16 +267,20 @@ pub fn html(theme: &UiConfig) -> String {
         .replace("__SHELL_CLASS__", shell_class)
         .replace("__RUNX_CYCLE_SELECTION_VALUE__", cycle_selection_value)
         .replace(
+            "__RUNX_FOCUS_WINDOW_SHORTCUT_VALUE__",
+            &shortcut_json(&theme.shortcuts.focus_window),
+        )
+        .replace(
             "__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT_VALUE__",
-            &activate_all_windows_shortcut_json(theme),
+            &shortcut_json(&theme.shortcuts.activate_all_windows),
         )
         .replace("__RUNX_STYLE__", &theme_css(theme))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
 }
 
 /// Returns the JSON value consumed by the frontend shortcut matcher.
-pub fn activate_all_windows_shortcut_json(theme: &UiConfig) -> String {
-    match serde_json::to_string(&theme.shortcuts.activate_all_windows) {
+pub fn shortcut_json(shortcut: &Option<crate::config::UiShortcutConfig>) -> String {
+    match serde_json::to_string(shortcut) {
         Ok(value) => value,
         Err(_) => "null".to_owned(),
     }
@@ -613,9 +617,12 @@ mod tests {
     }
 
     #[test]
-    fn html_exposes_activate_all_windows_shortcut() {
+    fn html_exposes_window_action_shortcuts() {
         let document = html(&UiConfig::default());
 
+        assert!(document.contains(
+            r#"window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {"key":"Enter","code":null,"alt":false,"ctrl":false,"meta":false,"shift":false};"#
+        ));
         assert!(document.contains(
             r#"window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {"key":"Enter","code":null,"alt":true,"ctrl":false,"meta":false,"shift":false};"#
         ));

@@ -34,7 +34,7 @@ use objc2_app_kit::{
 use objc2_foundation::NSString;
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
-use crate::{config::WindowFocusBehavior, debug_log};
+use crate::debug_log;
 
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
@@ -242,25 +242,35 @@ pub fn focus_launcher_panel(window: &Window) {
     window.makeKeyWindow();
 }
 
-/// Attempts to focus a specific window using the configured strategy.
-pub fn focus_window(
-    app_name: &str,
-    window_title: &str,
-    window_id: u32,
-    behavior: WindowFocusBehavior,
-) -> Result<Option<String>> {
-    match behavior {
-        WindowFocusBehavior::ActivateAppOnly => activate_or_open_application(app_name),
-        WindowFocusBehavior::ActivateAppThenFocusWindow => {
-            activate_then_focus_window(app_name, window_title, window_id)
+/// Focuses the selected window when possible, then activates the owning app.
+/// Falls back to activating/opening the app if exact window focus is unavailable.
+pub fn focus_window(app_name: &str, window_title: &str, window_id: u32) -> Result<Option<String>> {
+    if let Some(pid) = running_application_pid_by_name(app_name) {
+        if ensure_accessibility_trusted(true) {
+            match focus_window_for_pid(pid, window_id) {
+                Ok(()) => {
+                    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
+                    let _ = focus_window_for_pid(pid, window_id);
+                    return Ok(Some(format!("Focused {}", window_title)));
+                }
+                Err(error) => {
+                    debug_log::append(format!(
+                        "focus_window direct focus failed app={:?} title={:?} window_id={} error={error:#}",
+                        app_name, window_title, window_id
+                    ));
+                }
+            }
+        } else {
+            open_accessibility_settings();
         }
-        WindowFocusBehavior::FocusWindowOnly => {
-            focus_window_only(app_name, window_title, window_id)
-        }
-        WindowFocusBehavior::FocusWindowThenActivateFallback => {
-            focus_window_then_activate_fallback(app_name, window_title, window_id)
-        }
+
+        activate_running_application_by_pid(pid)?;
+        return Ok(Some(format!("Activated {}", app_name)));
     }
+
+    open_named_application(app_name)
+        .with_context(|| format!("failed to activate {app_name} for window focus"))?;
+    Ok(Some(format!("Activated {}", app_name)))
 }
 
 pub fn focus_window_and_activate_all_windows(
@@ -517,14 +527,6 @@ fn running_application_pid_by_name(name: &str) -> Option<c_int> {
     None
 }
 
-fn activate_running_application_by_name(name: &str) -> Result<Option<c_int>> {
-    let Some(pid) = running_application_pid_by_name(name) else {
-        return Ok(None);
-    };
-    activate_running_application_by_pid(pid)?;
-    Ok(Some(pid))
-}
-
 fn activate_running_application_by_pid(pid: c_int) -> Result<()> {
     activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)
 }
@@ -542,96 +544,6 @@ fn activate_running_application_by_pid_with_mode(
         }
     }
     bail!("failed to find running application for pid {pid}")
-}
-
-fn activate_or_open_application(app_name: &str) -> Result<Option<String>> {
-    if activate_running_application_by_name(app_name)?.is_some() {
-        return Ok(Some(format!("Activated {}", app_name)));
-    }
-
-    open_named_application(app_name)
-        .with_context(|| format!("failed to activate {app_name} for window focus"))?;
-    Ok(Some(format!("Activated {}", app_name)))
-}
-
-fn activate_then_focus_window(
-    app_name: &str,
-    window_title: &str,
-    window_id: u32,
-) -> Result<Option<String>> {
-    let Some(pid) = activate_running_application_by_name(app_name)? else {
-        open_named_application(app_name)
-            .with_context(|| format!("failed to activate {app_name} for window focus"))?;
-        return Ok(Some(format!("Activated {}", app_name)));
-    };
-
-    if !ensure_accessibility_trusted(true) {
-        open_accessibility_settings();
-        return Ok(Some(format!(
-            "Activated {} (window focus requires Accessibility permission)",
-            app_name
-        )));
-    }
-
-    match focus_window_for_pid(pid, window_id) {
-        Ok(()) => Ok(Some(format!("Focused {}", window_title))),
-        Err(error) => Ok(Some(format!(
-            "Activated {} (direct window focus unavailable: {})",
-            app_name, error
-        ))),
-    }
-}
-
-fn focus_window_only(app_name: &str, window_title: &str, window_id: u32) -> Result<Option<String>> {
-    let Some(pid) = running_application_pid_by_name(app_name) else {
-        bail!(
-            "window is no longer available because {} is not running",
-            app_name
-        );
-    };
-
-    if !ensure_accessibility_trusted(true) {
-        open_accessibility_settings();
-        bail!(
-            "Runx needs Accessibility permission to focus a specific window without activating the whole app."
-        );
-    }
-
-    focus_window_for_pid(pid, window_id)?;
-    Ok(Some(format!("Focused {}", window_title)))
-}
-
-fn focus_window_then_activate_fallback(
-    app_name: &str,
-    window_title: &str,
-    window_id: u32,
-) -> Result<Option<String>> {
-    if let Some(pid) = running_application_pid_by_name(app_name) {
-        if ensure_accessibility_trusted(true) {
-            match focus_window_for_pid(pid, window_id) {
-                Ok(()) => {
-                    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
-                    let _ = focus_window_for_pid(pid, window_id);
-                    return Ok(Some(format!("Focused {}", window_title)));
-                }
-                Err(error) => {
-                    debug_log::append(format!(
-                        "focus_window_then_activate_fallback direct focus failed app={:?} title={:?} window_id={} error={error:#}",
-                        app_name, window_title, window_id
-                    ));
-                }
-            }
-        } else {
-            open_accessibility_settings();
-        }
-
-        activate_running_application_by_pid(pid)?;
-        return Ok(Some(format!("Activated {}", app_name)));
-    }
-
-    open_named_application(app_name)
-        .with_context(|| format!("failed to activate {app_name} for window focus"))?;
-    Ok(Some(format!("Activated {}", app_name)))
 }
 
 fn activate_running_application(app: &NSRunningApplication, mode: AppActivationMode) -> Result<()> {

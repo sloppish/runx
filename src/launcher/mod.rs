@@ -140,7 +140,7 @@ impl Launcher {
             runtime,
             icons: icons.clone(),
             providers,
-            actions: ActionRunner::new(plugins, config.providers.windows.focus_behavior),
+            actions: ActionRunner::new(plugins),
             search: SearchController::new(&config.timing),
             windows: WindowController::default(),
             config_reload_error: config_error,
@@ -480,7 +480,7 @@ impl Launcher {
 
         self.providers.end_session();
         self.providers = providers;
-        self.actions = ActionRunner::new(plugins, config.providers.windows.focus_behavior);
+        self.actions = ActionRunner::new(plugins);
         self.search = SearchController::new(&config.timing);
         self.apply_window_config(&config.window);
         self.apply_theme(&config.ui)?;
@@ -550,11 +550,14 @@ impl Launcher {
         } else {
             "false"
         };
-        let activate_all_windows_shortcut = ui::activate_all_windows_shortcut_json(theme);
+        let focus_window_shortcut = ui::shortcut_json(&theme.shortcuts.focus_window);
+        let activate_all_windows_shortcut =
+            ui::shortcut_json(&theme.shortcuts.activate_all_windows);
         let script = format!(
-            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; }})()",
+            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; }})()",
             serde_json::to_string(&css)?,
             cycle_selection,
+            focus_window_shortcut,
             activate_all_windows_shortcut
         );
         self.webview
