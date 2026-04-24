@@ -17,7 +17,8 @@ miette = { version = "7.6", features = ["fancy"] }
 mlua = { version = "0.11.6", features = ["lua54", "send", "serde", "vendored"] }
 objc2 = "0.6"
 objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSBitmapImageRep", "NSGraphics", "NSGraphicsContext", "NSImage", "NSImageRep", "NSPasteboard", "NSRunningApplication", "NSWorkspace", "libc"] }
-objc2-foundation = { version = "0.3.2", features = ["NSString", "NSURL"] }
+objc2-foundation = { version = "0.3.2", features = ["NSError", "NSProcessInfo", "NSString", "NSURL"] }
+objc2-service-management = "0.3.2"
 plist = "1.7"
 png = "0.17"
 serde = { version = "1.0", features = ["derive"] }

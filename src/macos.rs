@@ -6,8 +6,8 @@
 
 use std::{
     ffi::{c_float, c_int, c_void},
-    io::Write,
-    path::Path,
+    fs,
+    path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
     time::Duration,
@@ -31,7 +31,11 @@ use objc2_app_kit::{
     NSApplicationActivationOptions, NSPasteboard, NSPasteboardTypeString, NSRunningApplication,
     NSWindow, NSWindowStyleMask, NSWorkspace,
 };
-use objc2_foundation::NSString;
+use objc2_foundation::{NSError, NSOperatingSystemVersion, NSProcessInfo, NSString};
+use objc2_service_management::{
+    SMAppService, SMAppServiceStatus, kSMErrorAlreadyRegistered, kSMErrorJobNotFound,
+};
+use plist::{Dictionary, Value};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
 use crate::debug_log;
@@ -40,61 +44,8 @@ const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
 const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(250);
 const AX_MESSAGING_TIMEOUT_SECONDS: c_float = 1.0;
-const LOGIN_ITEM_SCRIPT: &str = r#"on run argv
-  set actionName to item 1 of argv
-  set appPath to item 2 of argv
-  set appName to item 3 of argv
-
-  tell application "System Events"
-    if actionName is "enable" then
-      set itemCount to count login items
-      repeat with i from itemCount to 1 by -1
-        set existingItem to login item i
-        set itemPath to ""
-        try
-          set itemPath to path of existingItem as text
-        end try
-        if itemPath is appPath then
-          delete existingItem
-        end if
-      end repeat
-      make login item at end with properties {name:appName, path:appPath, hidden:false}
-      return "enabled"
-    else if actionName is "disable" then
-      set removedAny to false
-      set itemCount to count login items
-      repeat with i from itemCount to 1 by -1
-        set existingItem to login item i
-        set itemPath to ""
-        try
-          set itemPath to path of existingItem as text
-        end try
-        if itemPath is appPath then
-          delete existingItem
-          set removedAny to true
-        end if
-      end repeat
-      if removedAny then return "disabled"
-      return "missing"
-    else if actionName is "status" then
-      set itemCount to count login items
-      repeat with i from 1 to itemCount
-        set existingItem to login item i
-        set itemPath to ""
-        try
-          set itemPath to path of existingItem as text
-        end try
-        if itemPath is appPath then
-          return "enabled"
-        end if
-      end repeat
-      return "disabled"
-    else
-      error "unknown action"
-    end if
-  end tell
-end run
-"#;
+const LOGIN_AGENT_LABEL: &str = "io.github.sloppish.runx.login-item";
+const LOGIN_AGENT_PLIST_NAME: &str = "io.github.sloppish.runx.login-item.plist";
 
 type AXUIElementRef = *const c_void;
 type AXError = c_int;
@@ -149,8 +100,14 @@ pub struct CursorDisplayLocation {
 
 #[derive(Debug, Clone)]
 struct LoginItemTarget {
-    path: String,
-    name: String,
+    executable_path: String,
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum SmLoginItemStatus {
+    Enabled,
+    Disabled,
+    RequiresApproval,
 }
 
 #[derive(Clone, Copy)]
@@ -423,7 +380,7 @@ pub fn current_app_login_item_enabled() -> Result<Option<bool>> {
     let Some(target) = current_login_item_target() else {
         return Ok(None);
     };
-    Ok(Some(login_item_status(&target)?))
+    Ok(Some(login_item_enabled(&target)?))
 }
 
 /// Toggles whether the current app bundle is opened at login and returns the new enabled state.
@@ -432,10 +389,11 @@ pub fn toggle_current_app_login_item() -> Result<Option<bool>> {
         return Ok(None);
     };
 
-    let enabled = login_item_status(&target)?;
-    let next_action = if enabled { "disable" } else { "enable" };
-    let status = run_login_item_action(next_action, &target)?;
-    Ok(Some(matches!(status.as_str(), "enabled")))
+    if sm_app_service_supported() {
+        toggle_sm_login_item(&target).map(Some)
+    } else {
+        toggle_launch_agent_login_item(&target).map(Some)
+    }
 }
 
 fn open_accessibility_settings() {
@@ -448,60 +406,182 @@ fn current_login_item_target() -> Option<LoginItemTarget> {
 }
 
 fn login_item_target_from_executable_path(executable_path: &Path) -> Option<LoginItemTarget> {
-    let bundle_path = bundle_root_from_executable_path(&executable_path.to_string_lossy())?;
-    let name = Path::new(&bundle_path)
-        .file_stem()
-        .and_then(|value| value.to_str())?
-        .to_owned();
+    bundle_root_from_executable_path(&executable_path.to_string_lossy())?;
     Some(LoginItemTarget {
-        path: bundle_path,
-        name,
+        executable_path: executable_path.to_string_lossy().into_owned(),
     })
 }
 
-fn login_item_status(target: &LoginItemTarget) -> Result<bool> {
-    let status = run_login_item_action("status", target)?;
-    match status.as_str() {
-        "enabled" => Ok(true),
-        "disabled" | "missing" => Ok(false),
-        other => bail!("unexpected login item status `{other}`"),
+fn login_item_enabled(target: &LoginItemTarget) -> Result<bool> {
+    if sm_app_service_supported() {
+        let sm_enabled = sm_login_item_status()? == SmLoginItemStatus::Enabled;
+        return Ok(sm_enabled || launch_agent_login_item_enabled(target)?);
+    }
+
+    launch_agent_login_item_enabled(target)
+}
+
+fn toggle_sm_login_item(target: &LoginItemTarget) -> Result<bool> {
+    let sm_status = sm_login_item_status()?;
+    if sm_status == SmLoginItemStatus::Enabled || launch_agent_login_item_enabled(target)? {
+        unregister_sm_login_item()?;
+        remove_login_agent()?;
+        return Ok(false);
+    }
+
+    if sm_status == SmLoginItemStatus::RequiresApproval {
+        open_sm_login_item_settings();
+        bail!("Launch at Login needs approval in System Settings > General > Login Items");
+    }
+
+    register_sm_login_item()?;
+    remove_login_agent()?;
+    Ok(true)
+}
+
+fn toggle_launch_agent_login_item(target: &LoginItemTarget) -> Result<bool> {
+    let enabled = launch_agent_login_item_enabled(target)?;
+    if enabled {
+        remove_login_agent()?;
+        Ok(false)
+    } else {
+        write_login_agent(target)?;
+        Ok(true)
     }
 }
 
-fn run_login_item_action(action: &str, target: &LoginItemTarget) -> Result<String> {
-    let mut child = Command::new("osascript")
-        .arg("-")
-        .arg(action)
-        .arg(&target.path)
-        .arg(&target.name)
-        .stdin(Stdio::piped())
-        .stdout(Stdio::piped())
-        .stderr(Stdio::piped())
-        .spawn()
-        .context("failed to launch `osascript` for login item management")?;
-
-    {
-        let mut stdin = child
-            .stdin
-            .take()
-            .ok_or_else(|| anyhow::anyhow!("failed to open osascript stdin"))?;
-        stdin
-            .write_all(LOGIN_ITEM_SCRIPT.as_bytes())
-            .context("failed to send AppleScript to `osascript`")?;
+fn launch_agent_login_item_enabled(target: &LoginItemTarget) -> Result<bool> {
+    let Some(path) = login_agent_plist_path() else {
+        return Ok(false);
+    };
+    if !path.exists() {
+        return Ok(false);
     }
 
-    let output = child
-        .wait_with_output()
-        .context("failed to wait for `osascript` login item command")?;
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        if stderr.is_empty() {
-            bail!("`osascript` exited with status {}", output.status);
+    let plist =
+        Value::from_file(&path).with_context(|| format!("failed to read {}", path.display()))?;
+    Ok(login_agent_plist_matches_target(&plist, target))
+}
+
+fn sm_app_service_supported() -> bool {
+    NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion {
+        majorVersion: 13,
+        minorVersion: 0,
+        patchVersion: 0,
+    })
+}
+
+fn sm_login_item_status() -> Result<SmLoginItemStatus> {
+    let status = unsafe { SMAppService::mainAppService().status() };
+    match status {
+        SMAppServiceStatus::Enabled => Ok(SmLoginItemStatus::Enabled),
+        SMAppServiceStatus::NotRegistered | SMAppServiceStatus::NotFound => {
+            Ok(SmLoginItemStatus::Disabled)
         }
-        bail!("login item command failed: {stderr}");
+        SMAppServiceStatus::RequiresApproval => Ok(SmLoginItemStatus::RequiresApproval),
+        other => bail!("unexpected SMAppService status {:?}", other),
     }
+}
 
-    Ok(String::from_utf8_lossy(&output.stdout).trim().to_owned())
+fn register_sm_login_item() -> Result<()> {
+    let service = unsafe { SMAppService::mainAppService() };
+    match unsafe { service.registerAndReturnError() } {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == kSMErrorAlreadyRegistered as isize => Ok(()),
+        Err(error) => Err(sm_app_service_error("register", &error)),
+    }
+}
+
+fn unregister_sm_login_item() -> Result<()> {
+    let service = unsafe { SMAppService::mainAppService() };
+    match unsafe { service.unregisterAndReturnError() } {
+        Ok(()) => Ok(()),
+        Err(error) if error.code() == kSMErrorJobNotFound as isize => Ok(()),
+        Err(error) => Err(sm_app_service_error("unregister", &error)),
+    }
+}
+
+fn open_sm_login_item_settings() {
+    unsafe { SMAppService::openSystemSettingsLoginItems() };
+}
+
+fn sm_app_service_error(action: &str, error: &NSError) -> anyhow::Error {
+    anyhow::anyhow!(
+        "failed to {action} Launch at Login through SMAppService: {}",
+        error.localizedDescription()
+    )
+}
+
+fn write_login_agent(target: &LoginItemTarget) -> Result<()> {
+    let path = login_agent_plist_path().context("failed to resolve ~/Library/LaunchAgents")?;
+    let parent = path
+        .parent()
+        .context("failed to resolve LaunchAgents directory")?;
+    fs::create_dir_all(parent).with_context(|| format!("failed to create {}", parent.display()))?;
+
+    let plist = login_agent_plist_value(target);
+    plist
+        .to_file_xml(&path)
+        .with_context(|| format!("failed to write {}", path.display()))?;
+    Ok(())
+}
+
+fn remove_login_agent() -> Result<()> {
+    let Some(path) = login_agent_plist_path() else {
+        return Ok(());
+    };
+    match fs::remove_file(&path) {
+        Ok(()) => {}
+        Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+        Err(error) => {
+            return Err(error).with_context(|| format!("failed to remove {}", path.display()));
+        }
+    }
+    Ok(())
+}
+
+fn login_agent_plist_path() -> Option<PathBuf> {
+    Some(
+        PathBuf::from(std::env::var_os("HOME")?)
+            .join("Library")
+            .join("LaunchAgents")
+            .join(LOGIN_AGENT_PLIST_NAME),
+    )
+}
+
+fn login_agent_plist_value(target: &LoginItemTarget) -> Value {
+    let mut dict = Dictionary::new();
+    dict.insert(
+        "Label".to_owned(),
+        Value::String(LOGIN_AGENT_LABEL.to_owned()),
+    );
+    dict.insert(
+        "ProgramArguments".to_owned(),
+        Value::Array(vec![Value::String(target.executable_path.clone())]),
+    );
+    dict.insert("RunAtLoad".to_owned(), Value::Boolean(true));
+    Value::Dictionary(dict)
+}
+
+fn login_agent_plist_matches_target(plist: &Value, target: &LoginItemTarget) -> bool {
+    let Some(dict) = plist.as_dictionary() else {
+        return false;
+    };
+    let Some(label) = dict.get("Label").and_then(Value::as_string) else {
+        return false;
+    };
+    let Some(arguments) = dict.get("ProgramArguments").and_then(Value::as_array) else {
+        return false;
+    };
+    let Some(program) = arguments.first().and_then(Value::as_string) else {
+        return false;
+    };
+    let run_at_load = dict
+        .get("RunAtLoad")
+        .and_then(Value::as_boolean)
+        .unwrap_or(false);
+
+    label == LOGIN_AGENT_LABEL && program == target.executable_path && run_at_load
 }
 
 fn open_privacy_settings(anchor: &str) {
@@ -844,8 +924,8 @@ mod tests {
     use std::path::{Path, PathBuf};
 
     use super::{
-        bundle_root_from_executable_path, login_item_target_from_executable_path,
-        requires_clipboard_paste,
+        LOGIN_AGENT_LABEL, bundle_root_from_executable_path, login_agent_plist_matches_target,
+        login_agent_plist_value, login_item_target_from_executable_path, requires_clipboard_paste,
     };
 
     #[test]
@@ -881,12 +961,44 @@ mod tests {
         )
         .expect("bundled executable should produce login item target");
 
-        assert_eq!(target.path, "/Applications/Runx.app");
-        assert_eq!(target.name, "Runx");
+        assert_eq!(
+            target.executable_path,
+            "/Applications/Runx.app/Contents/MacOS/runx"
+        );
     }
 
     #[test]
     fn login_item_target_is_unavailable_for_non_bundled_executable() {
         assert!(login_item_target_from_executable_path(Path::new("/usr/bin/ssh")).is_none());
+    }
+
+    #[test]
+    fn login_agent_plist_targets_current_app_executable() {
+        let target = login_item_target_from_executable_path(
+            PathBuf::from("/Applications/Runx.app/Contents/MacOS/runx").as_path(),
+        )
+        .expect("bundled executable should produce login item target");
+
+        let plist = login_agent_plist_value(&target);
+        let dict = plist
+            .as_dictionary()
+            .expect("login agent plist should be a dictionary");
+
+        assert_eq!(
+            dict.get("Label").and_then(plist::Value::as_string),
+            Some(LOGIN_AGENT_LABEL)
+        );
+        assert_eq!(
+            dict.get("ProgramArguments")
+                .and_then(plist::Value::as_array)
+                .and_then(|arguments| arguments.first())
+                .and_then(plist::Value::as_string),
+            Some("/Applications/Runx.app/Contents/MacOS/runx")
+        );
+        assert_eq!(
+            dict.get("RunAtLoad").and_then(plist::Value::as_boolean),
+            Some(true)
+        );
+        assert!(login_agent_plist_matches_target(&plist, &target));
     }
 }

@@ -222,7 +222,7 @@ cat > "$CONTENTS_PATH/Info.plist" <<EOF
   <key>LSUIElement</key>
   <true/>
   <key>NSAppleEventsUsageDescription</key>
-  <string>Runx needs Apple Events access to focus windows and type into other apps.</string>
+  <string>Runx plugins may use Apple Events to automate other apps.</string>
   <key>NSHighResolutionCapable</key>
   <true/>
 </dict>
