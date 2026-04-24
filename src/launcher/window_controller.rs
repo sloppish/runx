@@ -19,7 +19,7 @@ use crate::{
 };
 
 const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
-const RUNX_BUNDLE_ID: &str = "dev.runx.launcher";
+const RUNX_BUNDLE_ID: &str = "io.github.sloppish.runx";
 
 /// Tracks the native window lifecycle state that lives outside `AppState`.
 #[derive(Default)]

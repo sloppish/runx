@@ -3,7 +3,7 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Runx"
-APP_BUNDLE_ID="dev.runx.launcher"
+APP_BUNDLE_ID="io.github.sloppish.runx"
 PROFILE="release"
 OUT_DIR="$ROOT_DIR/dist"
 APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
@@ -146,33 +146,39 @@ build_tray_icon() {
 }
 
 APP_VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
+TARGET_DIR="$(
+  cargo metadata --format-version 1 --no-deps --manifest-path "$ROOT_DIR/Cargo.toml" \
+    | plutil -extract target_directory raw -o - -
+)"
+
+if [[ -z "$TARGET_DIR" ]]; then
+  echo "Failed to resolve Cargo target directory" >&2
+  exit 1
+fi
 
 if [[ "$UNIVERSAL" -eq 1 ]]; then
   targets=(aarch64-apple-darwin x86_64-apple-darwin)
-  cargo_args=(build --manifest-path "$ROOT_DIR/Cargo.toml")
-  if [[ "${PROFILE}" == "release" ]]; then
-    cargo_args+=(--release)
-  fi
+  bin_paths=()
   for target in "${targets[@]}"; do
-    cargo_args+=(--target "$target")
+    cargo_args=(build --manifest-path "$ROOT_DIR/Cargo.toml" --target "$target")
+    if [[ "${PROFILE}" == "release" ]]; then
+      cargo_args+=(--release)
+    fi
+    cargo "${cargo_args[@]}"
+    bin_paths+=("$TARGET_DIR/$target/$PROFILE/runx")
   done
-  cargo "${cargo_args[@]}"
 
-  UNIVERSAL_BIN_DIR="$ROOT_DIR/target/universal/$PROFILE"
+  UNIVERSAL_BIN_DIR="$TARGET_DIR/universal/$PROFILE"
   mkdir -p "$UNIVERSAL_BIN_DIR"
   BIN_PATH="$UNIVERSAL_BIN_DIR/runx"
-  lipo -create \
-    "$ROOT_DIR/target/aarch64-apple-darwin/$PROFILE/runx" \
-    "$ROOT_DIR/target/x86_64-apple-darwin/$PROFILE/runx" \
-    -output "$BIN_PATH"
+  lipo -create "${bin_paths[@]}" -output "$BIN_PATH"
 else
   if [[ "${PROFILE}" == "release" ]]; then
     cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
-    BIN_PATH="$ROOT_DIR/target/release/runx"
   else
     cargo build --manifest-path "$ROOT_DIR/Cargo.toml"
-    BIN_PATH="$ROOT_DIR/target/debug/runx"
   fi
+  BIN_PATH="$TARGET_DIR/$PROFILE/runx"
 fi
 
 BUNDLE_PATH="$OUT_DIR/${APP_NAME}.app"
