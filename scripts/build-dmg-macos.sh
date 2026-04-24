@@ -149,36 +149,16 @@ DMG_PATH="$OUT_DIR/$DMG_NAME"
 work_dir="$(mktemp -d)"
 trap 'rm -rf "$work_dir"' EXIT
 
-stage_dir="$work_dir/stage"
-mkdir -p "$stage_dir"
-ditto "$APP_PATH" "$stage_dir/${APP_NAME}.app"
-ln -s /Applications "$stage_dir/Applications"
-
-rm -f "$DMG_PATH"
-hdiutil create \
-  -volname "$VOLUME_NAME" \
-  -srcfolder "$stage_dir" \
-  -ov \
-  -format UDZO \
-  "$DMG_PATH" >/dev/null
-
-if [[ "$SIGN_IDENTITY" != "-" ]]; then
-  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH" >/dev/null
-fi
-
-if [[ "$NOTARIZE" -eq 1 ]]; then
-  if [[ "$SIGN_IDENTITY" == "-" ]]; then
-    echo "Cannot notarize an ad-hoc signed DMG. Provide a real signing identity." >&2
-    exit 1
-  fi
-  if [[ -z "$NOTARY_APPLE_ID" || -z "$NOTARY_PASSWORD" || -z "$NOTARY_TEAM_ID" ]]; then
-    echo "Notarization requires --apple-id, --password, and --team-id (or RUNX_NOTARY_* env vars)." >&2
-    exit 1
-  fi
+notarize_artifact() {
+  local artifact_path="$1"
+  local label="$2"
+  local notary_output
+  local notary_status
+  local submission_id
 
   set +e
   notary_output="$(
-    xcrun notarytool submit "$DMG_PATH" \
+    xcrun notarytool submit "$artifact_path" \
       --apple-id "$NOTARY_APPLE_ID" \
       --password "$NOTARY_PASSWORD" \
       --team-id "$NOTARY_TEAM_ID" \
@@ -197,7 +177,7 @@ if [[ "$NOTARIZE" -eq 1 ]]; then
         | head -n 1
     )"
     if [[ -n "$submission_id" ]]; then
-      printf '\nFetching notary log for submission %s\n' "$submission_id" >&2
+      printf '\nFetching notary log for %s submission %s\n' "$label" "$submission_id" >&2
       xcrun notarytool log "$submission_id" \
         --apple-id "$NOTARY_APPLE_ID" \
         --password "$NOTARY_PASSWORD" \
@@ -205,7 +185,43 @@ if [[ "$NOTARIZE" -eq 1 ]]; then
     fi
     exit "$notary_status"
   fi
+}
 
+if [[ "$NOTARIZE" -eq 1 ]]; then
+  if [[ "$SIGN_IDENTITY" == "-" ]]; then
+    echo "Cannot notarize an ad-hoc signed build. Provide a real signing identity." >&2
+    exit 1
+  fi
+  if [[ -z "$NOTARY_APPLE_ID" || -z "$NOTARY_PASSWORD" || -z "$NOTARY_TEAM_ID" ]]; then
+    echo "Notarization requires --apple-id, --password, and --team-id (or RUNX_NOTARY_* env vars)." >&2
+    exit 1
+  fi
+
+  app_zip="$work_dir/${APP_NAME}.app.zip"
+  ditto -c -k --keepParent "$APP_PATH" "$app_zip"
+  notarize_artifact "$app_zip" "${APP_NAME}.app"
+  xcrun stapler staple "$APP_PATH" >/dev/null
+fi
+
+stage_dir="$work_dir/stage"
+mkdir -p "$stage_dir"
+ditto "$APP_PATH" "$stage_dir/${APP_NAME}.app"
+ln -s /Applications "$stage_dir/Applications"
+
+rm -f "$DMG_PATH"
+hdiutil create \
+  -volname "$VOLUME_NAME" \
+  -srcfolder "$stage_dir" \
+  -ov \
+  -format UDZO \
+  "$DMG_PATH" >/dev/null
+
+if [[ "$SIGN_IDENTITY" != "-" ]]; then
+  codesign --force --timestamp --sign "$SIGN_IDENTITY" "$DMG_PATH" >/dev/null
+fi
+
+if [[ "$NOTARIZE" -eq 1 ]]; then
+  notarize_artifact "$DMG_PATH" "$DMG_NAME"
   xcrun stapler staple "$DMG_PATH" >/dev/null
 fi
 
