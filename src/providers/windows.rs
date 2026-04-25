@@ -48,6 +48,11 @@ struct WindowSession {
     windows: Option<Vec<WindowRecord>>,
 }
 
+struct AccessibilityWindowRecord {
+    title: String,
+    focusable: bool,
+}
+
 impl WindowsProvider {
     /// Creates a window provider backed by the shared icon cache.
     pub fn new(icons: Arc<IconCache>, include_other_desktops: bool) -> Self {
@@ -229,35 +234,65 @@ fn read_window_entries(list_options: u32, fallback_empty_titles: bool) -> Vec<Wi
         });
     }
 
-    let ax_titles = accessibility_titles_by_window(raw_windows.as_slice());
-    apply_accessibility_titles(raw_windows, &ax_titles, fallback_empty_titles)
+    let ax_windows = accessibility_windows_by_window(raw_windows.as_slice());
+    let regular_app_pids = regular_app_pids(raw_windows.as_slice());
+    apply_accessibility_titles(
+        raw_windows,
+        &ax_windows,
+        &regular_app_pids,
+        fallback_empty_titles,
+    )
 }
 
-fn accessibility_titles_by_window(windows: &[WindowRecord]) -> HashMap<(i64, u32), String> {
-    let mut titles = HashMap::new();
+fn accessibility_windows_by_window(
+    windows: &[WindowRecord],
+) -> HashMap<(i64, u32), AccessibilityWindowRecord> {
+    let mut output = HashMap::new();
     let pids: HashSet<i64> = windows.iter().map(|window| window.pid).collect();
     for pid in pids {
         for window in macos::accessibility_windows_for_pid(pid) {
-            if !window.title.is_empty() {
-                titles.insert((pid, window.window_id), window.title);
-            }
+            output.insert(
+                (pid, window.window_id),
+                AccessibilityWindowRecord {
+                    title: window.title,
+                    focusable: is_focusable_accessibility_subrole(&window.subrole),
+                },
+            );
         }
     }
-    titles
+    output
+}
+
+fn regular_app_pids(windows: &[WindowRecord]) -> HashSet<i64> {
+    let pids: HashSet<i64> = windows.iter().map(|window| window.pid).collect();
+    pids.into_iter()
+        .filter(|pid| macos::running_application_is_regular(*pid))
+        .collect()
 }
 
 fn apply_accessibility_titles(
     raw_windows: Vec<WindowRecord>,
-    ax_titles: &HashMap<(i64, u32), String>,
+    ax_windows: &HashMap<(i64, u32), AccessibilityWindowRecord>,
+    regular_app_pids: &HashSet<i64>,
     fallback_empty_titles: bool,
 ) -> Vec<WindowRecord> {
     let mut windows = Vec::with_capacity(raw_windows.len());
     for mut window in raw_windows {
-        if let Some(title) = ax_titles.get(&(window.pid, window.window_id)) {
-            window.title.clone_from(title);
+        let ax_window = ax_windows.get(&(window.pid, window.window_id));
+        let is_regular_app = regular_app_pids.contains(&window.pid);
+
+        if let Some(ax_window) = ax_window
+            && !ax_window.title.is_empty()
+        {
+            window.title.clone_from(&ax_window.title);
         }
+
+        if !is_regular_app && !matches!(ax_window, Some(ax_window) if ax_window.focusable) {
+            continue;
+        }
+
         if window.title.is_empty() {
-            if !fallback_empty_titles {
+            if !fallback_empty_titles || !is_regular_app {
                 continue;
             }
             window.title.clone_from(&window.owner);
@@ -266,6 +301,10 @@ fn apply_accessibility_titles(
     }
 
     windows
+}
+
+fn is_focusable_accessibility_subrole(subrole: &str) -> bool {
+    matches!(subrole, "AXStandardWindow" | "AXDialog")
 }
 
 fn assign_z_indices(mut windows: Vec<WindowRecord>) -> Vec<WindowRecord> {
@@ -317,9 +356,12 @@ fn empty_query_score(window: &WindowRecord) -> i64 {
 
 #[cfg(test)]
 mod tests {
-    use std::collections::HashMap;
+    use std::collections::{HashMap, HashSet};
 
-    use super::{WindowRecord, apply_accessibility_titles, empty_query_score, merge_window_orders};
+    use super::{
+        AccessibilityWindowRecord, WindowRecord, apply_accessibility_titles, empty_query_score,
+        merge_window_orders,
+    };
 
     fn window(window_id: u32, z_index: usize) -> WindowRecord {
         WindowRecord {
@@ -328,6 +370,24 @@ mod tests {
             pid: 1,
             window_id,
             z_index,
+        }
+    }
+
+    fn regular_app_pids() -> HashSet<i64> {
+        HashSet::from([1])
+    }
+
+    fn ax_window(title: &str) -> AccessibilityWindowRecord {
+        AccessibilityWindowRecord {
+            title: title.to_owned(),
+            focusable: true,
+        }
+    }
+
+    fn non_focusable_ax_window(title: &str) -> AccessibilityWindowRecord {
+        AccessibilityWindowRecord {
+            title: title.to_owned(),
+            focusable: false,
         }
     }
 
@@ -369,7 +429,7 @@ mod tests {
     #[test]
     fn accessibility_title_overrides_core_graphics_title() {
         let mut ax_titles = HashMap::new();
-        ax_titles.insert((1, 10), "Accessibility title".to_owned());
+        ax_titles.insert((1, 10), ax_window("Accessibility title"));
 
         let windows = apply_accessibility_titles(
             vec![WindowRecord {
@@ -380,6 +440,7 @@ mod tests {
                 z_index: 0,
             }],
             &ax_titles,
+            &regular_app_pids(),
             true,
         );
 
@@ -397,6 +458,7 @@ mod tests {
                 z_index: 0,
             }],
             &HashMap::new(),
+            &regular_app_pids(),
             true,
         );
 
@@ -414,6 +476,7 @@ mod tests {
                 z_index: 0,
             }],
             &HashMap::new(),
+            &regular_app_pids(),
             false,
         );
 
@@ -423,7 +486,7 @@ mod tests {
     #[test]
     fn accessibility_title_keeps_window_without_fallback() {
         let mut ax_titles = HashMap::new();
-        ax_titles.insert((1, 10), "Accessibility title".to_owned());
+        ax_titles.insert((1, 10), ax_window("Accessibility title"));
 
         let windows = apply_accessibility_titles(
             vec![WindowRecord {
@@ -434,9 +497,109 @@ mod tests {
                 z_index: 0,
             }],
             &ax_titles,
+            &HashSet::new(),
             false,
         );
 
         assert_eq!(windows[0].title, "Accessibility title");
+    }
+
+    #[test]
+    fn non_regular_non_accessibility_window_is_dropped() {
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: "Menu bar surface".to_owned(),
+                owner: "Accessory".to_owned(),
+                pid: 2,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &HashMap::new(),
+            &regular_app_pids(),
+            true,
+        );
+
+        assert!(windows.is_empty());
+    }
+
+    #[test]
+    fn non_regular_non_focusable_accessibility_window_is_dropped() {
+        let mut ax_windows = HashMap::new();
+        ax_windows.insert((2, 10), non_focusable_ax_window(""));
+
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: String::new(),
+                owner: "Accessory".to_owned(),
+                pid: 2,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &ax_windows,
+            &regular_app_pids(),
+            true,
+        );
+
+        assert!(windows.is_empty());
+    }
+
+    #[test]
+    fn non_regular_titleless_accessibility_window_does_not_fallback_to_owner() {
+        let mut ax_windows = HashMap::new();
+        ax_windows.insert((2, 10), ax_window(""));
+
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: String::new(),
+                owner: "Accessory".to_owned(),
+                pid: 2,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &ax_windows,
+            &regular_app_pids(),
+            true,
+        );
+
+        assert!(windows.is_empty());
+    }
+
+    #[test]
+    fn non_regular_focusable_titled_accessibility_window_is_kept() {
+        let mut ax_windows = HashMap::new();
+        ax_windows.insert((2, 10), ax_window("Preferences"));
+
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: String::new(),
+                owner: "Accessory".to_owned(),
+                pid: 2,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &ax_windows,
+            &regular_app_pids(),
+            true,
+        );
+
+        assert_eq!(windows[0].title, "Preferences");
+    }
+
+    #[test]
+    fn regular_non_accessibility_window_is_kept() {
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: "Other desktop window".to_owned(),
+                owner: "Regular".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &HashMap::new(),
+            &regular_app_pids(),
+            false,
+        );
+
+        assert_eq!(windows[0].title, "Other desktop window");
     }
 }

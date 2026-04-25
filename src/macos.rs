@@ -31,8 +31,8 @@ use core_graphics::{
     event_source::{CGEventSource, CGEventSourceStateID},
 };
 use objc2_app_kit::{
-    NSApplicationActivationOptions, NSPasteboard, NSPasteboardTypeString, NSRunningApplication,
-    NSWindow, NSWindowStyleMask, NSWorkspace,
+    NSApplicationActivationOptions, NSApplicationActivationPolicy, NSPasteboard,
+    NSPasteboardTypeString, NSRunningApplication, NSWindow, NSWindowStyleMask, NSWorkspace,
 };
 use objc2_foundation::{NSError, NSOperatingSystemVersion, NSProcessInfo, NSString};
 use objc2_service_management::{
@@ -134,6 +134,7 @@ pub struct CursorDisplayLocation {
 pub struct AccessibilityWindow {
     pub window_id: u32,
     pub title: String,
+    pub subrole: String,
 }
 
 #[derive(Debug, Clone)]
@@ -447,9 +448,28 @@ pub fn accessibility_windows_for_pid(pid: i64) -> Vec<AccessibilityWindow> {
         let title = copy_ax_string(window, ax_title_attribute().as_concrete_TypeRef())
             .unwrap_or_default()
             .unwrap_or_default();
-        output.push(AccessibilityWindow { window_id, title });
+        let subrole = copy_ax_string(window, ax_subrole_attribute().as_concrete_TypeRef())
+            .unwrap_or_default()
+            .unwrap_or_default();
+        output.push(AccessibilityWindow {
+            window_id,
+            title,
+            subrole,
+        });
     }
     output
+}
+
+/// Returns whether the app can normally own foreground windows.
+pub fn running_application_is_regular(pid: i64) -> bool {
+    let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
+    for index in 0..running_apps.count() {
+        let candidate = running_apps.objectAtIndex(index);
+        if i64::from(candidate.processIdentifier()) == pid {
+            return candidate.activationPolicy() == NSApplicationActivationPolicy::Regular;
+        }
+    }
+    false
 }
 
 /// Returns whether the running executable is packaged as a `.app` bundle and can be used as a login item.
@@ -936,6 +956,10 @@ fn ax_raise_action() -> CFString {
 
 fn ax_title_attribute() -> CFString {
     CFString::from_static_string("AXTitle")
+}
+
+fn ax_subrole_attribute() -> CFString {
+    CFString::from_static_string("AXSubrole")
 }
 
 fn ax_windows_attribute() -> CFString {
