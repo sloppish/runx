@@ -157,18 +157,20 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn read_windows(include_other_desktops: bool) -> Vec<WindowRecord> {
-    let onscreen =
-        read_window_entries(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements);
+    let onscreen = read_window_entries(
+        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
+        true,
+    );
 
     if !include_other_desktops {
         return assign_z_indices(onscreen);
     }
 
-    let all_windows = read_window_entries(kCGWindowListExcludeDesktopElements);
+    let all_windows = read_window_entries(kCGWindowListExcludeDesktopElements, false);
     merge_window_orders(onscreen, all_windows)
 }
 
-fn read_window_entries(list_options: u32) -> Vec<WindowRecord> {
+fn read_window_entries(list_options: u32, fallback_empty_titles: bool) -> Vec<WindowRecord> {
     let Some(array) = copy_window_info(list_options, kCGNullWindowID) else {
         return Vec::new();
     };
@@ -209,7 +211,7 @@ fn read_window_entries(list_options: u32) -> Vec<WindowRecord> {
     }
 
     let ax_titles = accessibility_titles_by_window(raw_windows.as_slice());
-    apply_accessibility_titles(raw_windows, &ax_titles)
+    apply_accessibility_titles(raw_windows, &ax_titles, fallback_empty_titles)
 }
 
 fn accessibility_titles_by_window(windows: &[WindowRecord]) -> HashMap<(i64, u32), String> {
@@ -228,6 +230,7 @@ fn accessibility_titles_by_window(windows: &[WindowRecord]) -> HashMap<(i64, u32
 fn apply_accessibility_titles(
     raw_windows: Vec<WindowRecord>,
     ax_titles: &HashMap<(i64, u32), String>,
+    fallback_empty_titles: bool,
 ) -> Vec<WindowRecord> {
     let mut windows = Vec::with_capacity(raw_windows.len());
     for mut window in raw_windows {
@@ -235,6 +238,9 @@ fn apply_accessibility_titles(
             window.title.clone_from(title);
         }
         if window.title.is_empty() {
+            if !fallback_empty_titles {
+                continue;
+            }
             window.title.clone_from(&window.owner);
         }
         windows.push(window);
@@ -355,6 +361,7 @@ mod tests {
                 z_index: 0,
             }],
             &ax_titles,
+            true,
         );
 
         assert_eq!(windows[0].title, "Accessibility title");
@@ -371,8 +378,46 @@ mod tests {
                 z_index: 0,
             }],
             &HashMap::new(),
+            true,
         );
 
         assert_eq!(windows[0].title, "Example");
+    }
+
+    #[test]
+    fn missing_window_title_without_fallback_is_dropped() {
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: String::new(),
+                owner: "Example".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &HashMap::new(),
+            false,
+        );
+
+        assert!(windows.is_empty());
+    }
+
+    #[test]
+    fn accessibility_title_keeps_window_without_fallback() {
+        let mut ax_titles = HashMap::new();
+        ax_titles.insert((1, 10), "Accessibility title".to_owned());
+
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: String::new(),
+                owner: "Example".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &ax_titles,
+            false,
+        );
+
+        assert_eq!(windows[0].title, "Accessibility title");
     }
 }
