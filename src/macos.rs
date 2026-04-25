@@ -5,20 +5,23 @@
 //! the launcher.
 
 use std::{
-    ffi::{c_float, c_int, c_void},
+    ffi::{c_char, c_float, c_int, c_void},
     fs,
     path::{Path, PathBuf},
     process::{Command, Stdio},
+    sync::OnceLock,
     thread,
-    time::Duration,
+    time::{Duration, Instant},
 };
 
 use anyhow::{Context, Result, bail};
 use core_foundation::{
-    array::CFArray, base::TCFType, boolean::CFBoolean, dictionary::CFDictionary, string::CFString,
+    array::CFArray, base::TCFType, boolean::CFBoolean, data::CFData, dictionary::CFDictionary,
+    string::CFString,
 };
 use core_foundation_sys::{
     base::{Boolean, CFRelease, CFTypeRef},
+    data::CFDataRef,
     dictionary::CFDictionaryRef,
     string::CFStringRef,
 };
@@ -41,14 +44,29 @@ use tao::{platform::macos::WindowExtMacOS, window::Window};
 use crate::debug_log;
 
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
+const PRIVACY_SCREEN_CAPTURE: &str = "Privacy_ScreenCapture";
 const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
 const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(250);
 const AX_MESSAGING_TIMEOUT_SECONDS: c_float = 1.0;
+const REMOTE_AX_WINDOW_SCAN_BUDGET: Duration = Duration::from_millis(100);
+const REMOTE_AX_WINDOW_SCAN_LIMIT: u64 = 1_000;
+const REMOTE_AX_TOKEN_MAGIC: i32 = 0x636f636f;
+const RTLD_LAZY: c_int = 0x1;
+const RTLD_LOCAL: c_int = 0x4;
+const CPS_USER_GENERATED: u32 = 0x200;
+const MAKE_KEY_EVENT_BYTES: usize = 0xf8;
 const LOGIN_AGENT_LABEL: &str = "io.github.sloppish.runx.login-item";
 const LOGIN_AGENT_PLIST_NAME: &str = "io.github.sloppish.runx.login-item.plist";
 
 type AXUIElementRef = *const c_void;
 type AXError = c_int;
+
+#[repr(C)]
+#[derive(Debug, Clone, Copy, Default)]
+struct ProcessSerialNumber {
+    high_long_of_psn: u32,
+    low_long_of_psn: u32,
+}
 
 const K_AX_ERROR_SUCCESS: AXError = 0;
 const K_AX_ERROR_CANNOT_COMPLETE: AXError = -25204;
@@ -79,7 +97,22 @@ unsafe extern "C" {
         element: AXUIElementRef,
         timeout_in_seconds: c_float,
     ) -> AXError;
+    fn GetProcessForPID(pid: c_int, psn: *mut ProcessSerialNumber) -> c_int;
     fn _AXUIElementGetWindow(element: AXUIElementRef, out: *mut u32) -> AXError;
+    fn _AXUIElementCreateWithRemoteToken(token: CFDataRef) -> AXUIElementRef;
+}
+
+#[cfg(target_os = "macos")]
+#[link(name = "CoreGraphics", kind = "framework")]
+unsafe extern "C" {
+    fn CGPreflightScreenCaptureAccess() -> bool;
+    fn CGRequestScreenCaptureAccess() -> bool;
+}
+
+#[cfg(target_os = "macos")]
+unsafe extern "C" {
+    fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
+    fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;
 }
 
 /// Snapshot of the app that was frontmost before Runx appeared.
@@ -119,6 +152,17 @@ enum SmLoginItemStatus {
 enum AppActivationMode {
     Default,
     AllWindows,
+}
+
+#[derive(Debug, Clone, Copy)]
+struct ExactWindowFocus {
+    activated_app: bool,
+}
+
+struct WindowServerApis {
+    set_front_process_with_options:
+        unsafe extern "C" fn(*mut ProcessSerialNumber, u32, u32) -> c_int,
+    post_event_record_to: unsafe extern "C" fn(*mut ProcessSerialNumber, *mut u8) -> c_int,
 }
 
 /// Opens an application bundle path through Launch Services.
@@ -210,9 +254,14 @@ pub fn focus_window(app_name: &str, window_title: &str, window_id: u32) -> Resul
     if let Some(pid) = running_application_pid_by_name(app_name) {
         if ensure_accessibility_trusted(true) {
             match focus_window_for_pid(pid, window_id) {
-                Ok(()) => {
-                    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
-                    let _ = focus_window_for_pid(pid, window_id);
+                Ok(focus) => {
+                    if !focus.activated_app {
+                        activate_running_application_by_pid_with_mode(
+                            pid,
+                            AppActivationMode::Default,
+                        )?;
+                        let _ = focus_window_for_pid(pid, window_id);
+                    }
                     return Ok(Some(format!("Focused {}", window_title)));
                 }
                 Err(error) => {
@@ -257,7 +306,7 @@ pub fn focus_window_and_activate_all_windows(
 
         if accessibility_trusted {
             match focus_window_for_pid(pid, window_id) {
-                Ok(()) => {
+                Ok(_) => {
                     return Ok(Some(format!(
                         "Focused {} and activated all {} windows",
                         window_title, app_name
@@ -359,6 +408,23 @@ pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
     unsafe { AXIsProcessTrustedWithOptions(options.as_concrete_TypeRef()) != 0 }
 }
 
+/// Returns whether the current process is trusted for Screen Recording APIs.
+pub fn ensure_screen_recording_trusted(prompt: bool) -> bool {
+    if unsafe { CGPreflightScreenCaptureAccess() } {
+        return true;
+    }
+
+    if !prompt {
+        return false;
+    }
+
+    let trusted = unsafe { CGRequestScreenCaptureAccess() };
+    if !trusted {
+        open_screen_recording_settings();
+    }
+    trusted
+}
+
 /// Returns Accessibility-visible windows for a running application.
 pub fn accessibility_windows_for_pid(pid: i64) -> Vec<AccessibilityWindow> {
     let Some(app_element) = OwnedAxElement::application(pid as c_int) else {
@@ -414,6 +480,10 @@ pub fn toggle_current_app_login_item() -> Result<Option<bool>> {
 
 fn open_accessibility_settings() {
     open_privacy_settings(PRIVACY_ACCESSIBILITY);
+}
+
+fn open_screen_recording_settings() {
+    open_privacy_settings(PRIVACY_SCREEN_CAPTURE);
 }
 
 fn current_login_item_target() -> Option<LoginItemTarget> {
@@ -665,7 +735,7 @@ fn activate_running_application(app: &NSRunningApplication, mode: AppActivationM
     bail!("failed to activate {label}")
 }
 
-fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<()> {
+fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<ExactWindowFocus> {
     let app_element = OwnedAxElement::application(pid)
         .ok_or_else(|| anyhow::anyhow!("failed to create accessibility handle for pid {pid}"))?;
     let _ = app_element.set_messaging_timeout(AX_MESSAGING_TIMEOUT_SECONDS);
@@ -686,26 +756,154 @@ fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<()> {
             continue;
         }
 
-        let mut did_focus = false;
-        if set_ax_bool_attribute(window, ax_main_attribute().as_concrete_TypeRef(), true).is_ok() {
-            did_focus = true;
-        }
-        if set_ax_bool_attribute(window, ax_focused_attribute().as_concrete_TypeRef(), true).is_ok()
-        {
-            did_focus = true;
-        }
-        if perform_ax_action(window, ax_raise_action().as_concrete_TypeRef()).is_ok() {
-            did_focus = true;
-        }
+        return focus_ax_window(pid, window_id, window);
+    }
 
-        if did_focus {
-            return Ok(());
-        }
-
-        bail!("window exists but does not expose focus actions");
+    if let Some(window) = remote_ax_window_for_pid(pid, window_id) {
+        return focus_ax_window(pid, window_id, window.as_ptr());
     }
 
     bail!("window not found")
+}
+
+fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result<ExactWindowFocus> {
+    let activated_app = match focus_cg_window(pid, window_id) {
+        Ok(()) => true,
+        Err(error) => {
+            debug_log::append(format!(
+                "focus_cg_window failed pid={pid} window_id={window_id} error={error:#}"
+            ));
+            false
+        }
+    };
+
+    let mut did_focus = activated_app;
+    if set_ax_bool_attribute(window, ax_main_attribute().as_concrete_TypeRef(), true).is_ok() {
+        did_focus = true;
+    }
+    if set_ax_bool_attribute(window, ax_focused_attribute().as_concrete_TypeRef(), true).is_ok() {
+        did_focus = true;
+    }
+    if perform_ax_action(window, ax_raise_action().as_concrete_TypeRef()).is_ok() {
+        did_focus = true;
+    }
+
+    if did_focus {
+        return Ok(ExactWindowFocus { activated_app });
+    }
+
+    bail!("window exists but does not expose focus actions")
+}
+
+fn remote_ax_window_for_pid(pid: c_int, window_id: u32) -> Option<OwnedAxElement> {
+    let mut token = [0_u8; 20];
+    token[0..4].copy_from_slice(&pid.to_ne_bytes());
+    token[8..12].copy_from_slice(&REMOTE_AX_TOKEN_MAGIC.to_ne_bytes());
+
+    let started_at = Instant::now();
+    for ax_id in 0..REMOTE_AX_WINDOW_SCAN_LIMIT {
+        token[12..20].copy_from_slice(&ax_id.to_ne_bytes());
+        let token_data = CFData::from_buffer(&token);
+        let value = unsafe { _AXUIElementCreateWithRemoteToken(token_data.as_concrete_TypeRef()) };
+        if value.is_null() {
+            continue;
+        }
+
+        let element = OwnedAxElement(value);
+        if matches!(copy_ax_window_id(element.as_ptr()).ok().flatten(), Some(id) if id == window_id)
+        {
+            return Some(element);
+        }
+
+        if started_at.elapsed() >= REMOTE_AX_WINDOW_SCAN_BUDGET {
+            return None;
+        }
+    }
+
+    None
+}
+
+fn focus_cg_window(pid: c_int, window_id: u32) -> Result<()> {
+    let apis = window_server_apis().ok_or_else(|| {
+        anyhow::anyhow!("SkyLight window focus APIs are unavailable on this macOS installation")
+    })?;
+    let mut psn = ProcessSerialNumber::default();
+    let status = unsafe { GetProcessForPID(pid, &mut psn) };
+    if status != 0 {
+        bail!("failed to resolve process serial number for pid {pid}: status {status}");
+    }
+
+    let error =
+        unsafe { (apis.set_front_process_with_options)(&mut psn, window_id, CPS_USER_GENERATED) };
+    if error != 0 {
+        bail!("failed to set front process for window {window_id}: error {error}");
+    }
+
+    make_key_window(apis, &mut psn, window_id)
+}
+
+fn make_key_window(
+    apis: &WindowServerApis,
+    psn: &mut ProcessSerialNumber,
+    window_id: u32,
+) -> Result<()> {
+    let mut bytes = [0_u8; MAKE_KEY_EVENT_BYTES];
+    bytes[0x04] = MAKE_KEY_EVENT_BYTES as u8;
+    bytes[0x3a] = 0x10;
+    bytes[0x3c..0x40].copy_from_slice(&window_id.to_ne_bytes());
+    bytes[0x20..0x30].fill(0xff);
+
+    bytes[0x08] = 0x01;
+    let first_error = unsafe { (apis.post_event_record_to)(psn, bytes.as_mut_ptr()) };
+    if first_error != 0 {
+        bail!("failed to post key-window begin event: error {first_error}");
+    }
+
+    bytes[0x08] = 0x02;
+    let second_error = unsafe { (apis.post_event_record_to)(psn, bytes.as_mut_ptr()) };
+    if second_error != 0 {
+        bail!("failed to post key-window end event: error {second_error}");
+    }
+
+    Ok(())
+}
+
+fn window_server_apis() -> Option<&'static WindowServerApis> {
+    static APIS: OnceLock<Option<WindowServerApis>> = OnceLock::new();
+    APIS.get_or_init(load_window_server_apis).as_ref()
+}
+
+fn load_window_server_apis() -> Option<WindowServerApis> {
+    let handle = unsafe {
+        dlopen(
+            c"/System/Library/PrivateFrameworks/SkyLight.framework/SkyLight".as_ptr(),
+            RTLD_LAZY | RTLD_LOCAL,
+        )
+    };
+    if handle.is_null() {
+        return None;
+    }
+
+    macro_rules! load_symbol {
+        ($name:literal, $ty:ty) => {{
+            let symbol = unsafe { dlsym(handle, concat!($name, "\0").as_ptr().cast()) };
+            if symbol.is_null() {
+                return None;
+            }
+            unsafe { std::mem::transmute::<*mut c_void, $ty>(symbol) }
+        }};
+    }
+
+    Some(WindowServerApis {
+        set_front_process_with_options: load_symbol!(
+            "_SLPSSetFrontProcessWithOptions",
+            unsafe extern "C" fn(*mut ProcessSerialNumber, u32, u32) -> c_int
+        ),
+        post_event_record_to: load_symbol!(
+            "SLPSPostEventRecordTo",
+            unsafe extern "C" fn(*mut ProcessSerialNumber, *mut u8) -> c_int
+        ),
+    })
 }
 
 fn ns_window(window: &Window) -> &NSWindow {

@@ -50,7 +50,7 @@ Settings for the macOS windows provider.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `include_other_desktops` | boolean | `false` | Include windows from other macOS desktops/spaces in search results. |
+| `include_other_desktops` | boolean | `false` | Include windows from other macOS desktops/spaces in search results. Requires Screen Recording permission. |
 
 ## [providers.apps]
 

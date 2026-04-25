@@ -202,7 +202,7 @@ pub struct ProvidersConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowsProviderConfig {
-    /// Include windows from other macOS desktops/spaces in search results.
+    /// Include windows from other macOS desktops/spaces in search results. Requires Screen Recording permission.
     pub include_other_desktops: bool,
 }
 

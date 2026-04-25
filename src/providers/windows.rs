@@ -5,7 +5,7 @@ use std::{
     sync::{Arc, Mutex},
 };
 
-use anyhow::Result;
+use anyhow::{Result, bail};
 use core_foundation::{
     base::{CFType, TCFType},
     dictionary::CFDictionary,
@@ -60,7 +60,8 @@ impl WindowsProvider {
 
     /// Starts a new launcher-visible session and captures a fresh snapshot when permitted.
     pub fn begin_session(&self) {
-        let windows = macos::ensure_accessibility_trusted(false)
+        let windows = self
+            .required_permissions_available(false)
             .then(|| read_windows(self.include_other_desktops));
         let mut session = lock_or_recover(&self.session);
         session.active = true;
@@ -76,7 +77,7 @@ impl WindowsProvider {
 
     /// Returns the highest-scoring visible windows for the current query.
     pub fn search(&self, query: &str, limit: usize) -> Result<Vec<SearchItem>> {
-        let windows = match self.session_windows() {
+        let windows = match self.session_windows()? {
             Some(windows) => windows,
             None => return Ok(Vec::new()),
         };
@@ -125,19 +126,19 @@ impl WindowsProvider {
             .collect())
     }
 
-    fn session_windows(&self) -> Option<Vec<WindowRecord>> {
+    fn session_windows(&self) -> Result<Option<Vec<WindowRecord>>> {
         {
             let session = lock_or_recover(&self.session);
             if !session.active {
-                return None;
+                return Ok(None);
             }
             if let Some(windows) = &session.windows {
-                return Some(windows.clone());
+                return Ok(Some(windows.clone()));
             }
         }
 
-        if !macos::ensure_accessibility_trusted(true) {
-            return None;
+        if !self.ensure_required_permissions(true)? {
+            return Ok(None);
         }
 
         let windows = read_windows(self.include_other_desktops);
@@ -145,7 +146,25 @@ impl WindowsProvider {
         if session.active {
             session.windows = Some(windows.clone());
         }
-        Some(windows)
+        Ok(Some(windows))
+    }
+
+    fn required_permissions_available(&self, prompt: bool) -> bool {
+        self.ensure_required_permissions(prompt).unwrap_or(false)
+    }
+
+    fn ensure_required_permissions(&self, prompt: bool) -> Result<bool> {
+        if !macos::ensure_accessibility_trusted(prompt) {
+            return Ok(false);
+        }
+
+        if self.include_other_desktops && !macos::ensure_screen_recording_trusted(prompt) {
+            bail!(
+                "Searching windows from other desktops requires Screen Recording permission. Enable Runx in System Settings > Privacy & Security > Screen & System Audio Recording, then restart Runx."
+            );
+        }
+
+        Ok(true)
     }
 }
 
