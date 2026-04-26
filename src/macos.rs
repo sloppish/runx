@@ -99,14 +99,6 @@ unsafe extern "C" {
     ) -> AXError;
     fn GetProcessForPID(pid: c_int, psn: *mut ProcessSerialNumber) -> c_int;
     fn _AXUIElementGetWindow(element: AXUIElementRef, out: *mut u32) -> AXError;
-    fn _AXUIElementCreateWithRemoteToken(token: CFDataRef) -> AXUIElementRef;
-}
-
-#[cfg(target_os = "macos")]
-#[link(name = "CoreGraphics", kind = "framework")]
-unsafe extern "C" {
-    fn CGPreflightScreenCaptureAccess() -> bool;
-    fn CGRequestScreenCaptureAccess() -> bool;
 }
 
 #[cfg(target_os = "macos")]
@@ -164,6 +156,15 @@ struct WindowServerApis {
     set_front_process_with_options:
         unsafe extern "C" fn(*mut ProcessSerialNumber, u32, u32) -> c_int,
     post_event_record_to: unsafe extern "C" fn(*mut ProcessSerialNumber, *mut u8) -> c_int,
+}
+
+struct CoreGraphicsApis {
+    preflight_screen_capture_access: unsafe extern "C" fn() -> bool,
+    request_screen_capture_access: unsafe extern "C" fn() -> bool,
+}
+
+struct ApplicationServicesApis {
+    create_ax_element_with_remote_token: unsafe extern "C" fn(CFDataRef) -> AXUIElementRef,
 }
 
 /// Opens an application bundle path through Launch Services.
@@ -411,7 +412,15 @@ pub fn ensure_accessibility_trusted(prompt: bool) -> bool {
 
 /// Returns whether the current process is trusted for Screen Recording APIs.
 pub fn ensure_screen_recording_trusted(prompt: bool) -> bool {
-    if unsafe { CGPreflightScreenCaptureAccess() } {
+    if !screen_recording_permission_supported() {
+        return true;
+    }
+
+    let Some(apis) = core_graphics_apis() else {
+        return false;
+    };
+
+    if unsafe { (apis.preflight_screen_capture_access)() } {
         return true;
     }
 
@@ -419,7 +428,7 @@ pub fn ensure_screen_recording_trusted(prompt: bool) -> bool {
         return false;
     }
 
-    let trusted = unsafe { CGRequestScreenCaptureAccess() };
+    let trusted = unsafe { (apis.request_screen_capture_access)() };
     if !trusted {
         open_screen_recording_settings();
     }
@@ -573,6 +582,14 @@ fn sm_app_service_supported() -> bool {
     NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion {
         majorVersion: 13,
         minorVersion: 0,
+        patchVersion: 0,
+    })
+}
+
+fn screen_recording_permission_supported() -> bool {
+    NSProcessInfo::processInfo().isOperatingSystemAtLeastVersion(NSOperatingSystemVersion {
+        majorVersion: 10,
+        minorVersion: 15,
         patchVersion: 0,
     })
 }
@@ -769,8 +786,15 @@ fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<ExactWindowFocus> 
 
     for raw_window in windows.get_all_values() {
         let window = raw_window.cast();
-        let Some(candidate_window_id) = copy_ax_window_id(window)? else {
-            continue;
+        let candidate_window_id = match copy_ax_window_id(window) {
+            Ok(Some(window_id)) => window_id,
+            Ok(None) => continue,
+            Err(error) => {
+                debug_log::append(format!(
+                    "focus_window skipped inaccessible AX window pid={pid} error={error:#}"
+                ));
+                continue;
+            }
         };
         if candidate_window_id != window_id {
             continue;
@@ -816,6 +840,7 @@ fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result
 }
 
 fn remote_ax_window_for_pid(pid: c_int, window_id: u32) -> Option<OwnedAxElement> {
+    let apis = application_services_apis()?;
     let mut token = [0_u8; 20];
     token[0..4].copy_from_slice(&pid.to_ne_bytes());
     token[8..12].copy_from_slice(&REMOTE_AX_TOKEN_MAGIC.to_ne_bytes());
@@ -824,7 +849,8 @@ fn remote_ax_window_for_pid(pid: c_int, window_id: u32) -> Option<OwnedAxElement
     for ax_id in 0..REMOTE_AX_WINDOW_SCAN_LIMIT {
         token[12..20].copy_from_slice(&ax_id.to_ne_bytes());
         let token_data = CFData::from_buffer(&token);
-        let value = unsafe { _AXUIElementCreateWithRemoteToken(token_data.as_concrete_TypeRef()) };
+        let value =
+            unsafe { (apis.create_ax_element_with_remote_token)(token_data.as_concrete_TypeRef()) };
         if value.is_null() {
             continue;
         }
@@ -893,6 +919,53 @@ fn window_server_apis() -> Option<&'static WindowServerApis> {
     APIS.get_or_init(load_window_server_apis).as_ref()
 }
 
+fn core_graphics_apis() -> Option<&'static CoreGraphicsApis> {
+    static APIS: OnceLock<Option<CoreGraphicsApis>> = OnceLock::new();
+    APIS.get_or_init(load_core_graphics_apis).as_ref()
+}
+
+fn application_services_apis() -> Option<&'static ApplicationServicesApis> {
+    static APIS: OnceLock<Option<ApplicationServicesApis>> = OnceLock::new();
+    APIS.get_or_init(load_application_services_apis).as_ref()
+}
+
+fn load_core_graphics_apis() -> Option<CoreGraphicsApis> {
+    let handle = unsafe {
+        dlopen(
+            c"/System/Library/Frameworks/CoreGraphics.framework/CoreGraphics".as_ptr(),
+            RTLD_LAZY | RTLD_LOCAL,
+        )
+    };
+    if handle.is_null() {
+        return None;
+    }
+
+    Some(CoreGraphicsApis {
+        preflight_screen_capture_access: load_symbol(handle, "CGPreflightScreenCaptureAccess")?,
+        request_screen_capture_access: load_symbol(handle, "CGRequestScreenCaptureAccess")?,
+    })
+}
+
+fn load_application_services_apis() -> Option<ApplicationServicesApis> {
+    let handle = unsafe {
+        dlopen(
+            c"/System/Library/Frameworks/ApplicationServices.framework/ApplicationServices"
+                .as_ptr(),
+            RTLD_LAZY | RTLD_LOCAL,
+        )
+    };
+    if handle.is_null() {
+        return None;
+    }
+
+    Some(ApplicationServicesApis {
+        create_ax_element_with_remote_token: load_symbol(
+            handle,
+            "_AXUIElementCreateWithRemoteToken",
+        )?,
+    })
+}
+
 fn load_window_server_apis() -> Option<WindowServerApis> {
     let handle = unsafe {
         dlopen(
@@ -904,26 +977,22 @@ fn load_window_server_apis() -> Option<WindowServerApis> {
         return None;
     }
 
-    macro_rules! load_symbol {
-        ($name:literal, $ty:ty) => {{
-            let symbol = unsafe { dlsym(handle, concat!($name, "\0").as_ptr().cast()) };
-            if symbol.is_null() {
-                return None;
-            }
-            unsafe { std::mem::transmute::<*mut c_void, $ty>(symbol) }
-        }};
-    }
-
     Some(WindowServerApis {
-        set_front_process_with_options: load_symbol!(
-            "_SLPSSetFrontProcessWithOptions",
-            unsafe extern "C" fn(*mut ProcessSerialNumber, u32, u32) -> c_int
-        ),
-        post_event_record_to: load_symbol!(
-            "SLPSPostEventRecordTo",
-            unsafe extern "C" fn(*mut ProcessSerialNumber, *mut u8) -> c_int
-        ),
+        set_front_process_with_options: load_symbol(handle, "_SLPSSetFrontProcessWithOptions")?,
+        post_event_record_to: load_symbol(handle, "SLPSPostEventRecordTo")?,
     })
+}
+
+fn load_symbol<T>(handle: *mut c_void, name: &str) -> Option<T> {
+    let mut symbol_name = Vec::with_capacity(name.len() + 1);
+    symbol_name.extend_from_slice(name.as_bytes());
+    symbol_name.push(0);
+
+    let symbol = unsafe { dlsym(handle, symbol_name.as_ptr().cast()) };
+    if symbol.is_null() {
+        return None;
+    }
+    Some(unsafe { std::mem::transmute_copy(&symbol) })
 }
 
 fn ns_window(window: &Window) -> &NSWindow {
