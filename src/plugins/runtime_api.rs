@@ -8,7 +8,7 @@ use mlua::{Lua, LuaSerdeExt, Table};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    macos::{copy_text_to_clipboard, type_text_into_previous_app},
+    macos::{copy_text_to_clipboard, read_clipboard_text, type_text_into_previous_app},
     scoring::fuzzy_score,
 };
 
@@ -150,6 +150,11 @@ fn install_runtime(
         lua.create_function(move |_, text: String| {
             copy_text_to_clipboard(&text).map_err(mlua::Error::external)
         })?,
+    )?;
+
+    runtime.set(
+        "clipboard_text",
+        lua.create_function(move |_, ()| read_clipboard_text().map_err(mlua::Error::external))?,
     )?;
 
     runtime.set("type_text", {

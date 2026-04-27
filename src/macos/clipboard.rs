@@ -23,6 +23,15 @@ pub fn copy_text_to_clipboard(text: &str) -> Result<String> {
     Ok("Copied to clipboard".to_owned())
 }
 
+/// Reads plain text from the macOS clipboard.
+pub fn read_clipboard_text() -> Result<String> {
+    let pasteboard = NSPasteboard::generalPasteboard();
+    let text = pasteboard
+        .stringForType(pasteboard_type_string())
+        .ok_or_else(|| anyhow::anyhow!("clipboard does not currently contain plain text"))?;
+    Ok(text.to_string())
+}
+
 /// Types text into the app that was focused before Runx was shown.
 pub fn type_text_into_previous_app(
     text: &str,
@@ -82,14 +91,6 @@ fn schedule_clipboard_restore(previous_clipboard: Option<String>, inserted_text:
 
 pub(super) fn requires_clipboard_paste(text: &str) -> bool {
     !text.is_ascii()
-}
-
-fn read_clipboard_text() -> Result<String> {
-    let pasteboard = NSPasteboard::generalPasteboard();
-    let text = pasteboard
-        .stringForType(pasteboard_type_string())
-        .ok_or_else(|| anyhow::anyhow!("clipboard does not currently contain plain text"))?;
-    Ok(text.to_string())
 }
 
 fn write_clipboard_text(text: &str) -> Result<()> {

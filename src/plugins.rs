@@ -344,7 +344,7 @@ fn run_action(
 mod tests {
     use std::path::PathBuf;
 
-    use super::{LuaPlugin, run_search_handler, runtime_api::empty_plugin_config};
+    use super::{LuaPlugin, run_search, run_search_handler, runtime_api::empty_plugin_config};
 
     #[test]
     fn routed_handlers_receive_raw_and_parsed_args() {
@@ -412,5 +412,34 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert!(!items[0].compact);
+    }
+
+    #[test]
+    fn runtime_exposes_clipboard_text_helper() {
+        let plugin = LuaPlugin {
+            id: "clipboard".to_owned(),
+            name: "Clipboard Plugin".to_owned(),
+            badge: "CLP".to_owned(),
+            path: PathBuf::from("clipboard.lua"),
+            source: r#"
+                return {
+                  search = function()
+                    return {
+                      {
+                        title = type(runx.clipboard_text),
+                        action = { kind = "noop" },
+                      },
+                    }
+                  end,
+                }
+            "#
+            .to_owned(),
+        };
+
+        let items =
+            run_search(&plugin, "", empty_plugin_config(), &[]).expect("search should succeed");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "function");
     }
 }

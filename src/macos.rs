@@ -16,7 +16,7 @@ mod window;
 pub use apps::{
     capture_frontmost_app, open_application, open_settings, running_application_is_regular,
 };
-pub use clipboard::{copy_text_to_clipboard, type_text_into_previous_app};
+pub use clipboard::{copy_text_to_clipboard, read_clipboard_text, type_text_into_previous_app};
 pub use login_items::{
     current_app_login_item_enabled, current_app_supports_login_item, toggle_current_app_login_item,
 };
