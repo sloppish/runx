@@ -1,4 +1,4 @@
-pub(super) const DEFAULT_CONFIG: &str = r##"# Runx configuration
+pub const DEFAULT_CONFIG: &str = r##"# Runx configuration
 #
 # `provider_order` controls which provider wins when scores are close.
 # `tie_threshold` is the raw fuzzy-score delta that still counts as "similar".
@@ -104,5 +104,5 @@ badge_radius = 14
 icon_size = 46
 "##;
 
-pub(super) const KNOWN_PROVIDER_NAMES: [&str; 4] = ["windows", "apps", "settings", "plugins"];
-pub(super) const BUILTIN_COLORSCHEME_NAMES: [&str; 2] = ["builtin_light", "builtin_dark"];
+pub const KNOWN_PROVIDER_NAMES: [&str; 4] = ["windows", "apps", "settings", "plugins"];
+pub const BUILTIN_COLORSCHEME_NAMES: [&str; 2] = ["builtin_light", "builtin_dark"];

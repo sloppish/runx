@@ -4,7 +4,10 @@
 //! runtime values that the rest of the launcher needs, such as resolved plugin
 //! directories, command routes, and search paths.
 
-use std::{fs, path::PathBuf};
+use std::{
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, anyhow};
 use directories::BaseDirs;
@@ -16,6 +19,7 @@ mod schema;
 mod shortcuts;
 mod validation;
 
+pub use defaults::{BUILTIN_COLORSCHEME_NAMES, KNOWN_PROVIDER_NAMES};
 pub use paths::config_modified_at;
 pub use schema::*;
 
@@ -39,19 +43,11 @@ impl LoadedConfig {
     /// Loads the user config, writing the default template on first launch.
     pub fn load() -> Result<Self> {
         let (root_dir, plugin_dir, config_path) = runtime_paths()?;
-        if !config_path.exists() {
-            fs::write(&config_path, DEFAULT_CONFIG)
-                .with_context(|| format!("failed to write {}", config_path.display()))?;
-        }
+        ensure_user_config()?;
 
         let raw = fs::read_to_string(&config_path)
             .with_context(|| format!("failed to read {}", config_path.display()))?;
-        let config: Config = toml::from_str(&raw)
-            .map_err(|error| anyhow!(render_toml_parse_error(&config_path, &raw, &error)))?;
-        let raw_spans: RawConfigSpans = toml::from_str(&raw)
-            .map_err(|error| anyhow!(render_toml_parse_error(&config_path, &raw, &error)))?;
-        validate_config_with_spans(&config_path, &raw, &raw_spans)?;
-        validate_config(&config)?;
+        let config = validate_config_toml(&config_path, &raw)?;
 
         Self::from_parts(config, root_dir, plugin_dir, config_path)
     }
@@ -92,6 +88,29 @@ impl LoadedConfig {
             plugin_search_paths,
         })
     }
+}
+
+/// Ensures that the user config exists and returns its path.
+pub fn ensure_user_config() -> Result<PathBuf> {
+    let (root_dir, _, config_path) = runtime_paths()?;
+    fs::create_dir_all(&root_dir)
+        .with_context(|| format!("failed to create {}", root_dir.display()))?;
+    if !config_path.exists() {
+        fs::write(&config_path, DEFAULT_CONFIG)
+            .with_context(|| format!("failed to write {}", config_path.display()))?;
+    }
+    Ok(config_path)
+}
+
+/// Parses and validates a raw Runx config document.
+pub fn validate_config_toml(config_path: &Path, raw: &str) -> Result<Config> {
+    let config: Config = toml::from_str(raw)
+        .map_err(|error| anyhow!(render_toml_parse_error(config_path, raw, &error)))?;
+    let raw_spans: RawConfigSpans = toml::from_str(raw)
+        .map_err(|error| anyhow!(render_toml_parse_error(config_path, raw, &error)))?;
+    validate_config_with_spans(config_path, raw, &raw_spans)?;
+    validate_config(&config)?;
+    Ok(config)
 }
 
 #[cfg(test)]

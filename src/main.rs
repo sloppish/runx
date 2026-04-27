@@ -18,7 +18,6 @@
 
 mod actions;
 mod assets;
-mod config;
 mod debug_log;
 mod icons;
 mod launcher;
@@ -42,6 +41,8 @@ use tao::{
 use types::AppEvent;
 
 use crate::launcher::Launcher;
+
+pub use runx::config;
 
 /// Starts the launcher process and reports any fatal startup error to stderr.
 fn main() {
