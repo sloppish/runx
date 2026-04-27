@@ -3,7 +3,7 @@
 
 Runx reads `~/Library/Application Support/runx/config.toml`. The file is created on first launch, validated on load, and reloaded when you open Runx after the file changes.
 
-This reference is generated from `src/config.rs`, so the documented keys, defaults, and allowed values stay tied to the real code.
+This reference is generated from `src/config/`, so the documented keys, defaults, and allowed values stay tied to the real code.
 
 Most users only touch a few sections:
 

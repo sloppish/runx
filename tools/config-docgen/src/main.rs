@@ -107,12 +107,20 @@ const SECTION_ORDER: &[SectionSpec] = &[
 
 fn main() -> Result<()> {
     let root = env::current_dir().context("failed to resolve current working directory")?;
-    let config_rs = root.join("src/config.rs");
+    let config_sources = [
+        root.join("src/config/defaults.rs"),
+        root.join("src/config/schema.rs"),
+    ];
     let output = root.join("CONFIGURATION.md");
 
-    let source = fs::read_to_string(&config_rs)
-        .with_context(|| format!("failed to read {}", config_rs.display()))?;
-    let file = parse_file(&source).context("failed to parse src/config.rs with syn")?;
+    let mut source = String::new();
+    for path in &config_sources {
+        source.push_str(
+            &fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?,
+        );
+        source.push('\n');
+    }
+    let file = parse_file(&source).context("failed to parse config source files with syn")?;
 
     let docs = parse_config_items(&file)?;
     let default_config = extract_default_config(&file)?;
@@ -721,7 +729,7 @@ fn render_document(
         "Runx reads `~/Library/Application Support/runx/config.toml`. The file is created on first launch, validated on load, and reloaded when you open Runx after the file changes.\n\n",
     );
     out.push_str(
-        "This reference is generated from `src/config.rs`, so the documented keys, defaults, and allowed values stay tied to the real code.\n\n",
+        "This reference is generated from `src/config/`, so the documented keys, defaults, and allowed values stay tied to the real code.\n\n",
     );
     out.push_str("Most users only touch a few sections:\n\n");
     out.push_str("- `[hotkey]` for the launcher shortcut\n");
