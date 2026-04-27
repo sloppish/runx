@@ -16,6 +16,7 @@ use super::{
 pub(super) struct RawConfigSpans {
     hotkey: RawHotKeySpans,
     window: RawWindowSpans,
+    display_overrides: Vec<RawDisplayOverrideSpans>,
     providers: RawProvidersSpans,
     ranking: RawRankingSpans,
     timing: TimingConfig,
@@ -83,6 +84,22 @@ struct RawWindowSpans {
     hide_on_blur: bool,
     always_on_top: bool,
     show_on: WindowDisplayTarget,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawDisplayOverrideSpans {
+    built_in: Option<Spanned<bool>>,
+    vendor: Option<Spanned<u32>>,
+    model: Option<Spanned<u32>>,
+    serial: Option<Spanned<u32>>,
+    width_fraction: Option<Spanned<f64>>,
+    visible_rows: Option<Spanned<usize>>,
+    min_width: Option<Spanned<f64>>,
+    max_width: Option<Spanned<f64>>,
+    min_height: Option<Spanned<f64>>,
+    max_height: Option<Spanned<f64>>,
+    ui_scale: Option<Spanned<f64>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -165,6 +182,12 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
         config.window.max_height,
         "[window].min_height must be less than or equal to [window].max_height",
     )?;
+    for (index, display_override) in config.display_overrides.iter().enumerate() {
+        validate_display_override(
+            display_override,
+            &format!("[[display_overrides]] entry {}", index + 1),
+        )?;
+    }
     validate_positive_scale(config.ui.scale, "[ui].scale must be greater than 0.0")?;
     validate_opacity(
         config.ui.canvas.opacity,
@@ -354,6 +377,198 @@ pub(super) fn validate_config_with_spans(
         )));
     }
 
+    for (index, display_override) in spans.display_overrides.iter().enumerate() {
+        let context = format!("[[display_overrides]] entry {}", index + 1);
+
+        if let Some(serial) = &display_override.serial
+            && let Err(error) = validate_positive_display_identifier(
+                *serial.get_ref(),
+                &format!("{context}.serial must be greater than 0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                serial.span(),
+            )));
+        }
+
+        if let Some(vendor) = &display_override.vendor
+            && let Err(error) = validate_positive_display_identifier(
+                *vendor.get_ref(),
+                &format!("{context}.vendor must be greater than 0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                vendor.span(),
+            )));
+        }
+
+        if let Some(model) = &display_override.model
+            && let Err(error) = validate_positive_display_identifier(
+                *model.get_ref(),
+                &format!("{context}.model must be greater than 0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                model.span(),
+            )));
+        }
+
+        if display_override.vendor.is_some() != display_override.model.is_some() {
+            let span = display_override
+                .vendor
+                .as_ref()
+                .map(Spanned::span)
+                .or_else(|| display_override.model.as_ref().map(Spanned::span))
+                .unwrap_or(0..0);
+            let message = format!("{context} must set vendor and model together");
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &message,
+                span,
+            )));
+        }
+
+        if let Some(width_fraction) = &display_override.width_fraction
+            && let Err(error) = validate_window_dimension_fraction(
+                *width_fraction.get_ref(),
+                &format!("{context}.width_fraction must be greater than 0.0 and at most 1.0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                width_fraction.span(),
+            )));
+        }
+
+        if let Some(visible_rows) = &display_override.visible_rows
+            && let Err(error) = validate_visible_rows(
+                *visible_rows.get_ref(),
+                &format!("{context}.visible_rows must be greater than 0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                visible_rows.span(),
+            )));
+        }
+
+        if let Some(min_width) = &display_override.min_width
+            && let Err(error) = validate_positive_dimension(
+                *min_width.get_ref(),
+                &format!("{context}.min_width must be greater than 0.0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                min_width.span(),
+            )));
+        }
+
+        if let Some(max_width) = &display_override.max_width
+            && let Err(error) = validate_positive_dimension(
+                *max_width.get_ref(),
+                &format!("{context}.max_width must be greater than 0.0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                max_width.span(),
+            )));
+        }
+
+        if let Some(min_height) = &display_override.min_height
+            && let Err(error) = validate_positive_dimension(
+                *min_height.get_ref(),
+                &format!("{context}.min_height must be greater than 0.0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                min_height.span(),
+            )));
+        }
+
+        if let Some(max_height) = &display_override.max_height
+            && let Err(error) = validate_positive_dimension(
+                *max_height.get_ref(),
+                &format!("{context}.max_height must be greater than 0.0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                max_height.span(),
+            )));
+        }
+
+        if let (Some(min_width), Some(max_width)) =
+            (&display_override.min_width, &display_override.max_width)
+            && let Err(error) = validate_dimension_range(
+                *min_width.get_ref(),
+                *max_width.get_ref(),
+                &format!("{context}.min_width must be less than or equal to {context}.max_width"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                max_width.span(),
+            )));
+        }
+
+        if let (Some(min_height), Some(max_height)) =
+            (&display_override.min_height, &display_override.max_height)
+            && let Err(error) = validate_dimension_range(
+                *min_height.get_ref(),
+                *max_height.get_ref(),
+                &format!("{context}.min_height must be less than or equal to {context}.max_height"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                max_height.span(),
+            )));
+        }
+
+        if let Some(scale) = &display_override.ui_scale
+            && let Err(error) = validate_positive_scale(
+                *scale.get_ref(),
+                &format!("{context}.ui_scale must be greater than 0.0"),
+            )
+        {
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &error.to_string(),
+                scale.span(),
+            )));
+        }
+    }
+
     for (index, rule) in spans.ranking.score_rules.iter().enumerate() {
         validate_spanned_provider_names(
             config_path,
@@ -514,6 +729,14 @@ fn validate_positive_scale(value: f64, context: &str) -> Result<()> {
     }
 }
 
+fn validate_positive_display_identifier(value: u32, context: &str) -> Result<()> {
+    if value > 0 {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
+}
+
 fn validate_provider_names(providers: &[String], context: &str) -> Result<()> {
     for provider in providers {
         validate_provider_name(provider, context)?;
@@ -552,6 +775,109 @@ fn validate_spanned_provider_names(
                 provider.span(),
             )));
         }
+    }
+
+    Ok(())
+}
+
+fn validate_display_override(config: &DisplayOverrideConfig, context: &str) -> Result<()> {
+    let matcher_count = config.built_in.is_some() as usize
+        + config.vendor.is_some() as usize
+        + config.model.is_some() as usize
+        + config.serial.is_some() as usize;
+    if matcher_count == 0 {
+        bail!("{context} must match at least one display attribute");
+    }
+
+    if config.vendor.is_some() != config.model.is_some() {
+        bail!("{context} must set vendor and model together");
+    }
+
+    if let Some(serial) = config.serial {
+        validate_positive_display_identifier(
+            serial,
+            &format!("{context}.serial must be greater than 0"),
+        )?;
+    }
+    if let Some(vendor) = config.vendor {
+        validate_positive_display_identifier(
+            vendor,
+            &format!("{context}.vendor must be greater than 0"),
+        )?;
+    }
+    if let Some(model) = config.model {
+        validate_positive_display_identifier(
+            model,
+            &format!("{context}.model must be greater than 0"),
+        )?;
+    }
+
+    let has_override = config.width_fraction.is_some()
+        || config.visible_rows.is_some()
+        || config.min_width.is_some()
+        || config.max_width.is_some()
+        || config.min_height.is_some()
+        || config.max_height.is_some()
+        || config.ui_scale.is_some();
+    if !has_override {
+        bail!("{context} must override at least one setting");
+    }
+
+    if let Some(value) = config.width_fraction {
+        validate_window_dimension_fraction(
+            value,
+            &format!("{context}.width_fraction must be greater than 0.0 and at most 1.0"),
+        )?;
+    }
+    if let Some(value) = config.visible_rows {
+        validate_visible_rows(
+            value,
+            &format!("{context}.visible_rows must be greater than 0"),
+        )?;
+    }
+    if let Some(value) = config.min_width {
+        validate_positive_dimension(
+            value,
+            &format!("{context}.min_width must be greater than 0.0"),
+        )?;
+    }
+    if let Some(value) = config.max_width {
+        validate_positive_dimension(
+            value,
+            &format!("{context}.max_width must be greater than 0.0"),
+        )?;
+    }
+    if let Some(value) = config.min_height {
+        validate_positive_dimension(
+            value,
+            &format!("{context}.min_height must be greater than 0.0"),
+        )?;
+    }
+    if let Some(value) = config.max_height {
+        validate_positive_dimension(
+            value,
+            &format!("{context}.max_height must be greater than 0.0"),
+        )?;
+    }
+    if let (Some(min), Some(max)) = (config.min_width, config.max_width) {
+        validate_dimension_range(
+            min,
+            max,
+            &format!("{context}.min_width must be less than or equal to {context}.max_width"),
+        )?;
+    }
+    if let (Some(min), Some(max)) = (config.min_height, config.max_height) {
+        validate_dimension_range(
+            min,
+            max,
+            &format!("{context}.min_height must be less than or equal to {context}.max_height"),
+        )?;
+    }
+    if let Some(value) = config.ui_scale {
+        validate_positive_scale(
+            value,
+            &format!("{context}.ui_scale must be greater than 0.0"),
+        )?;
     }
 
     Ok(())

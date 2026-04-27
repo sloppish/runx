@@ -17,6 +17,7 @@ use wry::WebView;
 use crate::{
     config::{WindowConfig, WindowDisplayTarget},
     debug_log,
+    displays::{DisplayProfile, profile_from_monitor},
     macos::{self, FrontmostApp, capture_frontmost_app, cursor_display_location},
     state::AppState,
 };
@@ -91,6 +92,15 @@ impl WindowController {
     /// Returns the app that was frontmost before Runx appeared.
     pub(crate) fn previous_app(&self) -> Option<FrontmostApp> {
         self.previous_app.clone()
+    }
+
+    /// Resolves the target display profile for the current launcher placement policy.
+    pub(crate) fn target_display_profile(
+        &self,
+        window: &Window,
+        config: &WindowConfig,
+    ) -> Option<DisplayProfile> {
+        monitor_for_window(window, config).map(|monitor| profile_from_monitor(&monitor))
     }
 
     /// Invalidates cached frontend measurement and returns the next accepted layout version.

@@ -40,6 +40,24 @@ Launcher window behavior and geometry.
 | `always_on_top` | boolean | `true` | Keep the launcher above normal windows while it is visible. |
 | `show_on` | one of: `primary`, `cursor` | `"cursor"` | Choose which display Runx appears on when it opens. |
 
+## [[display_overrides]]
+
+Per-display overrides for window sizing and UI scale.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `built_in` | boolean | - | Match built-in or external displays. |
+| `vendor` | integer | - | Match the monitor vendor id reported by macOS. |
+| `model` | integer | - | Match the monitor model id reported by macOS. |
+| `serial` | integer | - | Match the monitor serial number reported by macOS. |
+| `width_fraction` | number | - | Override `window.width_fraction` for matching displays. |
+| `visible_rows` | integer | - | Override `window.visible_rows` for matching displays. |
+| `min_width` | number | - | Override `window.min_width` for matching displays. |
+| `max_width` | number | - | Override `window.max_width` for matching displays. |
+| `min_height` | number | - | Override `window.min_height` for matching displays. |
+| `max_height` | number | - | Override `window.max_height` for matching displays. |
+| `ui_scale` | number | - | Override `ui.scale` for matching displays. |
+
 ## [providers]
 
 Provider-specific runtime behavior.

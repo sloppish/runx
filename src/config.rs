@@ -146,7 +146,10 @@ mod tests {
     }
 
     mod window_display_target_tests {
+        use std::path::Path;
+
         use super::{Config, WindowDisplayTarget};
+        use crate::{config::validate_config_toml, displays::DisplayProfile};
 
         #[test]
         fn defaults_to_cursor() {
@@ -197,6 +200,83 @@ mod tests {
             .expect("row-driven height config should parse");
             assert_eq!(config.window.resolve_width(2560.0), 980.0);
             assert_eq!(config.window.fallback_size(&config.ui).1, 640.0);
+        }
+
+        #[test]
+        fn accepts_display_overrides() {
+            let config: Config = toml::from_str(
+                "[[display_overrides]]\nbuilt_in = true\nvendor = 610\nmodel = 41171\nwidth_fraction = 0.46\nvisible_rows = 6\nui_scale = 1.08\n",
+            )
+            .expect("display override should parse");
+
+            assert_eq!(config.display_overrides.len(), 1);
+            let display_override = &config.display_overrides[0];
+            assert_eq!(display_override.built_in, Some(true));
+            assert_eq!(display_override.vendor, Some(610));
+            assert_eq!(display_override.model, Some(41171));
+            assert_eq!(display_override.width_fraction, Some(0.46));
+            assert_eq!(display_override.visible_rows, Some(6));
+            assert_eq!(display_override.ui_scale, Some(1.08));
+        }
+
+        #[test]
+        fn resolves_best_matching_display_override() {
+            let config: Config = toml::from_str(
+                "[[display_overrides]]\nbuilt_in = false\nwidth_fraction = 0.52\nvisible_rows = 7\nui_scale = 1.04\n\n[[display_overrides]]\nserial = 4242\nwidth_fraction = 0.38\nvisible_rows = 5\nui_scale = 1.16\n",
+            )
+            .expect("display overrides should parse");
+            let display = DisplayProfile {
+                name: None,
+                native_id: 1,
+                built_in: false,
+                vendor: Some(10),
+                model: Some(20),
+                serial: Some(4242),
+                primary: false,
+            };
+
+            let (window, ui) = config.resolved_window_and_ui(Some(&display));
+
+            assert_eq!(window.width_fraction, 0.38);
+            assert_eq!(window.visible_rows, 5);
+            assert_eq!(ui.scale, 1.16);
+        }
+
+        #[test]
+        fn rejects_display_override_without_matcher() {
+            let raw = "[[display_overrides]]\nwidth_fraction = 0.46\n";
+            let error = validate_config_toml(Path::new("/tmp/runx-config.toml"), raw)
+                .expect_err("display override without matcher should fail");
+
+            assert!(error.to_string().contains(
+                "[[display_overrides]] entry 1 must match at least one display attribute"
+            ));
+        }
+
+        #[test]
+        fn rejects_display_override_without_override_values() {
+            let raw = "[[display_overrides]]\nbuilt_in = true\n";
+            let error = validate_config_toml(Path::new("/tmp/runx-config.toml"), raw)
+                .expect_err("display override without values should fail");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("[[display_overrides]] entry 1 must override at least one setting")
+            );
+        }
+
+        #[test]
+        fn rejects_display_override_vendor_without_model() {
+            let raw = "[[display_overrides]]\nvendor = 610\nwidth_fraction = 0.46\n";
+            let error = validate_config_toml(Path::new("/tmp/runx-config.toml"), raw)
+                .expect_err("display override vendor without model should fail");
+
+            assert!(
+                error
+                    .to_string()
+                    .contains("[[display_overrides]] entry 1 must set vendor and model together")
+            );
         }
 
         #[test]
@@ -881,6 +961,24 @@ mod tests {
 
             assert!(rendered.contains("scale = 0.0"));
             assert!(rendered.contains("[ui].scale must be greater than 0.0"));
+        }
+
+        #[test]
+        fn display_override_validation_errors_include_source_context() {
+            let raw = "[[display_overrides]]\nvendor = 610\nwidth_fraction = 0.46\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("[[display_overrides]]"));
+            assert!(rendered.contains("vendor = 610"));
+            assert!(
+                rendered
+                    .contains("[[display_overrides]] entry 1 must set vendor and model together")
+            );
         }
 
         #[test]

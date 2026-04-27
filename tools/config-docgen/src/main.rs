@@ -12,6 +12,12 @@ const SECTION_ORDER: &[SectionSpec] = &[
     SectionSpec::new("[hotkey]", SectionKind::Table, "HotKeyConfig", &["hotkey"]),
     SectionSpec::new("[window]", SectionKind::Table, "WindowConfig", &["window"]),
     SectionSpec::new(
+        "[[display_overrides]]",
+        SectionKind::RuleArray,
+        "DisplayOverrideConfig",
+        &["display_overrides"],
+    ),
+    SectionSpec::new(
         "[providers]",
         SectionKind::Table,
         "ProvidersConfig",
@@ -1151,6 +1157,13 @@ fn describe_type(
             }
             if let Some(inner) = field.rust_type.strip_prefix("Vec<").and_then(|value| value.strip_suffix('>')) {
                 return format!("array of {}", simple_type_name(inner));
+            }
+            if let Some(inner) = field
+                .rust_type
+                .strip_prefix("Option<")
+                .and_then(|value| value.strip_suffix('>'))
+            {
+                return simple_type_name(inner);
             }
             if field.rust_type.starts_with("HashMap<String,") {
                 return "TOML table".to_string();

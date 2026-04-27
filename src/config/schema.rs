@@ -6,6 +6,8 @@ use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use toml::Table;
 
+use crate::displays::DisplayProfile;
+
 use super::shortcuts::{deserialize_ui_shortcut, parse_key, parse_modifier};
 
 /// Root configuration object deserialized from `config.toml`.
@@ -16,6 +18,8 @@ pub struct Config {
     pub hotkey: HotKeyConfig,
     /// Geometry and behavior of the Runx window itself.
     pub window: WindowConfig,
+    /// Per-display size and density overrides applied after the target display is resolved.
+    pub display_overrides: Vec<DisplayOverrideConfig>,
     /// Provider-specific search and activation behavior.
     pub providers: ProvidersConfig,
     /// Result ranking, tie-breaking, and empty-query behavior.
@@ -103,6 +107,34 @@ pub enum WindowDisplayTarget {
     Primary,
     /// Open on the display that currently contains the mouse cursor.
     Cursor,
+}
+
+/// Per-display overrides for window sizing and UI scale.
+#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[serde(default, deny_unknown_fields)]
+pub struct DisplayOverrideConfig {
+    /// Match built-in or external displays.
+    pub built_in: Option<bool>,
+    /// Match the monitor vendor id reported by macOS.
+    pub vendor: Option<u32>,
+    /// Match the monitor model id reported by macOS.
+    pub model: Option<u32>,
+    /// Match the monitor serial number reported by macOS.
+    pub serial: Option<u32>,
+    /// Override `window.width_fraction` for matching displays.
+    pub width_fraction: Option<f64>,
+    /// Override `window.visible_rows` for matching displays.
+    pub visible_rows: Option<usize>,
+    /// Override `window.min_width` for matching displays.
+    pub min_width: Option<f64>,
+    /// Override `window.max_width` for matching displays.
+    pub max_width: Option<f64>,
+    /// Override `window.min_height` for matching displays.
+    pub min_height: Option<f64>,
+    /// Override `window.max_height` for matching displays.
+    pub max_height: Option<f64>,
+    /// Override `ui.scale` for matching displays.
+    pub ui_scale: Option<f64>,
 }
 
 /// Ranking and truncation rules for the merged result list.
@@ -612,6 +644,47 @@ impl HotKeyConfig {
     }
 }
 
+impl Config {
+    /// Resolves the effective window and UI config for a specific display.
+    pub fn resolved_window_and_ui(
+        &self,
+        display: Option<&DisplayProfile>,
+    ) -> (WindowConfig, UiConfig) {
+        let mut window = self.window.clone();
+        let mut ui = self.ui.clone();
+
+        if let Some(display_override) = self.display_override_for(display) {
+            display_override.apply(&mut window, &mut ui);
+        }
+
+        (window, ui)
+    }
+
+    /// Returns the best matching display override for a specific display, if any.
+    pub fn display_override_for(
+        &self,
+        display: Option<&DisplayProfile>,
+    ) -> Option<&DisplayOverrideConfig> {
+        self.display_override_index_for(display)
+            .and_then(|index| self.display_overrides.get(index))
+    }
+
+    /// Returns the index of the best matching display override for a specific display, if any.
+    pub fn display_override_index_for(&self, display: Option<&DisplayProfile>) -> Option<usize> {
+        self.best_display_override_index(display)
+    }
+
+    fn best_display_override_index(&self, display: Option<&DisplayProfile>) -> Option<usize> {
+        let display = display?;
+        self.display_overrides
+            .iter()
+            .enumerate()
+            .filter(|(_, entry)| entry.matches(display))
+            .max_by_key(|(index, entry)| (entry.match_priority(), *index))
+            .map(|(index, _)| index)
+    }
+}
+
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
@@ -625,6 +698,130 @@ impl Default for WindowConfig {
             always_on_top: true,
             show_on: WindowDisplayTarget::Cursor,
         }
+    }
+}
+
+impl DisplayOverrideConfig {
+    /// Builds an empty override entry targeting a specific display identity.
+    pub fn for_display(display: &DisplayProfile) -> Self {
+        Self {
+            built_in: Some(display.built_in),
+            vendor: display.vendor,
+            model: display.model,
+            serial: display.serial,
+            width_fraction: None,
+            visible_rows: None,
+            min_width: None,
+            max_width: None,
+            min_height: None,
+            max_height: None,
+            ui_scale: None,
+        }
+    }
+
+    /// Builds a capture entry for a specific display from the current base sizing settings.
+    pub fn capture(display: &DisplayProfile, window: &WindowConfig, ui: &UiConfig) -> Self {
+        Self {
+            width_fraction: Some(window.width_fraction),
+            visible_rows: Some(window.visible_rows),
+            min_width: Some(window.min_width),
+            max_width: Some(window.max_width),
+            min_height: Some(window.min_height),
+            max_height: Some(window.max_height),
+            ui_scale: Some(ui.scale),
+            ..Self::for_display(display)
+        }
+    }
+
+    pub fn has_override_values(&self) -> bool {
+        self.width_fraction.is_some()
+            || self.visible_rows.is_some()
+            || self.min_width.is_some()
+            || self.max_width.is_some()
+            || self.min_height.is_some()
+            || self.max_height.is_some()
+            || self.ui_scale.is_some()
+    }
+
+    pub fn label(&self) -> String {
+        let base = match self.built_in {
+            Some(true) => "Built-in display".to_owned(),
+            Some(false) => "External display".to_owned(),
+            None => "Display override".to_owned(),
+        };
+
+        let mut details = Vec::new();
+        if let Some(vendor) = self.vendor {
+            details.push(format!("vendor {vendor}"));
+        }
+        if let Some(model) = self.model {
+            details.push(format!("model {model}"));
+        }
+        if let Some(serial) = self.serial {
+            details.push(format!("serial {serial}"));
+        }
+
+        if details.is_empty() {
+            base
+        } else {
+            format!("{base} ({})", details.join(", "))
+        }
+    }
+
+    pub fn matches_same_display(&self, other: &Self) -> bool {
+        self.built_in == other.built_in
+            && self.vendor == other.vendor
+            && self.model == other.model
+            && self.serial == other.serial
+    }
+
+    fn apply(&self, window: &mut WindowConfig, ui: &mut UiConfig) {
+        if let Some(value) = self.width_fraction {
+            window.width_fraction = value;
+        }
+        if let Some(value) = self.visible_rows {
+            window.visible_rows = value;
+        }
+        if let Some(value) = self.min_width {
+            window.min_width = value;
+        }
+        if let Some(value) = self.max_width {
+            window.max_width = value;
+        }
+        if let Some(value) = self.min_height {
+            window.min_height = value;
+        }
+        if let Some(value) = self.max_height {
+            window.max_height = value;
+        }
+        if let Some(value) = self.ui_scale {
+            ui.scale = value;
+        }
+    }
+
+    fn matches(&self, display: &DisplayProfile) -> bool {
+        self.built_in.is_none_or(|value| value == display.built_in)
+            && self
+                .vendor
+                .is_none_or(|value| display.vendor == Some(value))
+            && self.model.is_none_or(|value| display.model == Some(value))
+            && self
+                .serial
+                .is_none_or(|value| display.serial == Some(value))
+    }
+
+    fn match_priority(&self) -> (u8, u8, u8, u8) {
+        let vendor_model = self.vendor.is_some() && self.model.is_some();
+        let specified = self.built_in.is_some() as u8
+            + self.vendor.is_some() as u8
+            + self.model.is_some() as u8
+            + self.serial.is_some() as u8;
+        (
+            self.serial.is_some() as u8,
+            vendor_model as u8,
+            self.built_in.is_some() as u8,
+            specified,
+        )
     }
 }
 

@@ -22,6 +22,21 @@ hide_on_blur = true
 always_on_top = true
 show_on = "cursor"
 
+# Optional per-display size overrides captured from `runx-config`.
+# Matching prefers serial number, then vendor/model, then built-in/external.
+# Example:
+# [[display_overrides]]
+# built_in = true
+# vendor = 610
+# model = 41171
+# width_fraction = 0.46
+# visible_rows = 6
+# min_width = 720
+# max_width = 960
+# min_height = 420
+# max_height = 720
+# ui_scale = 1.0
+
 [providers]
 disabled = []
 

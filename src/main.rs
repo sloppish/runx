@@ -42,7 +42,7 @@ use types::AppEvent;
 
 use crate::launcher::Launcher;
 
-pub use runx::config;
+pub use runx::{config, displays};
 
 /// Starts the launcher process and reports any fatal startup error to stderr.
 fn main() {

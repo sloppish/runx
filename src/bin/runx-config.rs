@@ -24,15 +24,17 @@ use ratatui::{
     },
 };
 use runx::config::{
-    BUILTIN_COLORSCHEME_NAMES, Config, KNOWN_PROVIDER_NAMES, ensure_user_config,
-    validate_config_toml,
+    BUILTIN_COLORSCHEME_NAMES, Config, DisplayOverrideConfig, KNOWN_PROVIDER_NAMES,
+    ensure_user_config, validate_config_toml,
 };
+use runx::displays::{DisplayProfile, active_displays, current_display};
 use tempfile::Builder as TempFileBuilder;
-use toml_edit::{Array, Document, Item, Key, Table as TomlTable, Value, value};
+use toml_edit::{Array, ArrayOfTables, Document, Item, Key, Table as TomlTable, Value, value};
 
-const SECTIONS: [Section; 8] = [
+const SECTIONS: [Section; 9] = [
     Section::Hotkey,
     Section::Window,
+    Section::DisplayOverrides,
     Section::Providers,
     Section::Ranking,
     Section::UiBasics,
@@ -225,6 +227,7 @@ impl ConfigEditor {
 enum Section {
     Hotkey,
     Window,
+    DisplayOverrides,
     Providers,
     Ranking,
     UiBasics,
@@ -238,6 +241,7 @@ impl Section {
         match self {
             Self::Hotkey => "Hotkey",
             Self::Window => "Window",
+            Self::DisplayOverrides => "Display overrides",
             Self::Providers => "Providers",
             Self::Ranking => "Ranking",
             Self::UiBasics => "UI basics",
@@ -468,6 +472,9 @@ impl App {
             Mode::ProviderOrder(_) => {
                 "Space include/exclude  u move up  d move down  Enter save  Esc cancel"
             }
+            Mode::DisplayOverride(_) => {
+                "Up/Down move  Enter edit  d unset  Esc back  unset values fall back to global settings"
+            }
         };
         let text = vec![
             Line::from(status_line),
@@ -486,6 +493,9 @@ impl App {
             Mode::Choice(choice) => draw_choice(frame, root, choice),
             Mode::Toggle(toggle) => draw_toggle(frame, root, toggle),
             Mode::ProviderOrder(order) => draw_provider_order(frame, root, order),
+            Mode::DisplayOverride(display_override) => {
+                draw_display_override(frame, root, display_override, &self.editor.config)
+            }
         }
     }
 
@@ -501,6 +511,9 @@ impl App {
             Mode::Choice(choice) => self.handle_choice_key(choice, key),
             Mode::Toggle(toggle) => self.handle_toggle_key(toggle, key),
             Mode::ProviderOrder(order) => self.handle_provider_order_key(order, key),
+            Mode::DisplayOverride(display_override) => {
+                self.handle_display_override_key(display_override, key)
+            }
         }
     }
 
@@ -724,6 +737,69 @@ impl App {
         }
     }
 
+    fn handle_display_override_key(
+        &mut self,
+        mut display_override: DisplayOverrideMode,
+        key: KeyEvent,
+    ) -> Result<AppAction> {
+        match key.code {
+            KeyCode::Esc => {
+                self.info("Display override edit canceled");
+                Ok(AppAction::None)
+            }
+            KeyCode::Up | KeyCode::Char('k') => {
+                if display_override.selected > 0 {
+                    display_override.selected -= 1;
+                }
+                self.mode = Mode::DisplayOverride(display_override);
+                Ok(AppAction::None)
+            }
+            KeyCode::Down | KeyCode::Char('j') => {
+                if display_override.selected + 1 < DisplayOverrideField::ALL.len() {
+                    display_override.selected += 1;
+                }
+                self.mode = Mode::DisplayOverride(display_override);
+                Ok(AppAction::None)
+            }
+            KeyCode::Char('d') => {
+                let field = display_override.field();
+                if !field.is_set(&display_override.override_config) {
+                    self.info(format!("{} already uses the global setting", field.label()));
+                    self.mode = Mode::DisplayOverride(display_override);
+                    return Ok(AppAction::None);
+                }
+
+                let mut next_override = display_override.override_config.clone();
+                field.clear(&mut next_override);
+                let existing_index = self
+                    .editor
+                    .config
+                    .display_override_index_for(Some(&display_override.display));
+                self.apply(|doc| save_display_override(doc, existing_index, &next_override))?;
+                self.mode = Mode::DisplayOverride(DisplayOverrideMode::with_selected(
+                    &self.editor.config,
+                    display_override.display.clone(),
+                    display_override.selected,
+                ));
+                self.success(format!(
+                    "Cleared {} override for {}",
+                    field.label(),
+                    display_override.display.label()
+                ));
+                Ok(AppAction::None)
+            }
+            KeyCode::Enter => {
+                let field = display_override.field();
+                self.mode = Mode::Input(InputMode::for_display_override(field, &display_override));
+                Ok(AppAction::None)
+            }
+            _ => {
+                self.mode = Mode::DisplayOverride(display_override);
+                Ok(AppAction::None)
+            }
+        }
+    }
+
     fn toggle_focus(&mut self) {
         self.focus = match self.focus {
             Focus::Sections if self.fields().is_empty() => Focus::Sections,
@@ -814,6 +890,15 @@ impl App {
                 self.mode = Mode::Choice(ChoiceMode::show_on(&self.editor.config));
                 Ok(AppAction::None)
             }
+            FieldId::DisplayOverridesChoose => {
+                let Some(choice) = ChoiceMode::display_override_displays(&self.editor.config)
+                else {
+                    self.info("No displays are currently available");
+                    return Ok(AppAction::None);
+                };
+                self.mode = Mode::Choice(choice);
+                Ok(AppAction::None)
+            }
             FieldId::HotkeyModifiers => {
                 self.mode = Mode::Toggle(ToggleMode::modifiers(&self.editor.config));
                 Ok(AppAction::None)
@@ -896,6 +981,35 @@ impl App {
         match input.target {
             InputTarget::Field(id) => {
                 self.apply_input_field(id, input.value)?;
+                Ok(AppAction::None)
+            }
+            InputTarget::DisplayOverrideField {
+                display,
+                field,
+                selected,
+            } => {
+                let mut display_override = self
+                    .editor
+                    .config
+                    .display_override_for(Some(&display))
+                    .cloned()
+                    .unwrap_or_else(|| DisplayOverrideConfig::for_display(&display));
+                let existing_index = self
+                    .editor
+                    .config
+                    .display_override_index_for(Some(&display));
+                field.apply_input(&mut display_override, &input.value)?;
+                self.apply(|doc| save_display_override(doc, existing_index, &display_override))?;
+                self.mode = Mode::DisplayOverride(DisplayOverrideMode::with_selected(
+                    &self.editor.config,
+                    display.clone(),
+                    selected,
+                ));
+                self.success(format!(
+                    "Saved {} override for {}",
+                    field.label(),
+                    display.label()
+                ));
                 Ok(AppAction::None)
             }
             InputTarget::NewColorschemeName => {
@@ -1069,6 +1183,66 @@ impl App {
                 }
                 Ok(AppAction::None)
             }
+            ChoiceTarget::SelectDisplayOverrideDisplay { displays } => {
+                let index = option
+                    .value
+                    .parse::<usize>()
+                    .context("invalid display selection")?;
+                let display = displays
+                    .get(index)
+                    .cloned()
+                    .context("selected display is no longer available")?;
+                self.mode = Mode::Choice(ChoiceMode::display_override_actions(display));
+                Ok(AppAction::None)
+            }
+            ChoiceTarget::DisplayOverrideActions { display } => {
+                match option.value.as_str() {
+                    "edit" => {
+                        self.mode = Mode::DisplayOverride(DisplayOverrideMode::new(
+                            &self.editor.config,
+                            display,
+                        ));
+                    }
+                    "delete" => {
+                        let Some(index) = self
+                            .editor
+                            .config
+                            .display_override_index_for(Some(&display))
+                        else {
+                            self.info(format!("No override configured for {}", display.label()));
+                            return Ok(AppAction::None);
+                        };
+                        let label = self
+                            .editor
+                            .config
+                            .display_overrides
+                            .get(index)
+                            .map(DisplayOverrideConfig::label)
+                            .unwrap_or_else(|| display.label());
+                        self.mode = Mode::Choice(ChoiceMode::confirm_delete_display_override(
+                            display, index, label,
+                        ));
+                    }
+                    other => bail!("unsupported display override action `{other}`"),
+                }
+                Ok(AppAction::None)
+            }
+            ChoiceTarget::ConfirmDeleteDisplayOverride {
+                display,
+                index,
+                label,
+            } => {
+                if option.value == "delete" {
+                    self.apply(|doc| remove_display_override(doc, index))?;
+                    self.success(format!(
+                        "Deleted override `{label}` for {}",
+                        display.label()
+                    ));
+                } else {
+                    self.info("Delete canceled");
+                }
+                Ok(AppAction::None)
+            }
             ChoiceTarget::ColorschemeBase { name } => {
                 let base = match option.value.as_str() {
                     "none" => None,
@@ -1168,6 +1342,7 @@ enum Mode {
     Choice(ChoiceMode),
     Toggle(ToggleMode),
     ProviderOrder(ProviderOrderMode),
+    DisplayOverride(DisplayOverrideMode),
 }
 
 #[derive(Clone)]
@@ -1193,11 +1368,28 @@ impl InputMode {
             target: InputTarget::NewColorschemeName,
         }
     }
+
+    fn for_display_override(field: DisplayOverrideField, mode: &DisplayOverrideMode) -> Self {
+        Self {
+            title: format!("{} override", field.label()),
+            value: field.input_value(&mode.override_config),
+            target: InputTarget::DisplayOverrideField {
+                display: mode.display.clone(),
+                field,
+                selected: mode.selected,
+            },
+        }
+    }
 }
 
-#[derive(Clone, Copy)]
+#[derive(Clone)]
 enum InputTarget {
     Field(FieldId),
+    DisplayOverrideField {
+        display: DisplayProfile,
+        field: DisplayOverrideField,
+        selected: usize,
+    },
     NewColorschemeName,
 }
 
@@ -1292,6 +1484,28 @@ impl ChoiceMode {
         })
     }
 
+    fn display_override_displays(config: &Config) -> Option<Self> {
+        let displays = active_displays();
+        if displays.is_empty() {
+            return None;
+        }
+
+        let current_display_id = current_display().map(|display| display.native_id);
+        Some(Self {
+            title: "Choose display".to_owned(),
+            options: displays
+                .iter()
+                .enumerate()
+                .map(|(index, display)| ChoiceOption {
+                    label: display_choice_label(display, config, current_display_id),
+                    value: index.to_string(),
+                })
+                .collect(),
+            selected: 0,
+            target: ChoiceTarget::SelectDisplayOverrideDisplay { displays },
+        })
+    }
+
     fn confirm_delete_colorscheme(name: String) -> Self {
         Self {
             title: format!("Delete colorscheme `{name}`?"),
@@ -1307,6 +1521,50 @@ impl ChoiceMode {
             ],
             selected: 0,
             target: ChoiceTarget::ConfirmDeleteColorscheme { name },
+        }
+    }
+
+    fn display_override_actions(display: DisplayProfile) -> Self {
+        Self {
+            title: format!("{} override", display.label()),
+            options: vec![
+                ChoiceOption {
+                    label: "Edit override settings".to_owned(),
+                    value: "edit".to_owned(),
+                },
+                ChoiceOption {
+                    label: "Delete override".to_owned(),
+                    value: "delete".to_owned(),
+                },
+            ],
+            selected: 0,
+            target: ChoiceTarget::DisplayOverrideActions { display },
+        }
+    }
+
+    fn confirm_delete_display_override(
+        display: DisplayProfile,
+        index: usize,
+        label: String,
+    ) -> Self {
+        Self {
+            title: format!("Delete display override `{label}`?"),
+            options: vec![
+                ChoiceOption {
+                    label: "Cancel".to_owned(),
+                    value: "cancel".to_owned(),
+                },
+                ChoiceOption {
+                    label: format!("Delete `{label}`"),
+                    value: "delete".to_owned(),
+                },
+            ],
+            selected: 0,
+            target: ChoiceTarget::ConfirmDeleteDisplayOverride {
+                display,
+                index,
+                label,
+            },
         }
     }
 
@@ -1354,8 +1612,194 @@ enum ChoiceTarget {
     UiColorscheme,
     EditColorscheme,
     DeleteColorscheme,
-    ConfirmDeleteColorscheme { name: String },
-    ColorschemeBase { name: String },
+    ConfirmDeleteColorscheme {
+        name: String,
+    },
+    SelectDisplayOverrideDisplay {
+        displays: Vec<DisplayProfile>,
+    },
+    DisplayOverrideActions {
+        display: DisplayProfile,
+    },
+    ConfirmDeleteDisplayOverride {
+        display: DisplayProfile,
+        index: usize,
+        label: String,
+    },
+    ColorschemeBase {
+        name: String,
+    },
+}
+
+#[derive(Clone)]
+struct DisplayOverrideMode {
+    display: DisplayProfile,
+    override_config: DisplayOverrideConfig,
+    selected: usize,
+}
+
+impl DisplayOverrideMode {
+    fn new(config: &Config, display: DisplayProfile) -> Self {
+        Self::with_selected(config, display, 0)
+    }
+
+    fn with_selected(config: &Config, display: DisplayProfile, selected: usize) -> Self {
+        let override_config = config
+            .display_override_for(Some(&display))
+            .cloned()
+            .unwrap_or_else(|| DisplayOverrideConfig::for_display(&display));
+        Self {
+            display,
+            override_config,
+            selected: selected.min(DisplayOverrideField::ALL.len().saturating_sub(1)),
+        }
+    }
+
+    fn field(&self) -> DisplayOverrideField {
+        DisplayOverrideField::ALL[self.selected]
+    }
+}
+
+#[derive(Clone, Copy)]
+enum DisplayOverrideField {
+    WidthFraction,
+    VisibleRows,
+    MinWidth,
+    MaxWidth,
+    MinHeight,
+    MaxHeight,
+    UiScale,
+}
+
+impl DisplayOverrideField {
+    const ALL: [Self; 7] = [
+        Self::WidthFraction,
+        Self::VisibleRows,
+        Self::MinWidth,
+        Self::MaxWidth,
+        Self::MinHeight,
+        Self::MaxHeight,
+        Self::UiScale,
+    ];
+
+    fn label(self) -> &'static str {
+        match self {
+            Self::WidthFraction => "Width fraction",
+            Self::VisibleRows => "Visible rows",
+            Self::MinWidth => "Min width",
+            Self::MaxWidth => "Max width",
+            Self::MinHeight => "Min height",
+            Self::MaxHeight => "Max height",
+            Self::UiScale => "UI scale",
+        }
+    }
+
+    fn input_value(self, display_override: &DisplayOverrideConfig) -> String {
+        match self {
+            Self::WidthFraction => display_override
+                .width_fraction
+                .map(format_float)
+                .unwrap_or_default(),
+            Self::VisibleRows => display_override
+                .visible_rows
+                .map(|value| value.to_string())
+                .unwrap_or_default(),
+            Self::MinWidth => display_override
+                .min_width
+                .map(format_float)
+                .unwrap_or_default(),
+            Self::MaxWidth => display_override
+                .max_width
+                .map(format_float)
+                .unwrap_or_default(),
+            Self::MinHeight => display_override
+                .min_height
+                .map(format_float)
+                .unwrap_or_default(),
+            Self::MaxHeight => display_override
+                .max_height
+                .map(format_float)
+                .unwrap_or_default(),
+            Self::UiScale => display_override
+                .ui_scale
+                .map(format_float)
+                .unwrap_or_default(),
+        }
+    }
+
+    fn value(self, display_override: &DisplayOverrideConfig) -> String {
+        let value = self.input_value(display_override);
+        if value.is_empty() {
+            "unset".to_owned()
+        } else {
+            value
+        }
+    }
+
+    fn fallback(self, config: &Config) -> String {
+        match self {
+            Self::WidthFraction => format_float(config.window.width_fraction),
+            Self::VisibleRows => config.window.visible_rows.to_string(),
+            Self::MinWidth => format_float(config.window.min_width),
+            Self::MaxWidth => format_float(config.window.max_width),
+            Self::MinHeight => format_float(config.window.min_height),
+            Self::MaxHeight => format_float(config.window.max_height),
+            Self::UiScale => format_float(config.ui.scale),
+        }
+    }
+
+    fn is_set(self, display_override: &DisplayOverrideConfig) -> bool {
+        match self {
+            Self::WidthFraction => display_override.width_fraction.is_some(),
+            Self::VisibleRows => display_override.visible_rows.is_some(),
+            Self::MinWidth => display_override.min_width.is_some(),
+            Self::MaxWidth => display_override.max_width.is_some(),
+            Self::MinHeight => display_override.min_height.is_some(),
+            Self::MaxHeight => display_override.max_height.is_some(),
+            Self::UiScale => display_override.ui_scale.is_some(),
+        }
+    }
+
+    fn clear(self, display_override: &mut DisplayOverrideConfig) {
+        match self {
+            Self::WidthFraction => display_override.width_fraction = None,
+            Self::VisibleRows => display_override.visible_rows = None,
+            Self::MinWidth => display_override.min_width = None,
+            Self::MaxWidth => display_override.max_width = None,
+            Self::MinHeight => display_override.min_height = None,
+            Self::MaxHeight => display_override.max_height = None,
+            Self::UiScale => display_override.ui_scale = None,
+        }
+    }
+
+    fn apply_input(self, display_override: &mut DisplayOverrideConfig, raw: &str) -> Result<()> {
+        match self {
+            Self::WidthFraction => {
+                display_override.width_fraction =
+                    Some(parse_f64(raw, "display override width fraction")?);
+            }
+            Self::VisibleRows => {
+                display_override.visible_rows =
+                    Some(parse_usize(raw, "display override visible rows")?);
+            }
+            Self::MinWidth => {
+                display_override.min_width = Some(parse_f64(raw, "display override min width")?);
+            }
+            Self::MaxWidth => {
+                display_override.max_width = Some(parse_f64(raw, "display override max width")?);
+            }
+            Self::MinHeight => {
+                display_override.min_height = Some(parse_f64(raw, "display override min height")?);
+            }
+            Self::MaxHeight => {
+                display_override.max_height = Some(parse_f64(raw, "display override max height")?);
+            }
+            Self::UiScale => {
+                display_override.ui_scale = Some(parse_f64(raw, "display override ui scale")?);
+            }
+        }
+        Ok(())
+    }
 }
 
 #[derive(Clone)]
@@ -1489,6 +1933,7 @@ enum FieldId {
     WindowHideOnBlur,
     WindowAlwaysOnTop,
     WindowShowOn,
+    DisplayOverridesChoose,
     ProvidersDisabled,
     WindowsIncludeOtherDesktops,
     AppsExactNameBoost,
@@ -1526,6 +1971,7 @@ impl FieldId {
             Self::WindowHideOnBlur => "Hide on blur",
             Self::WindowAlwaysOnTop => "Always on top",
             Self::WindowShowOn => "Show on display",
+            Self::DisplayOverridesChoose => "Choose display",
             Self::ProvidersDisabled => "Disabled providers",
             Self::WindowsIncludeOtherDesktops => "Include windows from other desktops",
             Self::AppsExactNameBoost => "Exact app name boost",
@@ -1563,6 +2009,7 @@ impl FieldId {
             Self::WindowHideOnBlur => Some(PATH_WINDOW_HIDE_ON_BLUR),
             Self::WindowAlwaysOnTop => Some(PATH_WINDOW_ALWAYS_ON_TOP),
             Self::WindowShowOn => Some(PATH_WINDOW_SHOW_ON),
+            Self::DisplayOverridesChoose => None,
             Self::ProvidersDisabled => Some(PATH_PROVIDERS_DISABLED),
             Self::WindowsIncludeOtherDesktops => Some(PATH_WINDOWS_INCLUDE_OTHER_DESKTOPS),
             Self::AppsExactNameBoost => Some(PATH_APPS_EXACT_NAME_BOOST),
@@ -1598,6 +2045,7 @@ impl FieldId {
             Self::WindowHideOnBlur => bool_summary(config.window.hide_on_blur).to_owned(),
             Self::WindowAlwaysOnTop => bool_summary(config.window.always_on_top).to_owned(),
             Self::WindowShowOn => show_on_summary(config),
+            Self::DisplayOverridesChoose => display_picker_summary(config),
             Self::ProvidersDisabled => list_summary(&config.providers.disabled),
             Self::WindowsIncludeOtherDesktops => {
                 bool_summary(config.providers.windows.include_other_desktops).to_owned()
@@ -1639,6 +2087,7 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
             FieldId::WindowAlwaysOnTop,
             FieldId::WindowShowOn,
         ],
+        Section::DisplayOverrides => &[FieldId::DisplayOverridesChoose],
         Section::Providers => &[
             FieldId::ProvidersDisabled,
             FieldId::WindowsIncludeOtherDesktops,
@@ -1805,6 +2254,65 @@ fn draw_provider_order(frame: &mut Frame, root: Rect, order: &ProviderOrderMode)
     );
 }
 
+fn draw_display_override(
+    frame: &mut Frame,
+    root: Rect,
+    display_override: &DisplayOverrideMode,
+    config: &Config,
+) {
+    let area = centered_rect(78, 72, root);
+    frame.render_widget(Clear, area);
+    let chunks = Layout::default()
+        .direction(Direction::Vertical)
+        .constraints([Constraint::Min(8), Constraint::Length(3)])
+        .split(area);
+
+    let rows = DisplayOverrideField::ALL.iter().map(|field| {
+        Row::new(vec![
+            field.label().to_owned(),
+            field.value(&display_override.override_config),
+            field.fallback(config),
+        ])
+    });
+    let header = Row::new(vec!["Setting", "Override", "Global fallback"]).style(
+        Style::default()
+            .fg(Color::Yellow)
+            .add_modifier(Modifier::BOLD),
+    );
+    let mut state = TableState::default();
+    state.select(Some(display_override.selected));
+    let table = UiTable::new(
+        rows,
+        [
+            Constraint::Length(26),
+            Constraint::Length(18),
+            Constraint::Min(18),
+        ],
+    )
+    .header(header)
+    .block(
+        Block::default()
+            .title(format!(
+                "Override settings - {}",
+                display_override.display.label()
+            ))
+            .borders(Borders::ALL),
+    )
+    .row_highlight_style(
+        Style::default()
+            .bg(Color::DarkGray)
+            .add_modifier(Modifier::BOLD),
+    )
+    .highlight_symbol("> ");
+    frame.render_stateful_widget(table, chunks[0], &mut state);
+    frame.render_widget(
+        Paragraph::new("Unset values inherit the current global window or UI scale setting.")
+            .wrap(Wrap { trim: true })
+            .block(Block::default().borders(Borders::ALL)),
+        chunks[1],
+    );
+}
+
 fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
     let vertical = Layout::default()
         .direction(Direction::Vertical)
@@ -1941,6 +2449,70 @@ fn show_on_summary(config: &Config) -> String {
     format!("{:?}", config.window.show_on).to_lowercase()
 }
 
+fn display_picker_summary(config: &Config) -> String {
+    let displays = active_displays();
+    if displays.is_empty() {
+        return "no displays detected".to_owned();
+    }
+
+    let display_count = displays.len();
+    let override_count = config.display_overrides.len();
+    let display_suffix = if display_count == 1 {
+        "display"
+    } else {
+        "displays"
+    };
+    let override_suffix = if override_count == 1 {
+        "override"
+    } else {
+        "overrides"
+    };
+    format!("{display_count} {display_suffix}, {override_count} {override_suffix}")
+}
+
+fn display_choice_label(
+    display: &DisplayProfile,
+    config: &Config,
+    current_display_id: Option<u32>,
+) -> String {
+    let mut label = display.label();
+    let mut flags = Vec::new();
+    if current_display_id == Some(display.native_id) {
+        flags.push("current");
+    }
+    if display.primary {
+        flags.push("primary");
+    }
+    if !flags.is_empty() {
+        label.push_str(&format!(" [{}]", flags.join(", ")));
+    }
+
+    let summary = config
+        .display_override_for(Some(display))
+        .map(display_override_values_summary)
+        .unwrap_or_else(|| "global settings".to_owned());
+    format!("{label} - {summary}")
+}
+
+fn display_override_values_summary(display_override: &DisplayOverrideConfig) -> String {
+    let mut parts = Vec::new();
+    if let Some(value) = display_override.width_fraction {
+        parts.push(format!("w {}", format_float(value)));
+    }
+    if let Some(value) = display_override.visible_rows {
+        parts.push(format!("rows {value}"));
+    }
+    if let Some(value) = display_override.ui_scale {
+        parts.push(format!("scale {}", format_float(value)));
+    }
+
+    if parts.is_empty() {
+        "custom override".to_owned()
+    } else {
+        parts.join(", ")
+    }
+}
+
 fn parse_f64(raw: &str, label: &str) -> Result<f64> {
     raw.trim()
         .parse::<f64>()
@@ -2033,6 +2605,112 @@ fn string_array(values: &[String]) -> Item {
         array.push(item.as_str());
     }
     Item::Value(Value::Array(array))
+}
+
+fn upsert_display_override(
+    doc: &mut Document,
+    existing_index: Option<usize>,
+    display_override: &DisplayOverrideConfig,
+) -> Result<()> {
+    let table = display_override_table(display_override)?;
+    let overrides = display_overrides_array_mut(doc)?;
+
+    if let Some(index) = existing_index {
+        let Some(existing) = overrides.get_mut(index) else {
+            bail!("display override index {index} is no longer valid");
+        };
+        *existing = table;
+    } else {
+        overrides.push(table);
+    }
+
+    Ok(())
+}
+
+fn save_display_override(
+    doc: &mut Document,
+    existing_index: Option<usize>,
+    display_override: &DisplayOverrideConfig,
+) -> Result<()> {
+    if display_override.has_override_values() {
+        upsert_display_override(doc, existing_index, display_override)
+    } else if let Some(index) = existing_index {
+        remove_display_override(doc, index)
+    } else {
+        Ok(())
+    }
+}
+
+fn remove_display_override(doc: &mut Document, index: usize) -> Result<()> {
+    let remove_root = {
+        let overrides = display_overrides_array_mut(doc)?;
+        if index >= overrides.len() {
+            bail!("display override index {index} is out of range");
+        }
+        overrides.remove(index);
+        overrides.is_empty()
+    };
+
+    if remove_root {
+        doc.as_table_mut().remove("display_overrides");
+    }
+
+    Ok(())
+}
+
+fn display_overrides_array_mut(doc: &mut Document) -> Result<&mut ArrayOfTables> {
+    let item = doc
+        .as_table_mut()
+        .entry("display_overrides")
+        .or_insert_with(|| Item::ArrayOfTables(ArrayOfTables::new()));
+    if !item.is_array_of_tables() {
+        *item = Item::ArrayOfTables(ArrayOfTables::new());
+    }
+    item.as_array_of_tables_mut()
+        .context("failed to create [[display_overrides]] array")
+}
+
+fn display_override_table(display_override: &DisplayOverrideConfig) -> Result<TomlTable> {
+    let mut table = TomlTable::new();
+
+    if let Some(built_in) = display_override.built_in {
+        table.insert("built_in", value(built_in));
+    }
+    if let Some(vendor) = display_override.vendor {
+        table.insert("vendor", value(i64::from(vendor)));
+    }
+    if let Some(model) = display_override.model {
+        table.insert("model", value(i64::from(model)));
+    }
+    if let Some(serial) = display_override.serial {
+        table.insert("serial", value(i64::from(serial)));
+    }
+    if let Some(width_fraction) = display_override.width_fraction {
+        table.insert("width_fraction", value(width_fraction));
+    }
+    if let Some(visible_rows) = display_override.visible_rows {
+        table.insert(
+            "visible_rows",
+            value(i64::try_from(visible_rows).context("visible_rows is too large")?),
+        );
+    }
+    if let Some(min_width) = display_override.min_width {
+        table.insert("min_width", value(min_width));
+    }
+    if let Some(max_width) = display_override.max_width {
+        table.insert("max_width", value(max_width));
+    }
+    if let Some(min_height) = display_override.min_height {
+        table.insert("min_height", value(min_height));
+    }
+    if let Some(max_height) = display_override.max_height {
+        table.insert("max_height", value(max_height));
+    }
+    if let Some(ui_scale) = display_override.ui_scale {
+        table.insert("ui_scale", value(ui_scale));
+    }
+
+    Ok(table)
 }
 
 fn colorscheme_snippet(doc: &Document, name: &str) -> Result<String> {

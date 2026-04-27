@@ -54,6 +54,8 @@ const INITIAL_LAYOUT_VERSION: u64 = 0;
 /// - it translates Tao/frontend/provider events into those controller calls
 pub struct Launcher {
     loaded: LoadedConfig,
+    resolved_window_config: config::WindowConfig,
+    resolved_ui_config: config::UiConfig,
     last_config_modified: Option<SystemTime>,
     hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
@@ -139,6 +141,8 @@ impl Launcher {
             .context("failed to build the launcher webview")?;
 
         Ok(Self {
+            resolved_window_config: loaded.config.window.clone(),
+            resolved_ui_config: loaded.config.ui.clone(),
             loaded,
             last_config_modified,
             hotkey_manager,
@@ -281,8 +285,9 @@ impl Launcher {
     fn show(&mut self) -> Result<()> {
         self.reload_config_if_needed()?;
         self.providers.begin_session();
-        let window_config = self.loaded.config.window.clone();
-        let ui_config = self.loaded.config.ui.clone();
+        self.refresh_display_config()?;
+        let window_config = self.resolved_window_config.clone();
+        let ui_config = self.resolved_ui_config.clone();
         self.apply_window_config(&window_config, &ui_config);
         self.windows.note_shown(&mut self.state);
         self.windows.show_window(&self.window);
@@ -346,8 +351,8 @@ impl Launcher {
                 layout_version,
             } => {
                 if self.windows.accept_preferred_height(layout_version, height) {
-                    let window_config = self.loaded.config.window.clone();
-                    let ui_config = self.loaded.config.ui.clone();
+                    let window_config = self.resolved_window_config.clone();
+                    let ui_config = self.resolved_ui_config.clone();
                     self.apply_window_config(&window_config, &ui_config);
                 }
             }
@@ -502,8 +507,6 @@ impl Launcher {
             plugin_routes,
         ));
         let providers = ProviderSet::new(config.clone(), plugins.clone(), self.icons.clone())?;
-        let layout_inputs_changed =
-            frontend_layout_inputs_changed(&previous_config, config.as_ref());
 
         if reloaded_hotkey != previous_hotkey {
             self.hotkey_manager
@@ -520,12 +523,12 @@ impl Launcher {
         self.providers = providers;
         self.actions = ActionRunner::new(plugins);
         self.search = SearchController::new(&config.timing);
-        if layout_inputs_changed {
-            let layout_version = self.windows.invalidate_preferred_height();
-            self.apply_frontend_config(&config.window, &config.ui, layout_version)?;
-        }
-        self.apply_window_config(&config.window, &config.ui);
         self.loaded = loaded;
+        self.refresh_display_config()?;
+        self.apply_window_config(
+            &self.resolved_window_config.clone(),
+            &self.resolved_ui_config.clone(),
+        );
 
         if was_visible {
             self.providers.begin_session();
@@ -543,8 +546,8 @@ impl Launcher {
             );
             self.windows.apply_window_geometry(
                 &self.window,
-                &self.loaded.config.window,
-                &self.loaded.config.ui,
+                &self.resolved_window_config,
+                &self.resolved_ui_config,
             );
             self.ensure_launcher_key_focus()?;
         }
@@ -555,6 +558,9 @@ impl Launcher {
         }
         if previous_config.window != self.loaded.config.window {
             updated.push("window");
+        }
+        if previous_config.display_overrides != self.loaded.config.display_overrides {
+            updated.push("display_overrides");
         }
         if previous_config.ranking != self.loaded.config.ranking {
             updated.push("ranking");
@@ -581,6 +587,25 @@ impl Launcher {
     fn apply_window_config(&mut self, window: &config::WindowConfig, ui: &config::UiConfig) {
         self.windows.apply_window_geometry(&self.window, window, ui);
         self.window.set_always_on_top(window.always_on_top);
+    }
+
+    fn refresh_display_config(&mut self) -> Result<()> {
+        let display = self
+            .windows
+            .target_display_profile(&self.window, &self.loaded.config.window);
+        let (window_config, ui_config) =
+            self.loaded.config.resolved_window_and_ui(display.as_ref());
+        let layout_changed = self.resolved_ui_config != ui_config
+            || self.resolved_window_config.visible_rows != window_config.visible_rows;
+
+        if layout_changed {
+            let layout_version = self.windows.invalidate_preferred_height();
+            self.apply_frontend_config(&window_config, &ui_config, layout_version)?;
+        }
+
+        self.resolved_window_config = window_config;
+        self.resolved_ui_config = ui_config;
+        Ok(())
     }
 
     fn apply_frontend_config(
@@ -635,10 +660,6 @@ impl Launcher {
 fn clear_recovered_config_error(state: &mut AppState, config_reload_error: &mut Option<String>) {
     *config_reload_error = None;
     state.session_mut().clear_config_error();
-}
-
-fn frontend_layout_inputs_changed(previous: &config::Config, updated: &config::Config) -> bool {
-    previous.ui != updated.ui || previous.window.visible_rows != updated.window.visible_rows
 }
 
 struct BootstrapConfig {
