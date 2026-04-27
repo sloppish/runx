@@ -43,6 +43,8 @@ use wry::{WebView, WebViewBuilder};
 
 use self::{search_controller::SearchController, window_controller::WindowController};
 
+const INITIAL_LAYOUT_VERSION: u64 = 0;
+
 /// Owns the live launcher runtime and routes native events into the smaller controllers.
 ///
 /// In practice, this is the top-level coordinator for the running app:
@@ -110,7 +112,11 @@ impl Launcher {
         let icons = Arc::new(IconCache::new(Some(proxy.clone()))?);
         let providers = ProviderSet::new(config.clone(), plugins.clone(), icons.clone())?;
         let window = build_window(event_loop, &config)?;
-        let html = ui::html(&config.ui);
+        let html = ui::html(
+            &config.ui,
+            config.window.visible_rows,
+            INITIAL_LAYOUT_VERSION,
+        );
         let ipc_proxy = proxy.clone();
         let protocol_icons = icons.clone();
         let webview = WebViewBuilder::new()
@@ -274,9 +280,10 @@ impl Launcher {
     fn show(&mut self) -> Result<()> {
         self.reload_config_if_needed()?;
         self.providers.begin_session();
+        let window_config = self.loaded.config.window.clone();
+        let ui_config = self.loaded.config.ui.clone();
+        self.apply_window_config(&window_config, &ui_config);
         self.windows.note_shown(&mut self.state);
-        self.windows
-            .center_window(&self.window, &self.loaded.config.window);
         self.windows.show_window(&self.window);
         if let Some(message) = self.config_reload_error.clone() {
             self.state.session_mut().set_config_error(message);
@@ -331,6 +338,16 @@ impl Launcher {
                     .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
                 if self.state.is_visible() {
                     self.ensure_launcher_key_focus()?;
+                }
+            }
+            FrontendCommand::PreferredHeight {
+                height,
+                layout_version,
+            } => {
+                if self.windows.accept_preferred_height(layout_version, height) {
+                    let window_config = self.loaded.config.window.clone();
+                    let ui_config = self.loaded.config.ui.clone();
+                    self.apply_window_config(&window_config, &ui_config);
                 }
             }
             FrontendCommand::QueryChanged { query } => self.search.handle_query_changed(
@@ -480,6 +497,8 @@ impl Launcher {
             plugin_routes,
         ));
         let providers = ProviderSet::new(config.clone(), plugins.clone(), self.icons.clone())?;
+        let layout_inputs_changed =
+            frontend_layout_inputs_changed(&previous_config, config.as_ref());
 
         if reloaded_hotkey != previous_hotkey {
             self.hotkey_manager
@@ -496,8 +515,11 @@ impl Launcher {
         self.providers = providers;
         self.actions = ActionRunner::new(plugins);
         self.search = SearchController::new(&config.timing);
-        self.apply_window_config(&config.window);
-        self.apply_theme(&config.ui)?;
+        if layout_inputs_changed {
+            let layout_version = self.windows.invalidate_preferred_height();
+            self.apply_frontend_config(&config.window, &config.ui, layout_version)?;
+        }
+        self.apply_window_config(&config.window, &config.ui);
         self.loaded = loaded;
 
         if was_visible {
@@ -514,8 +536,11 @@ impl Launcher {
                 &self.providers,
                 self.proxy.clone(),
             );
-            self.windows
-                .center_window(&self.window, &self.loaded.config.window);
+            self.windows.apply_window_geometry(
+                &self.window,
+                &self.loaded.config.window,
+                &self.loaded.config.ui,
+            );
             self.ensure_launcher_key_focus()?;
         }
 
@@ -548,16 +573,17 @@ impl Launcher {
         Ok(())
     }
 
-    fn apply_window_config(&mut self, config: &config::WindowConfig) {
-        self.window
-            .set_inner_size(LogicalSize::new(config.width, config.height));
-        self.window.set_always_on_top(config.always_on_top);
-        if self.state.is_visible() {
-            self.windows.center_window(&self.window, config);
-        }
+    fn apply_window_config(&mut self, window: &config::WindowConfig, ui: &config::UiConfig) {
+        self.windows.apply_window_geometry(&self.window, window, ui);
+        self.window.set_always_on_top(window.always_on_top);
     }
 
-    fn apply_theme(&self, theme: &config::UiConfig) -> Result<()> {
+    fn apply_frontend_config(
+        &self,
+        window: &config::WindowConfig,
+        theme: &config::UiConfig,
+        layout_version: u64,
+    ) -> Result<()> {
         let css = ui::theme_css(theme);
         let cycle_selection = if theme.cycle_selection {
             "true"
@@ -568,11 +594,13 @@ impl Launcher {
         let activate_all_windows_shortcut =
             ui::shortcut_json(&theme.shortcuts.activate_all_windows);
         let script = format!(
-            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; }})()",
+            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; window.__RUNX_VISIBLE_ROWS__ = {}; window.__RUNX_LAYOUT_VERSION__ = {}; if (window.__RUNX_REQUEST_PREFERRED_HEIGHT) window.__RUNX_REQUEST_PREFERRED_HEIGHT(); }})()",
             serde_json::to_string(&css)?,
             cycle_selection,
             focus_window_shortcut,
-            activate_all_windows_shortcut
+            activate_all_windows_shortcut,
+            window.visible_rows,
+            layout_version
         );
         self.webview
             .evaluate_script(&script)
@@ -604,6 +632,10 @@ fn clear_recovered_config_error(state: &mut AppState, config_reload_error: &mut 
     state.session_mut().clear_config_error();
 }
 
+fn frontend_layout_inputs_changed(previous: &config::Config, updated: &config::Config) -> bool {
+    previous.ui != updated.ui || previous.window.visible_rows != updated.window.visible_rows
+}
+
 struct BootstrapConfig {
     loaded: LoadedConfig,
     hotkey: HotKey,
@@ -616,7 +648,8 @@ fn build_window(
     event_loop: &EventLoopWindowTarget<AppEvent>,
     config: &Arc<config::Config>,
 ) -> Result<Window> {
-    let size = LogicalSize::new(config.window.width, config.window.height);
+    let (width, height) = config.window.fallback_size(&config.ui);
+    let size = LogicalSize::new(width, height);
     let builder = WindowBuilder::new()
         .with_title("Runx")
         .with_visible(false)

@@ -43,8 +43,12 @@ const SECTIONS: [Section; 8] = [
 
 const PATH_HOTKEY_KEY: &[&str] = &["hotkey", "key"];
 const PATH_HOTKEY_MODIFIERS: &[&str] = &["hotkey", "modifiers"];
-const PATH_WINDOW_WIDTH: &[&str] = &["window", "width"];
-const PATH_WINDOW_HEIGHT: &[&str] = &["window", "height"];
+const PATH_WINDOW_WIDTH_FRACTION: &[&str] = &["window", "width_fraction"];
+const PATH_WINDOW_VISIBLE_ROWS: &[&str] = &["window", "visible_rows"];
+const PATH_WINDOW_MIN_WIDTH: &[&str] = &["window", "min_width"];
+const PATH_WINDOW_MAX_WIDTH: &[&str] = &["window", "max_width"];
+const PATH_WINDOW_MIN_HEIGHT: &[&str] = &["window", "min_height"];
+const PATH_WINDOW_MAX_HEIGHT: &[&str] = &["window", "max_height"];
 const PATH_WINDOW_HIDE_ON_BLUR: &[&str] = &["window", "hide_on_blur"];
 const PATH_WINDOW_ALWAYS_ON_TOP: &[&str] = &["window", "always_on_top"];
 const PATH_WINDOW_SHOW_ON: &[&str] = &["window", "show_on"];
@@ -60,6 +64,7 @@ const PATH_RANKING_EMPTY_QUERY_PROVIDERS: &[&str] = &["ranking", "empty_query_pr
 const PATH_UI_SHOW_HEADER: &[&str] = &["ui", "show_header"];
 const PATH_UI_CYCLE_SELECTION: &[&str] = &["ui", "cycle_selection"];
 const PATH_UI_FONT_FAMILY: &[&str] = &["ui", "font_family"];
+const PATH_UI_SCALE: &[&str] = &["ui", "scale"];
 const PATH_UI_COLORSCHEME: &[&str] = &["ui", "colorscheme"];
 const PATH_UI_CANVAS_SHOW: &[&str] = &["ui", "canvas", "show"];
 const PATH_UI_CANVAS_RADIUS: &[&str] = &["ui", "canvas", "radius"];
@@ -774,13 +779,18 @@ impl App {
     fn activate_field(&mut self, id: FieldId) -> Result<AppAction> {
         match id {
             FieldId::HotkeyKey
-            | FieldId::WindowWidth
-            | FieldId::WindowHeight
+            | FieldId::WindowWidthFraction
+            | FieldId::WindowVisibleRows
+            | FieldId::WindowMinWidth
+            | FieldId::WindowMaxWidth
+            | FieldId::WindowMinHeight
+            | FieldId::WindowMaxHeight
             | FieldId::AppsExactNameBoost
             | FieldId::AppsPrefixNameBoost
             | FieldId::RankingTieThreshold
             | FieldId::RankingResultLimit
             | FieldId::UiFontFamily
+            | FieldId::UiScale
             | FieldId::UiCanvasRadius
             | FieldId::UiCanvasOpacity
             | FieldId::UiCanvasBackgroundOpacity
@@ -906,15 +916,36 @@ impl App {
                 self.apply(|doc| set_item(doc, &["hotkey"], "key", value(raw)))?;
                 self.success("Saved hotkey key");
             }
-            FieldId::WindowWidth => {
-                let parsed = parse_f64(&raw, "window width")?;
-                self.apply(|doc| set_item(doc, &["window"], "width", value(parsed)))?;
-                self.success("Saved window width");
+            FieldId::WindowWidthFraction => {
+                let parsed = parse_f64(&raw, "window width fraction")?;
+                self.apply(|doc| set_item(doc, &["window"], "width_fraction", value(parsed)))?;
+                self.success("Saved window.width_fraction");
             }
-            FieldId::WindowHeight => {
-                let parsed = parse_f64(&raw, "window height")?;
-                self.apply(|doc| set_item(doc, &["window"], "height", value(parsed)))?;
-                self.success("Saved window height");
+            FieldId::WindowVisibleRows => {
+                let parsed = parse_usize(&raw, "window visible rows")?;
+                let parsed = i64::try_from(parsed).context("visible rows is too large")?;
+                self.apply(|doc| set_item(doc, &["window"], "visible_rows", value(parsed)))?;
+                self.success("Saved window.visible_rows");
+            }
+            FieldId::WindowMinWidth => {
+                let parsed = parse_f64(&raw, "window min width")?;
+                self.apply(|doc| set_item(doc, &["window"], "min_width", value(parsed)))?;
+                self.success("Saved window.min_width");
+            }
+            FieldId::WindowMaxWidth => {
+                let parsed = parse_f64(&raw, "window max width")?;
+                self.apply(|doc| set_item(doc, &["window"], "max_width", value(parsed)))?;
+                self.success("Saved window.max_width");
+            }
+            FieldId::WindowMinHeight => {
+                let parsed = parse_f64(&raw, "window min height")?;
+                self.apply(|doc| set_item(doc, &["window"], "min_height", value(parsed)))?;
+                self.success("Saved window.min_height");
+            }
+            FieldId::WindowMaxHeight => {
+                let parsed = parse_f64(&raw, "window max height")?;
+                self.apply(|doc| set_item(doc, &["window"], "max_height", value(parsed)))?;
+                self.success("Saved window.max_height");
             }
             FieldId::AppsExactNameBoost => {
                 let parsed = parse_i64(&raw, "exact app name boost")?;
@@ -954,6 +985,11 @@ impl App {
             FieldId::UiFontFamily => {
                 self.apply(|doc| set_item(doc, &["ui"], "font_family", value(raw)))?;
                 self.success("Saved font_family");
+            }
+            FieldId::UiScale => {
+                let parsed = parse_f64(&raw, "ui scale")?;
+                self.apply(|doc| set_item(doc, &["ui"], "scale", value(parsed)))?;
+                self.success("Saved ui.scale");
             }
             FieldId::UiCanvasRadius => {
                 let parsed = parse_u16(&raw, "canvas radius")?;
@@ -1444,8 +1480,12 @@ struct Field {
 enum FieldId {
     HotkeyKey,
     HotkeyModifiers,
-    WindowWidth,
-    WindowHeight,
+    WindowWidthFraction,
+    WindowVisibleRows,
+    WindowMinWidth,
+    WindowMaxWidth,
+    WindowMinHeight,
+    WindowMaxHeight,
     WindowHideOnBlur,
     WindowAlwaysOnTop,
     WindowShowOn,
@@ -1460,6 +1500,7 @@ enum FieldId {
     UiShowHeader,
     UiCycleSelection,
     UiFontFamily,
+    UiScale,
     UiColorscheme,
     UiCanvasShow,
     UiCanvasRadius,
@@ -1476,8 +1517,12 @@ impl FieldId {
         match self {
             Self::HotkeyKey => "Key",
             Self::HotkeyModifiers => "Modifiers",
-            Self::WindowWidth => "Width",
-            Self::WindowHeight => "Height",
+            Self::WindowWidthFraction => "Width fraction",
+            Self::WindowVisibleRows => "Visible rows",
+            Self::WindowMinWidth => "Min width",
+            Self::WindowMaxWidth => "Max width",
+            Self::WindowMinHeight => "Min height",
+            Self::WindowMaxHeight => "Max height",
             Self::WindowHideOnBlur => "Hide on blur",
             Self::WindowAlwaysOnTop => "Always on top",
             Self::WindowShowOn => "Show on display",
@@ -1492,6 +1537,7 @@ impl FieldId {
             Self::UiShowHeader => "Show header",
             Self::UiCycleSelection => "Cycle selection",
             Self::UiFontFamily => "Font family",
+            Self::UiScale => "UI scale",
             Self::UiColorscheme => "Selected colorscheme",
             Self::UiCanvasShow => "Show canvas",
             Self::UiCanvasRadius => "Canvas radius",
@@ -1508,8 +1554,12 @@ impl FieldId {
         match self {
             Self::HotkeyKey => Some(PATH_HOTKEY_KEY),
             Self::HotkeyModifiers => Some(PATH_HOTKEY_MODIFIERS),
-            Self::WindowWidth => Some(PATH_WINDOW_WIDTH),
-            Self::WindowHeight => Some(PATH_WINDOW_HEIGHT),
+            Self::WindowWidthFraction => Some(PATH_WINDOW_WIDTH_FRACTION),
+            Self::WindowVisibleRows => Some(PATH_WINDOW_VISIBLE_ROWS),
+            Self::WindowMinWidth => Some(PATH_WINDOW_MIN_WIDTH),
+            Self::WindowMaxWidth => Some(PATH_WINDOW_MAX_WIDTH),
+            Self::WindowMinHeight => Some(PATH_WINDOW_MIN_HEIGHT),
+            Self::WindowMaxHeight => Some(PATH_WINDOW_MAX_HEIGHT),
             Self::WindowHideOnBlur => Some(PATH_WINDOW_HIDE_ON_BLUR),
             Self::WindowAlwaysOnTop => Some(PATH_WINDOW_ALWAYS_ON_TOP),
             Self::WindowShowOn => Some(PATH_WINDOW_SHOW_ON),
@@ -1524,6 +1574,7 @@ impl FieldId {
             Self::UiShowHeader => Some(PATH_UI_SHOW_HEADER),
             Self::UiCycleSelection => Some(PATH_UI_CYCLE_SELECTION),
             Self::UiFontFamily => Some(PATH_UI_FONT_FAMILY),
+            Self::UiScale => Some(PATH_UI_SCALE),
             Self::UiColorscheme => Some(PATH_UI_COLORSCHEME),
             Self::UiCanvasShow => Some(PATH_UI_CANVAS_SHOW),
             Self::UiCanvasRadius => Some(PATH_UI_CANVAS_RADIUS),
@@ -1538,8 +1589,12 @@ impl FieldId {
         match self {
             Self::HotkeyKey => config.hotkey.key.clone(),
             Self::HotkeyModifiers => list_summary(&config.hotkey.modifiers),
-            Self::WindowWidth => format_float(config.window.width),
-            Self::WindowHeight => format_float(config.window.height),
+            Self::WindowWidthFraction => format_float(config.window.width_fraction),
+            Self::WindowVisibleRows => config.window.visible_rows.to_string(),
+            Self::WindowMinWidth => format_float(config.window.min_width),
+            Self::WindowMaxWidth => format_float(config.window.max_width),
+            Self::WindowMinHeight => format_float(config.window.min_height),
+            Self::WindowMaxHeight => format_float(config.window.max_height),
             Self::WindowHideOnBlur => bool_summary(config.window.hide_on_blur).to_owned(),
             Self::WindowAlwaysOnTop => bool_summary(config.window.always_on_top).to_owned(),
             Self::WindowShowOn => show_on_summary(config),
@@ -1556,6 +1611,7 @@ impl FieldId {
             Self::UiShowHeader => bool_summary(config.ui.show_header).to_owned(),
             Self::UiCycleSelection => bool_summary(config.ui.cycle_selection).to_owned(),
             Self::UiFontFamily => config.ui.font_family.clone(),
+            Self::UiScale => format_float(config.ui.scale),
             Self::UiColorscheme => config.ui.colorscheme.clone(),
             Self::UiCanvasShow => bool_summary(config.ui.canvas.show).to_owned(),
             Self::UiCanvasRadius => config.ui.canvas.radius.to_string(),
@@ -1573,8 +1629,12 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
     let ids: &[FieldId] = match section {
         Section::Hotkey => &[FieldId::HotkeyKey, FieldId::HotkeyModifiers],
         Section::Window => &[
-            FieldId::WindowWidth,
-            FieldId::WindowHeight,
+            FieldId::WindowWidthFraction,
+            FieldId::WindowVisibleRows,
+            FieldId::WindowMinWidth,
+            FieldId::WindowMaxWidth,
+            FieldId::WindowMinHeight,
+            FieldId::WindowMaxHeight,
             FieldId::WindowHideOnBlur,
             FieldId::WindowAlwaysOnTop,
             FieldId::WindowShowOn,
@@ -1595,6 +1655,7 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
             FieldId::UiShowHeader,
             FieldId::UiCycleSelection,
             FieldId::UiFontFamily,
+            FieldId::UiScale,
             FieldId::UiCanvasShow,
             FieldId::UiCanvasRadius,
             FieldId::UiCanvasOpacity,

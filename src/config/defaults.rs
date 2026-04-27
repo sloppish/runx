@@ -12,8 +12,12 @@ key = "Space"
 modifiers = ["Alt"]
 
 [window]
-width = 760
-height = 520
+width_fraction = 0.4
+visible_rows = 5
+min_width = 700
+max_width = 980
+min_height = 420
+max_height = 720
 hide_on_blur = true
 always_on_top = true
 show_on = "cursor"
@@ -60,6 +64,7 @@ show_header = true
 cycle_selection = false
 colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
+scale = 1.0
 # Built-in light/dark scheme overrides and custom schemes live under:
 # [ui.colorschemes.builtin_light]
 # [ui.colorschemes.builtin_dark]

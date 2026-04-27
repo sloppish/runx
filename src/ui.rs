@@ -241,7 +241,7 @@ fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors
 }
 
 /// Returns the full HTML document served into the embedded webview.
-pub fn html(theme: &UiConfig) -> String {
+pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64) -> String {
     let shell_class = if theme.canvas.show {
         "shell"
     } else {
@@ -264,6 +264,8 @@ pub fn html(theme: &UiConfig) -> String {
             "__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT_VALUE__",
             &shortcut_json(&theme.shortcuts.activate_all_windows),
         )
+        .replace("__RUNX_VISIBLE_ROWS_VALUE__", &visible_rows.to_string())
+        .replace("__RUNX_LAYOUT_VERSION_VALUE__", &layout_version.to_string())
         .replace("__RUNX_STYLE__", &theme_css(theme))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
 }
@@ -279,32 +281,34 @@ pub fn shortcut_json(shortcut: &Option<crate::config::UiShortcutConfig>) -> Stri
 /// Returns the theme-expanded CSS used by the embedded webview.
 pub fn theme_css(theme: &UiConfig) -> String {
     let (light, dark, document_color_scheme) = resolve_theme_colors(theme);
+    let scale = theme.scale;
     let header_display = if theme.show_header { "flex" } else { "none" };
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
-    let canvas_radius = format!("{}px", theme.canvas.radius);
+    let ui_scale = format_float(scale);
+    let canvas_radius = scaled_px(theme.canvas.radius, scale);
     let canvas_opacity = format!("{}", theme.canvas.opacity);
     let canvas_background_opacity = format!("{}", theme.canvas.background_opacity);
     let entry_opacity = format!("{}", theme.entries.opacity);
-    let label_font_size = format!("{}px", theme.font_sizes.label);
-    let input_font_size = format!("{}px", theme.font_sizes.input);
-    let title_font_size = format!("{}px", theme.font_sizes.title);
-    let subtitle_font_size = format!("{}px", theme.font_sizes.subtitle);
-    let badge_font_size = format!("{}px", theme.font_sizes.badge);
-    let accelerator_font_size = format!("{}px", theme.font_sizes.accelerator);
-    let config_error_title_font_size = format!("{}px", theme.font_sizes.config_error_title);
-    let config_error_body_font_size = format!("{}px", theme.font_sizes.config_error_body);
-    let section_gap = format!("{}px", theme.layout.section_gap);
-    let input_padding_y = format!("{}px", theme.layout.input_padding_y);
-    let input_padding_x = format!("{}px", theme.layout.input_padding_x);
-    let input_radius = format!("{}px", theme.layout.input_radius);
-    let list_gap = format!("{}px", theme.layout.list_gap);
-    let entry_padding_y = format!("{}px", theme.layout.entry_padding_y);
-    let entry_padding_x = format!("{}px", theme.layout.entry_padding_x);
-    let entry_gap = format!("{}px", theme.layout.entry_gap);
-    let row_radius = format!("{}px", theme.layout.row_radius);
-    let badge_size = format!("{}px", theme.layout.badge_size);
-    let badge_radius = format!("{}px", theme.layout.badge_radius);
-    let icon_size = format!("{}px", theme.layout.icon_size);
+    let label_font_size = scaled_px(theme.font_sizes.label, scale);
+    let input_font_size = scaled_px(theme.font_sizes.input, scale);
+    let title_font_size = scaled_px(theme.font_sizes.title, scale);
+    let subtitle_font_size = scaled_px(theme.font_sizes.subtitle, scale);
+    let badge_font_size = scaled_px(theme.font_sizes.badge, scale);
+    let accelerator_font_size = scaled_px(theme.font_sizes.accelerator, scale);
+    let config_error_title_font_size = scaled_px(theme.font_sizes.config_error_title, scale);
+    let config_error_body_font_size = scaled_px(theme.font_sizes.config_error_body, scale);
+    let section_gap = scaled_px(theme.layout.section_gap, scale);
+    let input_padding_y = scaled_px(theme.layout.input_padding_y, scale);
+    let input_padding_x = scaled_px(theme.layout.input_padding_x, scale);
+    let input_radius = scaled_px(theme.layout.input_radius, scale);
+    let list_gap = scaled_px(theme.layout.list_gap, scale);
+    let entry_padding_y = scaled_px(theme.layout.entry_padding_y, scale);
+    let entry_padding_x = scaled_px(theme.layout.entry_padding_x, scale);
+    let entry_gap = scaled_px(theme.layout.entry_gap, scale);
+    let row_radius = scaled_px(theme.layout.row_radius, scale);
+    let badge_size = scaled_px(theme.layout.badge_size, scale);
+    let badge_radius = scaled_px(theme.layout.badge_radius, scale);
+    let icon_size = scaled_px(theme.layout.icon_size, scale);
 
     let replacements = [
         ("__LIGHT_ACCENT__", light.accent.as_str()),
@@ -457,6 +461,7 @@ pub fn theme_css(theme: &UiConfig) -> String {
             dark.canvas_hidden_config_error_bg.as_str(),
         ),
         ("__FONT_FAMILY__", theme.font_family.as_str()),
+        ("__UI_SCALE__", ui_scale.as_str()),
         ("__DOCUMENT_COLOR_SCHEME__", document_color_scheme),
         ("__HEADER_DISPLAY__", header_display),
         ("__CANVAS_DISPLAY__", canvas_display),
@@ -502,6 +507,26 @@ pub fn theme_css(theme: &UiConfig) -> String {
     css
 }
 
+fn scaled_px(value: u16, scale: f64) -> String {
+    format!("{}px", format_float(f64::from(value) * scale))
+}
+
+fn format_float(value: f64) -> String {
+    let rounded = (value * 100.0).round() / 100.0;
+    if (rounded - rounded.round()).abs() < f64::EPSILON {
+        format!("{rounded:.0}")
+    } else {
+        let mut rendered = format!("{rounded:.2}");
+        while rendered.contains('.') && rendered.ends_with('0') {
+            rendered.pop();
+        }
+        if rendered.ends_with('.') {
+            rendered.pop();
+        }
+        rendered
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::{html, theme_css};
@@ -513,6 +538,7 @@ mod tests {
             show_header: false,
             ..UiConfig::default()
         };
+        theme.scale = 1.25;
         theme.canvas.show = false;
         theme.canvas.radius = 20;
         theme.canvas.opacity = 0.72;
@@ -540,19 +566,20 @@ mod tests {
         let css = theme_css(&theme);
 
         assert!(css.contains("--header-display: none;"));
+        assert!(css.contains("--ui-scale: 1.25;"));
         assert!(css.contains("--canvas-display: none;"));
-        assert!(css.contains("--canvas-radius: 20px;"));
+        assert!(css.contains("--canvas-radius: 25px;"));
         assert!(css.contains("--canvas-opacity: 0.72;"));
         assert!(css.contains("--canvas-background-opacity: 0.91;"));
         assert!(css.contains("--entry-opacity: 0.64;"));
         assert!(css.contains("--shell-bg: linear-gradient(180deg, #111111, #222222);"));
         assert!(css.contains("--badge-icon-bg: rgba(4, 5, 6, 0.7);"));
-        assert!(css.contains("--input-font-size: 34px;"));
-        assert!(css.contains("--title-font-size: 18px;"));
-        assert!(css.contains("--config-error-body-font-size: 17px;"));
-        assert!(css.contains("--section-gap: 16px;"));
-        assert!(css.contains("--input-radius: 22px;"));
-        assert!(css.contains("--badge-size: 52px;"));
+        assert!(css.contains("--input-font-size: 42.5px;"));
+        assert!(css.contains("--title-font-size: 22.5px;"));
+        assert!(css.contains("--config-error-body-font-size: 21.25px;"));
+        assert!(css.contains("--section-gap: 20px;"));
+        assert!(css.contains("--input-radius: 27.5px;"));
+        assert!(css.contains("--badge-size: 65px;"));
     }
 
     #[test]
@@ -599,7 +626,7 @@ mod tests {
         let mut theme = UiConfig::default();
         theme.canvas.show = false;
 
-        let document = html(&theme);
+        let document = html(&theme, 5, 0);
 
         assert!(document.contains(r#"<main class="shell canvas-hidden">"#));
     }
@@ -611,14 +638,14 @@ mod tests {
             ..UiConfig::default()
         };
 
-        let document = html(&theme);
+        let document = html(&theme, 5, 0);
 
         assert!(document.contains("window.__RUNX_CYCLE_SELECTION__ = true;"));
     }
 
     #[test]
     fn html_exposes_window_action_shortcuts() {
-        let document = html(&UiConfig::default());
+        let document = html(&UiConfig::default(), 5, 7);
 
         assert!(document.contains(
             r#"window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {"key":"Enter","code":null,"alt":false,"ctrl":false,"meta":false,"shift":false};"#
@@ -626,5 +653,7 @@ mod tests {
         assert!(document.contains(
             r#"window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {"key":"Enter","code":null,"alt":true,"ctrl":false,"meta":false,"shift":false};"#
         ));
+        assert!(document.contains("window.__RUNX_VISIBLE_ROWS__ = 5;"));
+        assert!(document.contains("window.__RUNX_LAYOUT_VERSION__ = 7;"));
     }
 }

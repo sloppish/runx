@@ -30,8 +30,12 @@ Launcher window behavior and geometry.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `width` | number | `760` | Launcher width in logical pixels. |
-| `height` | number | `520` | Launcher height in logical pixels. |
+| `width_fraction` | number | `0.4` | Fraction of the chosen display's logical width used before width clamps. |
+| `visible_rows` | integer | `5` | Target number of result rows kept visible before height clamps. |
+| `min_width` | number | `700` | Minimum launcher width in logical pixels. |
+| `max_width` | number | `980` | Maximum launcher width in logical pixels. |
+| `min_height` | number | `420` | Minimum launcher height in logical pixels. |
+| `max_height` | number | `720` | Maximum launcher height in logical pixels. |
 | `hide_on_blur` | boolean | `true` | Hide the launcher automatically when it loses focus. |
 | `always_on_top` | boolean | `true` | Keep the launcher above normal windows while it is visible. |
 | `show_on` | one of: `primary`, `cursor` | `"cursor"` | Choose which display Runx appears on when it opens. |
@@ -138,6 +142,7 @@ Theme tokens injected into the embedded HTML/CSS UI templates.
 | `cycle_selection` | boolean | `false` | Wrap selection movement from end to start with arrows and Ctrl-N/Ctrl-P. |
 | `colorscheme` | string (`system`, `builtin_light`, `builtin_dark`, or a custom name under `[ui.colorschemes.<name>]`) | `"system"` | Selected UI colorscheme: `system`, a built-in name, or a custom scheme name. |
 | `font_family` | string | `"\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"` | CSS font-family stack used by the launcher UI. |
+| `scale` | number | `1` | Multiplier applied to UI typography and spacing tokens. |
 
 ## [ui.canvas]
 

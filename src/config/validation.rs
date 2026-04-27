@@ -15,7 +15,7 @@ use super::{
 #[serde(default, deny_unknown_fields)]
 pub(super) struct RawConfigSpans {
     hotkey: RawHotKeySpans,
-    window: WindowConfig,
+    window: RawWindowSpans,
     providers: RawProvidersSpans,
     ranking: RawRankingSpans,
     timing: TimingConfig,
@@ -31,6 +31,7 @@ struct RawUiSpans {
     cycle_selection: bool,
     colorscheme: Option<Spanned<String>>,
     font_family: String,
+    scale: Option<Spanned<f64>>,
     colorschemes: HashMap<String, RawUiColorschemeSpans>,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
@@ -68,6 +69,20 @@ struct RawUiEntriesSpans {
 struct RawHotKeySpans {
     key: Option<Spanned<String>>,
     modifiers: Vec<Spanned<String>>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
+struct RawWindowSpans {
+    width_fraction: Option<Spanned<f64>>,
+    visible_rows: Option<Spanned<usize>>,
+    min_width: Option<Spanned<f64>>,
+    max_width: Option<Spanned<f64>>,
+    min_height: Option<Spanned<f64>>,
+    max_height: Option<Spanned<f64>>,
+    hide_on_blur: bool,
+    always_on_top: bool,
+    show_on: WindowDisplayTarget,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -116,6 +131,41 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
         &config.ranking.empty_query_providers,
         "[ranking].empty_query_providers",
     )?;
+    validate_window_dimension_fraction(
+        config.window.width_fraction,
+        "[window].width_fraction must be greater than 0.0 and at most 1.0",
+    )?;
+    validate_visible_rows(
+        config.window.visible_rows,
+        "[window].visible_rows must be greater than 0",
+    )?;
+    validate_positive_dimension(
+        config.window.min_width,
+        "[window].min_width must be greater than 0.0",
+    )?;
+    validate_positive_dimension(
+        config.window.max_width,
+        "[window].max_width must be greater than 0.0",
+    )?;
+    validate_positive_dimension(
+        config.window.min_height,
+        "[window].min_height must be greater than 0.0",
+    )?;
+    validate_positive_dimension(
+        config.window.max_height,
+        "[window].max_height must be greater than 0.0",
+    )?;
+    validate_dimension_range(
+        config.window.min_width,
+        config.window.max_width,
+        "[window].min_width must be less than or equal to [window].max_width",
+    )?;
+    validate_dimension_range(
+        config.window.min_height,
+        config.window.max_height,
+        "[window].min_height must be less than or equal to [window].max_height",
+    )?;
+    validate_positive_scale(config.ui.scale, "[ui].scale must be greater than 0.0")?;
     validate_opacity(
         config.ui.canvas.opacity,
         "[ui.canvas].opacity must be between 0.0 and 1.0",
@@ -189,6 +239,121 @@ pub(super) fn validate_config_with_spans(
         "[ranking].empty_query_providers",
     )?;
 
+    if let Some(width_fraction) = &spans.window.width_fraction
+        && let Err(error) = validate_window_dimension_fraction(
+            *width_fraction.get_ref(),
+            "[window].width_fraction must be greater than 0.0 and at most 1.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            width_fraction.span(),
+        )));
+    }
+
+    if let Some(visible_rows) = &spans.window.visible_rows
+        && let Err(error) = validate_visible_rows(
+            *visible_rows.get_ref(),
+            "[window].visible_rows must be greater than 0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            visible_rows.span(),
+        )));
+    }
+
+    if let Some(min_width) = &spans.window.min_width
+        && let Err(error) = validate_positive_dimension(
+            *min_width.get_ref(),
+            "[window].min_width must be greater than 0.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            min_width.span(),
+        )));
+    }
+
+    if let Some(max_width) = &spans.window.max_width
+        && let Err(error) = validate_positive_dimension(
+            *max_width.get_ref(),
+            "[window].max_width must be greater than 0.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            max_width.span(),
+        )));
+    }
+
+    if let Some(min_height) = &spans.window.min_height
+        && let Err(error) = validate_positive_dimension(
+            *min_height.get_ref(),
+            "[window].min_height must be greater than 0.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            min_height.span(),
+        )));
+    }
+
+    if let Some(max_height) = &spans.window.max_height
+        && let Err(error) = validate_positive_dimension(
+            *max_height.get_ref(),
+            "[window].max_height must be greater than 0.0",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            max_height.span(),
+        )));
+    }
+
+    if let (Some(min_width), Some(max_width)) = (&spans.window.min_width, &spans.window.max_width)
+        && let Err(error) = validate_dimension_range(
+            *min_width.get_ref(),
+            *max_width.get_ref(),
+            "[window].min_width must be less than or equal to [window].max_width",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            max_width.span(),
+        )));
+    }
+
+    if let (Some(min_height), Some(max_height)) =
+        (&spans.window.min_height, &spans.window.max_height)
+        && let Err(error) = validate_dimension_range(
+            *min_height.get_ref(),
+            *max_height.get_ref(),
+            "[window].min_height must be less than or equal to [window].max_height",
+        )
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            max_height.span(),
+        )));
+    }
+
     for (index, rule) in spans.ranking.score_rules.iter().enumerate() {
         validate_spanned_provider_names(
             config_path,
@@ -196,6 +361,18 @@ pub(super) fn validate_config_with_spans(
             &rule.providers,
             &format!("[[ranking.score_rules]] entry {}.providers", index + 1),
         )?;
+    }
+
+    if let Some(scale) = &spans.ui.scale
+        && let Err(error) =
+            validate_positive_scale(*scale.get_ref(), "[ui].scale must be greater than 0.0")
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            scale.span(),
+        )));
     }
 
     if let Some(opacity) = &spans.ui.canvas.opacity
@@ -291,6 +468,46 @@ pub(super) fn validate_config_with_spans(
 
 fn validate_opacity(opacity: f64, context: &str) -> Result<()> {
     if (0.0..=1.0).contains(&opacity) {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
+}
+
+fn validate_window_dimension_fraction(value: f64, context: &str) -> Result<()> {
+    if value.is_finite() && value > 0.0 && value <= 1.0 {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
+}
+
+fn validate_visible_rows(value: usize, context: &str) -> Result<()> {
+    if value > 0 {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
+}
+
+fn validate_positive_dimension(value: f64, context: &str) -> Result<()> {
+    if value.is_finite() && value > 0.0 {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
+}
+
+fn validate_dimension_range(min: f64, max: f64, context: &str) -> Result<()> {
+    if min <= max {
+        Ok(())
+    } else {
+        bail!("{context}");
+    }
+}
+
+fn validate_positive_scale(value: f64, context: &str) -> Result<()> {
+    if value.is_finite() && value > 0.0 {
         Ok(())
     } else {
         bail!("{context}");

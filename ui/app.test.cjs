@@ -122,6 +122,12 @@ test("typing resets selection to the first item", () => {
   assert.equal(state.selectedIndex, 0);
 });
 
+test("visible rows normalize to a positive integer", () => {
+  assert.equal(ui.normalizeVisibleRows(undefined), 1);
+  assert.equal(ui.normalizeVisibleRows(0), 1);
+  assert.equal(ui.normalizeVisibleRows("4.6"), 5);
+});
+
 test("backend render payload does not overwrite active typing with stale query text", () => {
   const state = ui.createState();
   state.query = "gmail";

@@ -5,6 +5,7 @@
   --text: __LIGHT_TEXT__;
   --muted: __LIGHT_MUTED__;
   --font: __FONT_FAMILY__;
+  --ui-scale: __UI_SCALE__;
   --header-display: __HEADER_DISPLAY__;
   --canvas-display: __CANVAS_DISPLAY__;
   --canvas-radius: __CANVAS_RADIUS__;
@@ -127,7 +128,7 @@ html, body {
 }
 
 body {
-  padding: 18px;
+  padding: calc(18px * var(--ui-scale));
 }
 
 .shell {
@@ -136,7 +137,7 @@ body {
   display: flex;
   flex-direction: column;
   gap: var(--section-gap);
-  padding: 18px;
+  padding: calc(18px * var(--ui-scale));
   border-radius: var(--canvas-radius);
   overflow: hidden;
   isolation: isolate;
@@ -234,7 +235,7 @@ input::placeholder {
   flex-direction: column;
   gap: var(--list-gap);
   overflow: auto;
-  padding-right: 4px;
+  padding-right: calc(4px * var(--ui-scale));
 }
 
 .config-error {
@@ -242,9 +243,9 @@ input::placeholder {
   min-height: 0;
   display: flex;
   flex-direction: column;
-  gap: 12px;
-  padding: 18px 20px;
-  border-radius: 18px;
+  gap: calc(12px * var(--ui-scale));
+  padding: calc(18px * var(--ui-scale)) calc(20px * var(--ui-scale));
+  border-radius: calc(18px * var(--ui-scale));
   background: var(--config-error-bg);
   border: 1px solid var(--config-error-border);
   box-shadow: var(--config-error-shadow);
@@ -278,7 +279,7 @@ input::placeholder {
 }
 
 .results::-webkit-scrollbar {
-  width: 8px;
+  width: calc(8px * var(--ui-scale));
 }
 
 .results::-webkit-scrollbar-thumb {
@@ -328,8 +329,8 @@ input::placeholder {
 
 .item.compact {
   grid-template-columns: 1fr auto;
-  gap: calc(var(--entry-gap) - 2px);
-  padding-left: calc(var(--entry-padding-x) + 4px);
+  gap: calc(var(--entry-gap) - (2px * var(--ui-scale)));
+  padding-left: calc(var(--entry-padding-x) + (4px * var(--ui-scale)));
 }
 
 .item:hover {
@@ -354,7 +355,7 @@ input::placeholder {
   z-index: 1;
   min-width: var(--badge-size);
   height: var(--badge-size);
-  padding: 0 12px;
+  padding: 0 calc(12px * var(--ui-scale));
   border-radius: var(--badge-radius);
   background: var(--badge-bg);
   border: 1px solid var(--badge-border);
@@ -392,7 +393,7 @@ input::placeholder {
 .item.compact .copy {
   display: flex;
   align-items: center;
-  min-height: 24px;
+  min-height: calc(24px * var(--ui-scale));
 }
 
 .title {
@@ -405,7 +406,7 @@ input::placeholder {
 }
 
 .subtitle {
-  margin-top: 4px;
+  margin-top: calc(4px * var(--ui-scale));
   font-size: var(--subtitle-font-size);
   color: var(--muted);
   white-space: nowrap;
@@ -419,7 +420,7 @@ input::placeholder {
   color: var(--chip-text);
   font-size: var(--accelerator-font-size);
   font-weight: 600;
-  padding: 6px 9px;
+  padding: calc(6px * var(--ui-scale)) calc(9px * var(--ui-scale));
   border-radius: 999px;
   background: var(--chip-bg);
   border: 1px solid var(--chip-border);

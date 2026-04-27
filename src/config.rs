@@ -152,6 +152,12 @@ mod tests {
         fn defaults_to_cursor() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert_eq!(config.window.show_on, WindowDisplayTarget::Cursor);
+            assert_eq!(config.window.width_fraction, 0.4);
+            assert_eq!(config.window.visible_rows, 5);
+            assert_eq!(config.window.min_width, 700.0);
+            assert_eq!(config.window.max_width, 980.0);
+            assert_eq!(config.window.min_height, 420.0);
+            assert_eq!(config.window.max_height, 720.0);
         }
 
         #[test]
@@ -159,6 +165,38 @@ mod tests {
             let cursor: Config =
                 toml::from_str("[window]\nshow_on = \"cursor\"\n").expect("cursor should parse");
             assert_eq!(cursor.window.show_on, WindowDisplayTarget::Cursor);
+        }
+
+        #[test]
+        fn accepts_fractional_window_sizing() {
+            let config: Config = toml::from_str(
+                "[window]\nwidth_fraction = 0.33\nvisible_rows = 6\nmin_width = 680\nmax_width = 920\nmin_height = 400\nmax_height = 640\n",
+            )
+            .expect("fractional window sizing should parse");
+            assert_eq!(config.window.width_fraction, 0.33);
+            assert_eq!(config.window.visible_rows, 6);
+            assert_eq!(config.window.min_width, 680.0);
+            assert_eq!(config.window.max_width, 920.0);
+            assert_eq!(config.window.min_height, 400.0);
+            assert_eq!(config.window.max_height, 640.0);
+        }
+
+        #[test]
+        fn resolves_window_size_with_clamps() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.window.resolve_width(1600.0), 700.0);
+            assert_eq!(config.window.resolve_width(2560.0), 980.0);
+            assert_eq!(config.window.fallback_size(&config.ui).1, 570.0);
+        }
+
+        #[test]
+        fn row_driven_height_respects_max_height() {
+            let config: Config = toml::from_str(
+                "[window]\nvisible_rows = 10\nmax_height = 640\n[ui]\nscale = 1.25\n",
+            )
+            .expect("row-driven height config should parse");
+            assert_eq!(config.window.resolve_width(2560.0), 980.0);
+            assert_eq!(config.window.fallback_size(&config.ui).1, 640.0);
         }
 
         #[test]
@@ -431,6 +469,7 @@ mod tests {
             assert!(config.ui.show_header);
             assert!(!config.ui.cycle_selection);
             assert_eq!(config.ui.colorscheme, "system");
+            assert_eq!(config.ui.scale, 1.0);
             assert!(config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 24);
             assert_eq!(config.ui.canvas.opacity, 1.0);
@@ -485,13 +524,14 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\nscale = 1.2\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
             assert!(!config.ui.show_header);
             assert!(config.ui.cycle_selection);
             assert_eq!(config.ui.colorscheme, "builtin_dark");
+            assert_eq!(config.ui.scale, 1.2);
             assert!(!config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 18);
             assert_eq!(config.ui.canvas.opacity, 0.75);
@@ -796,6 +836,51 @@ mod tests {
             assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
             assert!(rendered.contains("opacity = -0.1"));
             assert!(rendered.contains("[ui.entries].opacity must be between 0.0 and 1.0"));
+        }
+
+        #[test]
+        fn width_fraction_validation_errors_include_source_context() {
+            let raw = "[window]\nwidth_fraction = 1.2\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("width_fraction = 1.2"));
+            assert!(
+                rendered
+                    .contains("[window].width_fraction must be greater than 0.0 and at most 1.0",)
+            );
+        }
+
+        #[test]
+        fn visible_rows_validation_errors_include_source_context() {
+            let raw = "[window]\nvisible_rows = 0\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("visible_rows = 0"));
+            assert!(rendered.contains("[window].visible_rows must be greater than 0"));
+        }
+
+        #[test]
+        fn ui_scale_validation_errors_include_source_context() {
+            let raw = "[ui]\nscale = 0.0\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("scale = 0.0"));
+            assert!(rendered.contains("[ui].scale must be greater than 0.0"));
         }
 
         #[test]

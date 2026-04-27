@@ -44,10 +44,18 @@ pub struct HotKeyConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowConfig {
-    /// Launcher width in logical pixels.
-    pub width: f64,
-    /// Launcher height in logical pixels.
-    pub height: f64,
+    /// Fraction of the chosen display's logical width used before width clamps.
+    pub width_fraction: f64,
+    /// Target number of result rows kept visible before height clamps.
+    pub visible_rows: usize,
+    /// Minimum launcher width in logical pixels.
+    pub min_width: f64,
+    /// Maximum launcher width in logical pixels.
+    pub max_width: f64,
+    /// Minimum launcher height in logical pixels.
+    pub min_height: f64,
+    /// Maximum launcher height in logical pixels.
+    pub max_height: f64,
     /// Hide the launcher automatically when it loses focus.
     pub hide_on_blur: bool,
     /// Keep the launcher above normal windows while it is visible.
@@ -192,6 +200,8 @@ pub struct UiConfig {
     pub colorscheme: String,
     /// CSS font-family stack used by the launcher UI.
     pub font_family: String,
+    /// Multiplier applied to UI typography and spacing tokens.
+    pub scale: f64,
     /// Named built-in and custom colorscheme definitions.
     pub colorschemes: HashMap<String, UiColorschemeConfig>,
     /// Canvas styling for the outer launcher panel.
@@ -526,6 +536,59 @@ impl UiConfig {
     pub fn colorscheme_config(&self, name: &str) -> UiColorschemeConfig {
         self.colorschemes.get(name).cloned().unwrap_or_default()
     }
+
+    /// Estimates the launcher height for a fixed number of visible result rows.
+    ///
+    /// This is a bootstrap fallback used before the embedded frontend reports its
+    /// measured preferred height from the live CSS/DOM layout.
+    pub fn estimated_window_height(&self, visible_rows: usize) -> f64 {
+        const LINE_HEIGHT: f64 = 1.2;
+        const BODY_PADDING: f64 = 18.0;
+        const SHELL_PADDING: f64 = 18.0;
+        const SUBTITLE_MARGIN_TOP: f64 = 4.0;
+        const CHIP_PADDING_Y: f64 = 6.0;
+        const COMPACT_COPY_MIN_HEIGHT: f64 = 24.0;
+        const BORDER_WIDTH: f64 = 1.0;
+
+        let scale = self.scale;
+        let scaled = |value: f64| value * scale;
+        let line_box = |font_size: u16| f64::from(font_size) * scale * LINE_HEIGHT;
+
+        let header_height = if self.show_header {
+            line_box(self.font_sizes.label)
+        } else {
+            0.0
+        };
+        let section_gaps = if self.show_header { 2.0 } else { 1.0 };
+        let input_height = line_box(self.font_sizes.input)
+            + scaled(f64::from(self.layout.input_padding_y) * 2.0)
+            + BORDER_WIDTH * 2.0;
+        let title_stack_height = line_box(self.font_sizes.title)
+            + scaled(SUBTITLE_MARGIN_TOP)
+            + line_box(self.font_sizes.subtitle);
+        let compact_copy_height = scaled(COMPACT_COPY_MIN_HEIGHT);
+        let accelerator_height = line_box(self.font_sizes.accelerator)
+            + scaled(CHIP_PADDING_Y * 2.0)
+            + BORDER_WIDTH * 2.0;
+        let row_content_height = scaled(f64::from(self.layout.badge_size))
+            .max(scaled(f64::from(self.layout.icon_size)))
+            .max(title_stack_height.max(compact_copy_height))
+            .max(accelerator_height);
+        let row_height = row_content_height + scaled(f64::from(self.layout.entry_padding_y) * 2.0);
+        let results_height = if visible_rows == 0 {
+            0.0
+        } else {
+            row_height * visible_rows as f64
+                + scaled(f64::from(self.layout.list_gap)) * visible_rows.saturating_sub(1) as f64
+        };
+
+        scaled(BODY_PADDING * 2.0)
+            + scaled(SHELL_PADDING * 2.0)
+            + scaled(f64::from(self.layout.section_gap)) * section_gaps
+            + header_height
+            + input_height
+            + results_height
+    }
 }
 
 impl Default for HotKeyConfig {
@@ -552,12 +615,41 @@ impl HotKeyConfig {
 impl Default for WindowConfig {
     fn default() -> Self {
         Self {
-            width: 760.0,
-            height: 520.0,
+            width_fraction: 0.4,
+            visible_rows: 5,
+            min_width: 700.0,
+            max_width: 980.0,
+            min_height: 420.0,
+            max_height: 720.0,
             hide_on_blur: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Cursor,
         }
+    }
+}
+
+impl WindowConfig {
+    /// Returns a conservative logical size used before a display is resolved.
+    pub fn fallback_size(&self, ui: &UiConfig) -> (f64, f64) {
+        (self.min_width, self.fallback_height(ui))
+    }
+
+    /// Resolves launcher width for a display with the given logical width.
+    pub fn resolve_width(&self, display_width: f64) -> f64 {
+        clamp_axis(
+            display_width * self.width_fraction,
+            self.min_width,
+            self.max_width,
+        )
+    }
+
+    /// Clamps a preferred logical height to the configured guardrails.
+    pub fn clamp_height(&self, preferred_height: f64) -> f64 {
+        clamp_axis(preferred_height, self.min_height, self.max_height)
+    }
+
+    fn fallback_height(&self, ui: &UiConfig) -> f64 {
+        self.clamp_height(ui.estimated_window_height(self.visible_rows))
     }
 }
 
@@ -617,6 +709,7 @@ impl Default for UiConfig {
             colorscheme: "system".to_owned(),
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
+            scale: 1.0,
             colorschemes,
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),
@@ -716,4 +809,8 @@ impl Default for UiLayoutConfig {
             icon_size: 46,
         }
     }
+}
+
+fn clamp_axis(value: f64, min: f64, max: f64) -> f64 {
+    value.clamp(min, max)
 }

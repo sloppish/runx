@@ -8,6 +8,15 @@
     };
   }
 
+  function normalizeVisibleRows(value) {
+    const parsed = Number(value);
+    if (!Number.isFinite(parsed)) {
+      return 1;
+    }
+
+    return Math.max(1, Math.round(parsed));
+  }
+
   function clampSelection(state) {
     if (state.items.length === 0) {
       state.selectedIndex = 0;
@@ -140,6 +149,7 @@
     isPasteShortcut,
     matchesShortcut,
     moveSelection,
+    normalizeVisibleRows,
     replaceInputSelection,
     selectedInputText,
   };
@@ -154,11 +164,15 @@
   }
 
   const state = createState();
+  const shellEl = document.querySelector("main");
   const resultsEl = document.getElementById("results");
   const configErrorEl = document.getElementById("config-error");
   const inputEl = document.getElementById("query");
   const inputWrapEl = document.querySelector(".input-wrap");
   const send = (payload) => root.ipc.postMessage(JSON.stringify(payload));
+  let pendingPreferredHeightTimer = null;
+  let lastReportedPreferredHeight = null;
+  let lastReportedLayoutVersion = null;
 
   function cycleSelectionEnabled() {
     return !!root.__RUNX_CYCLE_SELECTION__;
@@ -174,6 +188,115 @@
 
   function inConfigErrorMode() {
     return !!state.configError && state.query === "";
+  }
+
+  function visibleRows() {
+    return normalizeVisibleRows(root.__RUNX_VISIBLE_ROWS__);
+  }
+
+  function layoutVersion() {
+    const parsed = Number(root.__RUNX_LAYOUT_VERSION__);
+    if (!Number.isFinite(parsed) || parsed < 0) {
+      return 0;
+    }
+
+    return Math.floor(parsed);
+  }
+
+  function measurementWidth() {
+    return Math.max(
+      Math.ceil(shellEl.getBoundingClientRect().width),
+      document.documentElement.clientWidth,
+      720,
+    );
+  }
+
+  function createMeasurementItem() {
+    const row = document.createElement("button");
+    row.type = "button";
+    row.className = "item";
+    row.innerHTML = `
+      <div class="badge">AP</div>
+      <div class="copy">
+        <div class="title">Measure Row</div>
+        <div class="subtitle">Preferred launcher height</div>
+      </div>
+      <div class="accelerator">Return</div>
+    `;
+    return row;
+  }
+
+  function measurePreferredHeight() {
+    const host = document.createElement("div");
+    host.style.position = "fixed";
+    host.style.left = "-10000px";
+    host.style.top = "0";
+    host.style.visibility = "hidden";
+    host.style.pointerEvents = "none";
+    host.style.padding = root.getComputedStyle(document.body).padding;
+
+    const shell = document.createElement("main");
+    shell.className = shellEl.className;
+    shell.style.height = "auto";
+    shell.style.width = `${measurementWidth()}px`;
+    shell.style.overflow = "visible";
+
+    const label = document.createElement("div");
+    label.className = "label";
+    label.innerHTML = "<strong>Runx</strong>";
+
+    const inputWrap = document.createElement("div");
+    inputWrap.className = "input-wrap";
+    inputWrap.innerHTML = '<input type="text" autocomplete="off" spellcheck="false" placeholder="" value="" />';
+
+    const results = document.createElement("section");
+    results.className = "results";
+    results.style.flex = "none";
+    results.style.minHeight = "auto";
+    results.style.overflow = "visible";
+
+    for (let index = 0; index < visibleRows(); index += 1) {
+      results.appendChild(createMeasurementItem());
+    }
+
+    shell.appendChild(label);
+    shell.appendChild(inputWrap);
+    shell.appendChild(results);
+    host.appendChild(shell);
+    document.body.appendChild(host);
+
+    try {
+      return Math.ceil(host.getBoundingClientRect().height);
+    } finally {
+      host.remove();
+    }
+  }
+
+  function reportPreferredHeight() {
+    const height = measurePreferredHeight();
+    const version = layoutVersion();
+    if (!Number.isFinite(height) || height <= 0) {
+      return;
+    }
+
+    if (lastReportedPreferredHeight === height && lastReportedLayoutVersion === version) {
+      return;
+    }
+
+    lastReportedPreferredHeight = height;
+    lastReportedLayoutVersion = version;
+    send({ type: "preferred_height", height, layout_version: version });
+  }
+
+  function queuePreferredHeightReport() {
+    if (pendingPreferredHeightTimer !== null) {
+      root.clearTimeout(pendingPreferredHeightTimer);
+    }
+
+    pendingPreferredHeightTimer = root.setTimeout(() => {
+      pendingPreferredHeightTimer = null;
+      reportPreferredHeight();
+    }, 0);
   }
 
   function syncSelection(ensureVisible = true) {
@@ -273,6 +396,10 @@
     send({ type: "query_changed", query });
   };
 
+  root.__RUNX_REQUEST_PREFERRED_HEIGHT = () => {
+    queuePreferredHeightReport();
+  };
+
   inputEl.addEventListener("input", () => {
     inputChanged(state, inputEl.value);
     syncSelection(false);
@@ -370,5 +497,6 @@
   });
 
   send({ type: "ready" });
+  queuePreferredHeightReport();
   root.RunxUi = api;
 })(typeof window !== "undefined" ? window : globalThis);

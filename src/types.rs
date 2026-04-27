@@ -139,6 +139,7 @@ pub enum AppEvent {
 #[serde(tag = "type", rename_all = "snake_case")]
 pub enum FrontendCommand {
     Ready,
+    PreferredHeight { height: f64, layout_version: u64 },
     QueryChanged { query: String },
     Activate { index: usize, all_windows: bool },
     CopyText { text: String },

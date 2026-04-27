@@ -8,7 +8,10 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tao::platform::macos::MonitorHandleExtMacOS;
-use tao::{dpi::PhysicalPosition, window::Window};
+use tao::{
+    dpi::{LogicalSize, PhysicalPosition},
+    window::Window,
+};
 use wry::WebView;
 
 use crate::{
@@ -26,6 +29,8 @@ const RUNX_BUNDLE_ID: &str = "io.github.sloppish.runx";
 pub(crate) struct WindowController {
     shown_at: Option<Instant>,
     previous_app: Option<FrontmostApp>,
+    preferred_height: Option<f64>,
+    layout_version: u64,
 }
 
 impl WindowController {
@@ -88,6 +93,23 @@ impl WindowController {
         self.previous_app.clone()
     }
 
+    /// Invalidates cached frontend measurement and returns the next accepted layout version.
+    pub(crate) fn invalidate_preferred_height(&mut self) -> u64 {
+        self.layout_version = self.layout_version.wrapping_add(1);
+        self.preferred_height = None;
+        self.layout_version
+    }
+
+    /// Accepts a frontend-reported preferred height when it matches the current layout version.
+    pub(crate) fn accept_preferred_height(&mut self, layout_version: u64, height: f64) -> bool {
+        if layout_version != self.layout_version || !height.is_finite() || height <= 0.0 {
+            return false;
+        }
+
+        self.preferred_height = Some(height);
+        true
+    }
+
     /// Shows the native window.
     pub(crate) fn show_window(&self, window: &Window) {
         #[cfg(target_os = "macos")]
@@ -131,17 +153,31 @@ impl WindowController {
             .context("failed to focus the launcher input")
     }
 
-    /// Centers the launcher on the configured monitor.
-    pub(crate) fn center_window(&self, window: &Window, config: &WindowConfig) {
+    /// Resolves launcher size and centers the window on the configured monitor.
+    pub(crate) fn apply_window_geometry(
+        &self,
+        window: &Window,
+        config: &WindowConfig,
+        ui: &crate::config::UiConfig,
+    ) {
+        let resolved_height = self
+            .preferred_height
+            .map(|height| config.clamp_height(height))
+            .unwrap_or_else(|| config.fallback_size(ui).1);
+
         let Some(monitor) = monitor_for_window(window, config) else {
+            window.set_inner_size(LogicalSize::new(config.min_width, resolved_height));
             return;
         };
 
         let scale = monitor.scale_factor();
         let monitor_size = monitor.size();
         let monitor_origin = monitor.position();
-        let window_width = config.width * scale;
-        let window_height = config.height * scale;
+        let logical_monitor_width = monitor_size.width as f64 / scale;
+        let resolved_width = config.resolve_width(logical_monitor_width);
+        window.set_inner_size(LogicalSize::new(resolved_width, resolved_height));
+        let window_width = resolved_width * scale;
+        let window_height = resolved_height * scale;
         let x = monitor_origin.x as f64 + (monitor_size.width as f64 - window_width) / 2.0;
         let y = monitor_origin.y as f64 + (monitor_size.height as f64 - window_height) / 3.2;
 
@@ -178,4 +214,26 @@ fn looks_like_runx(app: &FrontmostApp) -> bool {
             .as_deref()
             .map(|path: &str| path.ends_with("/Runx.app"))
             == Some(true)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::WindowController;
+
+    #[test]
+    fn ignores_stale_preferred_height_reports() {
+        let mut controller = WindowController::default();
+        assert!(controller.accept_preferred_height(0, 512.0));
+        assert_eq!(controller.preferred_height, Some(512.0));
+
+        let next_version = controller.invalidate_preferred_height();
+        assert_eq!(next_version, 1);
+        assert_eq!(controller.preferred_height, None);
+
+        assert!(!controller.accept_preferred_height(0, 640.0));
+        assert_eq!(controller.preferred_height, None);
+
+        assert!(controller.accept_preferred_height(1, 640.0));
+        assert_eq!(controller.preferred_height, Some(640.0));
+    }
 }
