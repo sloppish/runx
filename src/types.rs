@@ -116,6 +116,7 @@ pub enum AppEvent {
     },
     TrayToggle,
     TrayOpen,
+    TraySettings,
     TrayToggleAutostart,
     Quit,
     ProviderItems {

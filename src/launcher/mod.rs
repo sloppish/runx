@@ -204,6 +204,7 @@ impl Launcher {
                 self.windows.capture_previous_app();
                 self.show_or_focus()?;
             }
+            AppEvent::TraySettings => self.open_settings_editor()?,
             AppEvent::TrayToggleAutostart => self.toggle_autostart()?,
             AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
@@ -388,6 +389,10 @@ impl Launcher {
             tray.set_autostart_enabled(enabled);
         }
         Ok(())
+    }
+
+    fn open_settings_editor(&mut self) -> Result<()> {
+        macos::open_settings_editor()
     }
 
     fn activate(&mut self, index: usize, all_windows: bool) {

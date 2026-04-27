@@ -17,6 +17,7 @@ use crate::{assets::tray_icon_path, debug_log, macos, types::AppEvent};
 
 const TRAY_ID: &str = "runx-tray";
 const MENU_OPEN_ID: &str = "tray-open";
+const MENU_SETTINGS_ID: &str = "tray-settings";
 const MENU_AUTOSTART_ID: &str = "tray-autostart";
 const MENU_QUIT_ID: &str = "tray-quit";
 
@@ -25,6 +26,7 @@ pub struct TrayState {
     _tray: TrayIcon,
     _menu: Menu,
     _open_item: MenuItem,
+    _settings_item: MenuItem,
     autostart_item: CheckMenuItem,
     _quit_item: MenuItem,
 }
@@ -49,6 +51,7 @@ impl TrayState {
             false
         };
         let open_item = MenuItem::with_id(MENU_OPEN_ID, "Open Runx", true, None);
+        let settings_item = MenuItem::with_id(MENU_SETTINGS_ID, "Settings", true, None);
         let autostart_item = CheckMenuItem::with_id(
             MENU_AUTOSTART_ID,
             "Launch at Login",
@@ -57,10 +60,11 @@ impl TrayState {
             None,
         );
         let quit_item = MenuItem::with_id(MENU_QUIT_ID, "Quit Runx", true, None);
-        menu.append_items(&[&open_item, &autostart_item, &quit_item])
+        menu.append_items(&[&open_item, &settings_item, &autostart_item, &quit_item])
             .context("failed to build the tray menu")?;
 
         let open_id = open_item.id().clone();
+        let settings_id = settings_item.id().clone();
         let autostart_id = autostart_item.id().clone();
         let quit_id = quit_item.id().clone();
         MenuEvent::set_event_handler(Some({
@@ -68,6 +72,8 @@ impl TrayState {
             move |event: MenuEvent| {
                 let app_event = if event.id == open_id {
                     Some(AppEvent::TrayOpen)
+                } else if event.id == settings_id {
+                    Some(AppEvent::TraySettings)
                 } else if event.id == autostart_id {
                     Some(AppEvent::TrayToggleAutostart)
                 } else if event.id == quit_id {
@@ -113,6 +119,7 @@ impl TrayState {
             _tray: tray,
             _menu: menu,
             _open_item: open_item,
+            _settings_item: settings_item,
             autostart_item,
             _quit_item: quit_item,
         })

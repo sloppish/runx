@@ -167,27 +167,33 @@ fi
 
 if [[ "$UNIVERSAL" -eq 1 ]]; then
   targets=(aarch64-apple-darwin x86_64-apple-darwin)
-  bin_paths=()
   for target in "${targets[@]}"; do
-    cargo_args=(build --manifest-path "$ROOT_DIR/Cargo.toml" --target "$target")
+    cargo_args=(build --bins --manifest-path "$ROOT_DIR/Cargo.toml" --target "$target")
     if [[ "${PROFILE}" == "release" ]]; then
       cargo_args+=(--release)
     fi
     cargo "${cargo_args[@]}"
-    bin_paths+=("$TARGET_DIR/$target/$PROFILE/runx")
   done
 
   UNIVERSAL_BIN_DIR="$TARGET_DIR/universal/$PROFILE"
   mkdir -p "$UNIVERSAL_BIN_DIR"
+  for bin_name in runx runx-config; do
+    bin_paths=()
+    for target in "${targets[@]}"; do
+      bin_paths+=("$TARGET_DIR/$target/$PROFILE/$bin_name")
+    done
+    lipo -create "${bin_paths[@]}" -output "$UNIVERSAL_BIN_DIR/$bin_name"
+  done
   BIN_PATH="$UNIVERSAL_BIN_DIR/runx"
-  lipo -create "${bin_paths[@]}" -output "$BIN_PATH"
+  CONFIG_BIN_PATH="$UNIVERSAL_BIN_DIR/runx-config"
 else
   if [[ "${PROFILE}" == "release" ]]; then
-    cargo build --release --manifest-path "$ROOT_DIR/Cargo.toml"
+    cargo build --bins --release --manifest-path "$ROOT_DIR/Cargo.toml"
   else
-    cargo build --manifest-path "$ROOT_DIR/Cargo.toml"
+    cargo build --bins --manifest-path "$ROOT_DIR/Cargo.toml"
   fi
   BIN_PATH="$TARGET_DIR/$PROFILE/runx"
+  CONFIG_BIN_PATH="$TARGET_DIR/$PROFILE/runx-config"
 fi
 
 BUNDLE_PATH="$OUT_DIR/${APP_NAME}.app"
@@ -200,6 +206,8 @@ mkdir -p "$MACOS_PATH" "$RESOURCES_PATH"
 
 cp "$BIN_PATH" "$MACOS_PATH/runx"
 chmod 755 "$MACOS_PATH/runx"
+cp "$CONFIG_BIN_PATH" "$MACOS_PATH/runx-config"
+chmod 755 "$MACOS_PATH/runx-config"
 build_app_icon "$RESOURCES_PATH"
 build_tray_icon "$RESOURCES_PATH"
 
