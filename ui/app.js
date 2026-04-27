@@ -44,6 +44,37 @@
     return event.key === "ArrowUp" || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyP");
   }
 
+  function isCopyShortcut(event) {
+    return event.code === "KeyC" && !event.altKey && !event.shiftKey && event.metaKey !== event.ctrlKey;
+  }
+
+  function isPasteShortcut(event) {
+    return event.code === "KeyV" && !event.altKey && !event.shiftKey && event.metaKey !== event.ctrlKey;
+  }
+
+  function selectedInputText(input) {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    if (start === end) {
+      return "";
+    }
+    return input.value.slice(Math.min(start, end), Math.max(start, end));
+  }
+
+  function replaceInputSelection(input, text) {
+    const start = input.selectionStart ?? input.value.length;
+    const end = input.selectionEnd ?? input.value.length;
+    const head = input.value.slice(0, Math.min(start, end));
+    const tail = input.value.slice(Math.max(start, end));
+    const next = head + text + tail;
+    const cursor = head.length + text.length;
+    input.value = next;
+    if (input.setSelectionRange) {
+      input.setSelectionRange(cursor, cursor);
+    }
+    return next;
+  }
+
   function matchesShortcut(event, shortcut) {
     if (!shortcut) {
       return false;
@@ -103,10 +134,14 @@
     escapeAttr,
     escapeHtml,
     inputChanged,
+    isCopyShortcut,
     isCtrlNextShortcut,
     isCtrlPreviousShortcut,
+    isPasteShortcut,
     matchesShortcut,
     moveSelection,
+    replaceInputSelection,
+    selectedInputText,
   };
 
   if (typeof module !== "undefined" && module.exports) {
@@ -227,6 +262,17 @@
     inputEl.select();
   };
 
+  root.__RUNX_PASTE_TEXT = (text) => {
+    if (inConfigErrorMode()) {
+      return;
+    }
+    inputEl.focus();
+    const query = replaceInputSelection(inputEl, text || "");
+    inputChanged(state, query);
+    syncSelection(false);
+    send({ type: "query_changed", query });
+  };
+
   inputEl.addEventListener("input", () => {
     inputChanged(state, inputEl.value);
     syncSelection(false);
@@ -234,6 +280,21 @@
   });
 
   inputEl.addEventListener("keydown", (event) => {
+    if (isCopyShortcut(event)) {
+      const text = selectedInputText(inputEl);
+      if (text) {
+        event.preventDefault();
+        send({ type: "copy_text", text });
+      }
+      return;
+    }
+
+    if (isPasteShortcut(event)) {
+      event.preventDefault();
+      send({ type: "paste_text" });
+      return;
+    }
+
     if (isCtrlNextShortcut(event)) {
       event.preventDefault();
       moveSelection(state, 1, cycleSelectionEnabled());
@@ -283,6 +344,16 @@
     if (event.key === "Escape") {
       event.preventDefault();
       send({ type: "hide" });
+      return;
+    }
+
+    if (isCopyShortcut(event)) {
+      const selection = root.getSelection ? root.getSelection() : null;
+      const text = selection ? selection.toString() : "";
+      if (text) {
+        event.preventDefault();
+        send({ type: "copy_text", text });
+      }
       return;
     }
 

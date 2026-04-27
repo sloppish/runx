@@ -340,6 +340,20 @@ impl Launcher {
                 self.proxy.clone(),
             ),
             FrontendCommand::Activate { index, all_windows } => self.activate(index, all_windows),
+            FrontendCommand::CopyText { text } => {
+                let _ = macos::copy_text_to_clipboard(&text)?;
+            }
+            FrontendCommand::PasteText => {
+                if let Ok(text) = macos::read_clipboard_text() {
+                    let script = format!(
+                        "window.__RUNX_PASTE_TEXT && window.__RUNX_PASTE_TEXT({});",
+                        serde_json::to_string(&text)?
+                    );
+                    self.webview
+                        .evaluate_script(&script)
+                        .context("failed to paste clipboard text into input")?;
+                }
+            }
             FrontendCommand::Hide => self.hide()?,
         }
         Ok(())

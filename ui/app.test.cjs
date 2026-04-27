@@ -36,6 +36,61 @@ test("ctrl-n and ctrl-p use physical key codes so they survive non-latin layouts
   );
 });
 
+test("copy shortcut uses physical key code in config error mode", () => {
+  assert.equal(
+    ui.isCopyShortcut({ code: "KeyC", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }),
+    true,
+  );
+  assert.equal(
+    ui.isCopyShortcut({ code: "KeyC", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false }),
+    true,
+  );
+  assert.equal(
+    ui.isCopyShortcut({ code: "KeyC", metaKey: true, ctrlKey: false, altKey: true, shiftKey: false }),
+    false,
+  );
+});
+
+test("paste shortcut uses physical key code", () => {
+  assert.equal(
+    ui.isPasteShortcut({ code: "KeyV", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false }),
+    true,
+  );
+  assert.equal(
+    ui.isPasteShortcut({ code: "KeyV", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false }),
+    true,
+  );
+  assert.equal(
+    ui.isPasteShortcut({ code: "KeyV", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }),
+    false,
+  );
+});
+
+test("input copy reads selected text", () => {
+  assert.equal(ui.selectedInputText({ value: "abcdef", selectionStart: 1, selectionEnd: 4 }), "bcd");
+  assert.equal(ui.selectedInputText({ value: "abcdef", selectionStart: 4, selectionEnd: 1 }), "bcd");
+  assert.equal(ui.selectedInputText({ value: "abcdef", selectionStart: 2, selectionEnd: 2 }), "");
+});
+
+test("input paste replaces selected text and moves caret", () => {
+  const input = {
+    value: "abcdef",
+    selectionStart: 2,
+    selectionEnd: 5,
+    setSelectionRange(start, end) {
+      this.selectionStart = start;
+      this.selectionEnd = end;
+    },
+  };
+
+  const next = ui.replaceInputSelection(input, "XYZ");
+
+  assert.equal(next, "abXYZf");
+  assert.equal(input.value, "abXYZf");
+  assert.equal(input.selectionStart, 5);
+  assert.equal(input.selectionEnd, 5);
+});
+
 test("shortcut matcher supports configurable option-enter", () => {
   const shortcut = {
     key: "Enter",

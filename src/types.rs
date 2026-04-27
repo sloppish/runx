@@ -141,6 +141,8 @@ pub enum FrontendCommand {
     Ready,
     QueryChanged { query: String },
     Activate { index: usize, all_windows: bool },
+    CopyText { text: String },
+    PasteText,
     Hide,
 }
 
