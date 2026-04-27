@@ -8,6 +8,7 @@ PROFILE="release"
 OUT_DIR="$ROOT_DIR/dist"
 APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
 TRAY_ICON_SOURCE="$ROOT_DIR/assets/runx-status-template.svg"
+SVG2PNG_TOOL_MANIFEST="$ROOT_DIR/tools/svg2png/Cargo.toml"
 UNIVERSAL=0
 
 usage() {
@@ -104,6 +105,14 @@ render_png() {
     fi
   fi
 
+  if [[ "$source" == *.svg ]]; then
+    rm -f "$output"
+    cargo run --quiet --manifest-path "$SVG2PNG_TOOL_MANIFEST" -- "$source" "$output" "$size"
+    if [[ -s "$output" ]]; then
+      return 0
+    fi
+  fi
+
   rm -f "$output"
   sips -Z "$size" -s format png "$source" --out "$output" >/dev/null 2>&1 || true
   if [[ -s "$output" ]]; then
@@ -148,7 +157,7 @@ build_tray_icon() {
 APP_VERSION="$(awk -F '"' '/^version = / { print $2; exit }' "$ROOT_DIR/Cargo.toml")"
 TARGET_DIR="$(
   cargo metadata --format-version 1 --no-deps --manifest-path "$ROOT_DIR/Cargo.toml" \
-    | plutil -extract target_directory raw -o - -
+    | sed -n 's/.*"target_directory":"\([^"]*\)".*/\1/p'
 )"
 
 if [[ -z "$TARGET_DIR" ]]; then

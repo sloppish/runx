@@ -53,11 +53,11 @@ done
 if [[ "$DRY_RUN" -eq 1 ]]; then
   echo "Would package Runx.app into $APP_DIR"
 else
-  PACKAGE_ARGS=()
   if [[ -n "$SIGN_IDENTITY" ]]; then
-    PACKAGE_ARGS+=(--sign-identity "$SIGN_IDENTITY")
+    "$ROOT_DIR/scripts/package-macos.sh" --sign-identity "$SIGN_IDENTITY"
+  else
+    "$ROOT_DIR/scripts/package-macos.sh"
   fi
-  "$ROOT_DIR/scripts/package-macos.sh" "${PACKAGE_ARGS[@]}"
 fi
 
 SOURCE_APP="$ROOT_DIR/dist/${APP_NAME}.app"
