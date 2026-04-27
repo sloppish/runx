@@ -78,6 +78,7 @@ impl WindowsProvider {
         let mut session = lock_or_recover(&self.session);
         session.active = false;
         session.windows = None;
+        self.icons.clear_process_bundle_cache();
     }
 
     /// Returns the highest-scoring visible windows for the current query.
