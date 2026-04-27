@@ -114,64 +114,58 @@ impl ResolvedUiColors {
 
     fn builtin_dark() -> Self {
         Self {
-            accent: "#d7a17b".to_owned(),
-            background: "#10151d".to_owned(),
-            panel: "#18202b".to_owned(),
-            text: "#eef2fb".to_owned(),
-            muted: "#99a6bc".to_owned(),
-            shell_bg: "linear-gradient(180deg, rgb(28 37 50), rgb(16 22 31))".to_owned(),
-            shell_shadow: "inset 0 1px 0 rgba(255, 255, 255, 0.05)".to_owned(),
-            shell_border: "rgba(128, 164, 214, 0.18)".to_owned(),
-            label_strong: "color-mix(in srgb, var(--text) 94%, white)".to_owned(),
-            input_bg: "linear-gradient(180deg, rgba(24, 31, 43, 0.98), rgba(18, 25, 35, 0.98))"
+            accent: "#d79921".to_owned(),
+            background: "#1d2021".to_owned(),
+            panel: "#282828".to_owned(),
+            text: "#ebdbb2".to_owned(),
+            muted: "#a89984".to_owned(),
+            shell_bg: "linear-gradient(180deg, #1d2021, #282828)".to_owned(),
+            shell_shadow: "inset 0 1px 0 rgba(251, 241, 199, 0.04)".to_owned(),
+            shell_border: "rgba(168, 153, 132, 0.18)".to_owned(),
+            label_strong: "#fbf1c7".to_owned(),
+            input_bg: "linear-gradient(180deg, rgba(50, 48, 47, 0.98), rgba(40, 40, 40, 0.98))"
                 .to_owned(),
-            input_border: "rgba(128, 164, 214, 0.14)".to_owned(),
-            input_shadow: "inset 0 1px 0 rgba(255,255,255,0.03)".to_owned(),
-            placeholder: "color-mix(in srgb, var(--muted) 88%, black)".to_owned(),
-            scrollbar: "rgba(128, 164, 214, 0.26)".to_owned(),
-            item_bg: "rgba(180, 206, 244, 0.035)".to_owned(),
-            item_hover: "rgba(162, 195, 242, 0.08)".to_owned(),
+            input_border: "rgba(168, 153, 132, 0.16)".to_owned(),
+            input_shadow: "inset 0 1px 0 rgba(251, 241, 199, 0.03)".to_owned(),
+            placeholder: "#928374".to_owned(),
+            scrollbar: "rgba(168, 153, 132, 0.28)".to_owned(),
+            item_bg: "rgba(235, 219, 178, 0.045)".to_owned(),
+            item_hover: "rgba(235, 219, 178, 0.085)".to_owned(),
             item_selected_bg:
-                "linear-gradient(135deg, rgba(103, 148, 210, 0.24), rgba(31, 41, 56, 0.98))"
+                "linear-gradient(135deg, rgba(215, 153, 33, 0.24), rgba(60, 56, 54, 0.98))"
                     .to_owned(),
             item_selected_shadow:
-                "0 18px 44px rgba(0, 0, 0, 0.22), inset 0 0 0 1px rgba(117, 160, 222, 0.24)"
+                "0 18px 44px rgba(0, 0, 0, 0.24), inset 0 0 0 1px rgba(215, 153, 33, 0.24)"
                     .to_owned(),
-            badge_bg:
-                "linear-gradient(180deg, rgba(118, 154, 206, 0.18), rgba(255,255,255,0.02))"
-                    .to_owned(),
-            badge_border: "rgba(128, 164, 214, 0.18)".to_owned(),
-            badge_text: "color-mix(in srgb, #b9d4f4 86%, white)".to_owned(),
-            badge_icon_bg: "rgba(255,255,255,0.66)".to_owned(),
-            chip_text: "color-mix(in srgb, var(--muted) 86%, white)".to_owned(),
-            chip_bg: "rgba(150, 182, 230, 0.05)".to_owned(),
-            chip_border: "rgba(128, 164, 214, 0.14)".to_owned(),
+            badge_bg: "linear-gradient(180deg, rgba(215, 153, 33, 0.18), rgba(255,255,255,0.02))"
+                .to_owned(),
+            badge_border: "rgba(168, 153, 132, 0.18)".to_owned(),
+            badge_text: "#ebdbb2".to_owned(),
+            badge_icon_bg: "rgba(29, 32, 33, 0.88)".to_owned(),
+            chip_text: "#d5c4a1".to_owned(),
+            chip_bg: "rgba(168, 153, 132, 0.08)".to_owned(),
+            chip_border: "rgba(168, 153, 132, 0.14)".to_owned(),
             config_error_bg:
-                "linear-gradient(180deg, rgba(103, 148, 210, 0.18), rgba(16,22,31,0.22))"
+                "linear-gradient(180deg, rgba(204, 36, 29, 0.16), rgba(29, 32, 33, 0.28))"
                     .to_owned(),
-            config_error_border: "color-mix(in srgb, var(--accent) 24%, transparent)".to_owned(),
+            config_error_border: "rgba(204, 36, 29, 0.28)".to_owned(),
             config_error_shadow:
-                "0 18px 44px rgba(0, 0, 0, 0.22), inset 0 1px 0 rgba(255,255,255,0.03)"
+                "0 18px 44px rgba(0, 0, 0, 0.26), inset 0 1px 0 rgba(251, 241, 199, 0.03)"
                     .to_owned(),
-            config_error_title: "color-mix(in srgb, var(--text) 94%, white)".to_owned(),
-            config_error_copy: "color-mix(in srgb, var(--text) 86%, white)".to_owned(),
-            canvas_hidden_input_bg:
-                "linear-gradient(180deg, color-mix(in srgb, var(--panel) 98%, white), color-mix(in srgb, var(--panel) 96%, black))"
-                    .to_owned(),
-            canvas_hidden_input_border:
-                "color-mix(in srgb, var(--text) 14%, transparent)".to_owned(),
+            config_error_title: "#fb4934".to_owned(),
+            config_error_copy: "#ebdbb2".to_owned(),
+            canvas_hidden_input_bg: "linear-gradient(180deg, #32302f, #282828)".to_owned(),
+            canvas_hidden_input_border: "rgba(168, 153, 132, 0.16)".to_owned(),
             canvas_hidden_input_shadow:
-                "0 10px 28px rgba(0, 0, 0, 0.12), inset 0 1px 0 rgba(255,255,255,0.08)"
+                "0 10px 28px rgba(0, 0, 0, 0.18), inset 0 1px 0 rgba(251, 241, 199, 0.05)"
                     .to_owned(),
-            canvas_hidden_item_bg:
-                "color-mix(in srgb, var(--panel) 94%, transparent)".to_owned(),
-            canvas_hidden_item_hover:
-                "color-mix(in srgb, var(--panel) 98%, var(--accent) 2%)".to_owned(),
+            canvas_hidden_item_bg: "rgba(40, 40, 40, 0.94)".to_owned(),
+            canvas_hidden_item_hover: "rgba(60, 56, 54, 0.98)".to_owned(),
             canvas_hidden_item_selected_bg:
-                "linear-gradient(135deg, color-mix(in srgb, var(--accent) 22%, var(--panel)), color-mix(in srgb, var(--panel) 98%, white))"
+                "linear-gradient(135deg, rgba(215, 153, 33, 0.2), rgba(50, 48, 47, 0.98))"
                     .to_owned(),
             canvas_hidden_config_error_bg:
-                "linear-gradient(180deg, color-mix(in srgb, var(--accent) 14%, var(--panel)), color-mix(in srgb, var(--panel) 96%, black))"
+                "linear-gradient(180deg, rgba(204, 36, 29, 0.14), rgba(40, 40, 40, 0.98))"
                     .to_owned(),
         }
     }
@@ -601,7 +595,7 @@ mod tests {
         assert!(!css.contains("--accent: __LIGHT_ACCENT__"));
         assert!(css.contains("--accent: #c77b49;"));
         assert!(css.contains("@media (prefers-color-scheme: dark)"));
-        assert!(css.contains("--accent: #d7a17b;"));
+        assert!(css.contains("--accent: #d79921;"));
     }
 
     #[test]
