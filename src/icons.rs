@@ -10,7 +10,7 @@ mod worker;
 
 use std::{
     borrow::Cow,
-    collections::HashMap,
+    collections::{HashMap, VecDeque},
     fs,
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
@@ -41,22 +41,95 @@ const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
 ];
 pub(super) const ICON_CACHE_FORMAT_VERSION: &str = "webp-v1";
 pub(super) const ICON_RENDER_SIZE: u32 = 64;
+const MAX_IN_MEMORY_ICON_ENTRIES: usize = 2048;
 const MAX_ICON_RENDER_WORKERS: usize = 2;
 
 /// In-memory and on-disk cache for bundle and process icons.
 pub struct IconCache {
     cache_dir: PathBuf,
-    icons: Arc<Mutex<HashMap<String, IconState>>>,
+    icons: Arc<Mutex<IconMemoryCache>>,
     process_bundles: Mutex<HashMap<i64, Option<PathBuf>>>,
     render_limiter: Arc<RenderLimiter>,
     proxy: Option<EventLoopProxy<AppEvent>>,
 }
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 enum IconState {
     Ready(String),
     Pending,
     Missing,
+}
+
+struct IconMemoryCache {
+    entries: HashMap<String, IconState>,
+    lru: VecDeque<String>,
+    capacity: usize,
+}
+
+impl IconMemoryCache {
+    fn new(capacity: usize) -> Self {
+        Self {
+            entries: HashMap::new(),
+            lru: VecDeque::new(),
+            capacity,
+        }
+    }
+
+    fn get_cloned(&mut self, key: &str) -> Option<IconState> {
+        let state = self.entries.get(key).cloned()?;
+        self.touch(key);
+        Some(state)
+    }
+
+    fn reserve_pending(&mut self, key: String) -> bool {
+        if self.capacity == 0 {
+            return false;
+        }
+
+        while !self.entries.contains_key(&key) && self.entries.len() >= self.capacity {
+            let Some(evicted_key) = self.pop_oldest_evictable() else {
+                return false;
+            };
+            self.entries.remove(&evicted_key);
+        }
+
+        self.entries.insert(key.clone(), IconState::Pending);
+        self.touch(&key);
+        true
+    }
+
+    fn insert(&mut self, key: String, state: IconState) {
+        if !self.entries.contains_key(&key) {
+            if self.capacity == 0 {
+                return;
+            }
+
+            while self.entries.len() >= self.capacity {
+                let Some(evicted_key) = self.pop_oldest_evictable() else {
+                    return;
+                };
+                self.entries.remove(&evicted_key);
+            }
+        }
+
+        self.entries.insert(key.clone(), state);
+        self.touch(&key);
+    }
+
+    fn pop_oldest_evictable(&mut self) -> Option<String> {
+        let index = self.lru.iter().position(|key| {
+            matches!(
+                self.entries.get(key),
+                Some(IconState::Ready(_)) | Some(IconState::Missing)
+            )
+        })?;
+        self.lru.remove(index)
+    }
+
+    fn touch(&mut self, key: &str) {
+        self.lru.retain(|entry| entry != key);
+        self.lru.push_back(key.to_owned());
+    }
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -85,7 +158,7 @@ impl IconCache {
 
         Ok(Self {
             cache_dir,
-            icons: Arc::new(Mutex::new(HashMap::new())),
+            icons: Arc::new(Mutex::new(IconMemoryCache::new(MAX_IN_MEMORY_ICON_ENTRIES))),
             process_bundles: Mutex::new(HashMap::new()),
             render_limiter: Arc::new(RenderLimiter::new()),
             proxy,
@@ -117,11 +190,13 @@ impl IconCache {
 
         {
             let mut cache = lock_or_recover(&self.icons);
-            match cache.get(&key).cloned() {
+            match cache.get_cloned(&key) {
                 Some(IconState::Ready(url)) => return Some(url),
                 Some(IconState::Pending | IconState::Missing) => return None,
                 None => {
-                    cache.insert(key.clone(), IconState::Pending);
+                    if !cache.reserve_pending(key.clone()) {
+                        return None;
+                    }
                 }
             }
         }
@@ -147,6 +222,12 @@ impl IconCache {
         }?;
 
         self.icon_for_bundle(bundle_path)
+    }
+
+    /// Clears process-id icon owner lookups captured during a launcher-visible session.
+    pub fn clear_process_bundle_cache(&self) {
+        let mut cache = lock_or_recover(&self.process_bundles);
+        cache.clear();
     }
 
     /// Returns the System Settings app icon.
@@ -333,7 +414,8 @@ mod tests {
     use wry::http::{Request, StatusCode};
 
     use super::{
-        IconCache, bundle::cache_key_for_bundle, protocol::icon_protocol_url, worker::RenderLimiter,
+        IconCache, IconMemoryCache, IconState, MAX_IN_MEMORY_ICON_ENTRIES,
+        bundle::cache_key_for_bundle, protocol::icon_protocol_url, worker::RenderLimiter,
     };
 
     #[test]
@@ -345,7 +427,7 @@ mod tests {
 
         let cache = IconCache {
             cache_dir: temp_dir.clone(),
-            icons: Arc::new(Mutex::new(HashMap::new())),
+            icons: Arc::new(Mutex::new(IconMemoryCache::new(MAX_IN_MEMORY_ICON_ENTRIES))),
             process_bundles: Mutex::new(HashMap::new()),
             render_limiter: Arc::new(RenderLimiter::new()),
             proxy: None,
@@ -370,6 +452,67 @@ mod tests {
         let _ = fs::remove_file(&webp_path);
         let _ = fs::remove_dir(&bundle_path);
         let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn icon_memory_cache_evicts_least_recent_ready_entry() {
+        let mut cache = IconMemoryCache::new(2);
+        cache.insert("a".to_owned(), IconState::Ready("a-url".to_owned()));
+        cache.insert("b".to_owned(), IconState::Ready("b-url".to_owned()));
+
+        assert_eq!(
+            cache.get_cloned("a"),
+            Some(IconState::Ready("a-url".to_owned()))
+        );
+
+        cache.insert("c".to_owned(), IconState::Ready("c-url".to_owned()));
+
+        assert_eq!(cache.get_cloned("b"), None);
+        assert_eq!(
+            cache.get_cloned("a"),
+            Some(IconState::Ready("a-url".to_owned()))
+        );
+        assert_eq!(
+            cache.get_cloned("c"),
+            Some(IconState::Ready("c-url".to_owned()))
+        );
+    }
+
+    #[test]
+    fn icon_memory_cache_keeps_pending_entries_bounded() {
+        let mut cache = IconMemoryCache::new(1);
+
+        assert!(cache.reserve_pending("pending".to_owned()));
+        assert!(!cache.reserve_pending("other".to_owned()));
+        assert_eq!(cache.get_cloned("pending"), Some(IconState::Pending));
+        assert_eq!(cache.get_cloned("other"), None);
+
+        cache.insert(
+            "pending".to_owned(),
+            IconState::Ready("ready-url".to_owned()),
+        );
+        assert!(cache.reserve_pending("other".to_owned()));
+        assert_eq!(cache.get_cloned("pending"), None);
+        assert_eq!(cache.get_cloned("other"), Some(IconState::Pending));
+    }
+
+    #[test]
+    fn clears_process_bundle_cache() {
+        let temp_dir = unique_temp_dir();
+        let cache = IconCache {
+            cache_dir: temp_dir,
+            icons: Arc::new(Mutex::new(IconMemoryCache::new(MAX_IN_MEMORY_ICON_ENTRIES))),
+            process_bundles: Mutex::new(HashMap::from([(
+                42,
+                Some(PathBuf::from("/Applications/Sample.app")),
+            )])),
+            render_limiter: Arc::new(RenderLimiter::new()),
+            proxy: None,
+        };
+
+        cache.clear_process_bundle_cache();
+
+        assert!(cache.process_bundles.lock().expect("cache lock").is_empty());
     }
 
     fn unique_temp_dir() -> PathBuf {
