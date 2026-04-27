@@ -1,6 +1,9 @@
 use std::{
     env,
     ffi::c_int,
+    fs,
+    io::Write,
+    os::unix::fs::PermissionsExt,
     path::{Path, PathBuf},
     process::{Command, Stdio},
     thread,
@@ -36,20 +39,11 @@ pub fn open_settings(url: &str) -> Result<()> {
 /// Opens `runx-config` inside Terminal.
 pub fn open_settings_editor() -> Result<()> {
     let shell_command = settings_editor_shell_command()?;
-    let status = Command::new("osascript")
-        .arg("-e")
-        .arg("on run argv")
-        .arg("-e")
-        .arg("tell application \"Terminal\"")
-        .arg("-e")
-        .arg("activate")
-        .arg("-e")
-        .arg("do script (item 1 of argv)")
-        .arg("-e")
-        .arg("end tell")
-        .arg("-e")
-        .arg("end run")
-        .arg(shell_command)
+    let script_path = settings_editor_command_file(&shell_command)?;
+    let status = Command::new("open")
+        .arg("-a")
+        .arg("Terminal")
+        .arg(&script_path)
         .stdin(Stdio::null())
         .stdout(Stdio::null())
         .stderr(Stdio::null())
@@ -59,6 +53,7 @@ pub fn open_settings_editor() -> Result<()> {
         return Ok(());
     }
 
+    let _ = fs::remove_file(script_path);
     bail!("failed to launch Terminal for runx-config: {status}");
 }
 
@@ -177,7 +172,7 @@ fn settings_editor_shell_command() -> Result<String> {
     let executable = env::current_exe().context("failed to resolve current executable path")?;
     let command = resolve_settings_editor_command(&executable)
         .ok_or_else(|| anyhow::anyhow!("failed to locate a runnable `runx-config` helper"))?;
-    Ok(format!("clear; {command}"))
+    Ok(command)
 }
 
 fn resolve_settings_editor_command(executable: &Path) -> Option<String> {
@@ -205,9 +200,53 @@ fn shell_quote(value: &str) -> String {
     format!("'{}'", value.replace('\'', r#"'"'"'"#))
 }
 
+fn settings_editor_command_file(command: &str) -> Result<PathBuf> {
+    let mut file = tempfile::Builder::new()
+        .prefix("runx-config-")
+        .suffix(".command")
+        .tempfile()
+        .context("failed to create runx-config launch script")?;
+    file.write_all(settings_editor_command_script(command).as_bytes())
+        .context("failed to write runx-config launch script")?;
+
+    let mut permissions = file
+        .as_file()
+        .metadata()
+        .context("failed to inspect runx-config launch script")?
+        .permissions();
+    permissions.set_mode(0o700);
+    file.as_file()
+        .set_permissions(permissions)
+        .context("failed to make runx-config launch script executable")?;
+
+    let (_file, path) = file
+        .keep()
+        .context("failed to persist runx-config launch script")?;
+    Ok(path)
+}
+
+fn settings_editor_command_script(command: &str) -> String {
+    format!(
+        r#"#!/bin/zsh
+rm -f -- "$0"
+clear
+unset NO_COLOR
+{command}
+status=$?
+if [ "$status" -ne 0 ]; then
+  printf '\nrunx-config exited with status %s. Press Return to continue.' "$status"
+  read -r _
+fi
+exec "${{SHELL:-/bin/zsh}}" -l
+"#
+    )
+}
+
 #[cfg(test)]
 mod tests {
-    use super::{development_cargo_command, resolve_settings_editor_command};
+    use super::{
+        development_cargo_command, resolve_settings_editor_command, settings_editor_command_script,
+    };
 
     #[test]
     fn resolves_sibling_runx_config_binary() {
@@ -242,5 +281,17 @@ mod tests {
                 repo.to_string_lossy()
             )
         );
+    }
+
+    #[test]
+    fn settings_editor_script_runs_command_without_apple_events() {
+        let script =
+            settings_editor_command_script("'/Applications/Runx.app/Contents/MacOS/runx-config'");
+
+        assert!(script.starts_with("#!/bin/zsh\n"));
+        assert!(script.contains(
+            "clear\nunset NO_COLOR\n'/Applications/Runx.app/Contents/MacOS/runx-config'\n"
+        ));
+        assert!(script.contains("exec \"${SHELL:-/bin/zsh}\" -l"));
     }
 }
