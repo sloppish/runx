@@ -28,9 +28,6 @@ use errors::render_toml_parse_error;
 use paths::{dedup_paths, resolve_path, runtime_paths};
 use validation::{RawConfigSpans, validate_config, validate_config_with_spans};
 
-#[cfg(test)]
-use shortcuts::{parse_key, parse_modifier};
-
 /// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
     pub config: Config,
@@ -117,31 +114,36 @@ pub fn validate_config_toml(config_path: &Path, raw: &str) -> Result<Config> {
 mod tests {
     use std::path::Path;
 
-    use super::{Config, WindowDisplayTarget, parse_key, parse_modifier, render_toml_parse_error};
-    use global_hotkey::hotkey::{Code, Modifiers};
+    use super::{Config, WindowDisplayTarget, render_toml_parse_error, validate_config_toml};
 
-    mod parse_key_tests {
-        use super::{Code, parse_key};
+    mod hotkey_tests {
+        use std::path::Path;
 
         #[test]
-        fn accepts_single_letter_keys() {
-            assert!(matches!(parse_key("a"), Ok(Code::KeyA)));
+        fn defaults_to_option_space() {
+            let config = super::Config::default();
+            assert_eq!(config.hotkey.shortcut, "Option+Space");
+            config.hotkey().expect("default hotkey should parse");
         }
 
         #[test]
-        fn rejects_empty_keys() {
-            let error = parse_key("").expect_err("empty key should fail");
-            assert!(error.to_string().contains("unsupported hotkey key"));
+        fn accepts_shortcut_string() {
+            let config = super::validate_config_toml(
+                Path::new("/tmp/runx-test-config.toml"),
+                "[hotkey]\nshortcut = \"Option+KeyK\"\n",
+            )
+            .expect("shortcut hotkey should parse");
+            assert_eq!(config.hotkey.shortcut, "Option+KeyK");
         }
-    }
-
-    mod parse_modifier_tests {
-        use super::{Modifiers, parse_modifier};
 
         #[test]
-        fn accepts_common_aliases() {
-            assert!(matches!(parse_modifier("option"), Ok(Modifiers::ALT)));
-            assert!(matches!(parse_modifier("cmd"), Ok(Modifiers::META)));
+        fn rejects_invalid_shortcut_string() {
+            let error = super::validate_config_toml(
+                Path::new("/tmp/runx-test-config.toml"),
+                "[hotkey]\nshortcut = \"Option+NotAKey\"\n",
+            )
+            .expect_err("invalid hotkey should fail");
+            assert!(error.to_string().contains("unsupported hotkey shortcut"));
         }
     }
 

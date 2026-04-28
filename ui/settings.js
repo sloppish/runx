@@ -163,6 +163,157 @@
     return select.value === "true";
   }
 
+  let recordingShortcut = null;
+
+  function modifierParts(event) {
+    const parts = [];
+    if (event.ctrlKey) {
+      parts.push("Ctrl");
+    }
+    if (event.altKey) {
+      parts.push("Option");
+    }
+    if (event.shiftKey) {
+      parts.push("Shift");
+    }
+    if (event.metaKey) {
+      parts.push("Cmd");
+    }
+    return parts;
+  }
+
+  function modifierDisplay(value) {
+    switch (value.toLowerCase()) {
+      case "alt":
+      case "option":
+        return "Option";
+      case "control":
+      case "ctrl":
+        return "Ctrl";
+      case "command":
+      case "cmd":
+      case "super":
+      case "meta":
+        return "Cmd";
+      case "shift":
+        return "Shift";
+      default:
+        return value;
+    }
+  }
+
+  function displayKeyToken(token) {
+    if (!token) {
+      return "";
+    }
+    if (/^Key[A-Z]$/.test(token)) {
+      return token.slice(3);
+    }
+    if (/^Digit[0-9]$/.test(token)) {
+      return token.slice(5);
+    }
+    if (token === "ArrowUp") {
+      return "Up";
+    }
+    if (token === "ArrowDown") {
+      return "Down";
+    }
+    if (token === "ArrowLeft") {
+      return "Left";
+    }
+    if (token === "ArrowRight") {
+      return "Right";
+    }
+    return token;
+  }
+
+  function displayShortcutText(value, emptyLabel = "Disabled") {
+    const textValue = (value || "").trim();
+    if (!textValue) {
+      return emptyLabel;
+    }
+    if (/^(none|disabled|off)$/i.test(textValue)) {
+      return "Disabled";
+    }
+    return textValue
+      .split("+")
+      .map((part) => part.trim())
+      .filter(Boolean)
+      .map((part) => modifierDisplay(displayKeyToken(part)))
+      .join("+");
+  }
+
+  function isModifierOnlyKey(event) {
+    return ["Alt", "Control", "Meta", "Shift"].includes(event.key);
+  }
+
+  function shortcutKeyFromEvent(event) {
+    const code = event.code || "";
+    if (/^Key[A-Z]$/.test(code) || /^Digit[0-9]$/.test(code) || /^Numpad[0-9]$/.test(code)) {
+      return code;
+    }
+    if ([
+      "Space",
+      "Enter",
+      "NumpadEnter",
+      "Escape",
+      "Tab",
+      "Backspace",
+      "Delete",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+    ].includes(code)) {
+      return code;
+    }
+    return null;
+  }
+
+  function syncShortcutRecorders() {
+    for (const button of formEl.querySelectorAll("[data-shortcut-recorder]")) {
+      if (button === recordingShortcut) {
+        button.textContent = "Press shortcut...";
+        button.classList.add("recording");
+        button.classList.remove("empty");
+        continue;
+      }
+
+      const target = button.dataset.shortcutRecorder;
+      const textValue = displayShortcutText(field(target).value, "Record shortcut");
+      button.textContent = textValue;
+      button.classList.toggle("empty", textValue === "Disabled" || textValue === "Record shortcut");
+      button.classList.remove("recording");
+    }
+  }
+
+  function finishShortcutRecording() {
+    recordingShortcut = null;
+    syncShortcutRecorders();
+  }
+
+  function recordShortcut(button, event) {
+    if (event.key === "Escape" && modifierParts(event).length === 0) {
+      finishShortcutRecording();
+      return;
+    }
+    if (isModifierOnlyKey(event)) {
+      return;
+    }
+
+    const target = button.dataset.shortcutRecorder;
+    const key = shortcutKeyFromEvent(event);
+    if (!key) {
+      setStatus("Unsupported shortcut key.", true);
+      finishShortcutRecording();
+      return;
+    }
+    field(target).value = [...modifierParts(event), key].join("+");
+
+    finishShortcutRecording();
+    updateDirtyState();
+  }
+
   function labelText(input) {
     return input.closest("label")?.querySelector("span")?.textContent || input.dataset.field || "Value";
   }
@@ -319,6 +470,7 @@
     for (const input of formEl.querySelectorAll("[data-field]")) {
       setField(input.dataset.field, pathValue(draft, input.dataset.field));
     }
+    syncShortcutRecorders();
   }
 
   function renderDisplayOverrides(overrides = []) {
@@ -786,8 +938,7 @@
   function collectDraft() {
     return {
       hotkey: {
-        key: text("hotkey.key"),
-        modifiers: list("hotkey.modifiers"),
+        shortcut: text("hotkey.shortcut"),
       },
       window: {
         width_fraction: float("window.width_fraction"),
@@ -883,6 +1034,41 @@
   formEl.addEventListener("input", updateDirtyState);
   formEl.addEventListener("change", updateDirtyState);
   rawEl.addEventListener("input", updateDirtyState);
+
+  for (const button of formEl.querySelectorAll("[data-shortcut-recorder]")) {
+    button.addEventListener("click", () => {
+      if (button.disabled) {
+        return;
+      }
+      recordingShortcut = button;
+      button.focus();
+      syncShortcutRecorders();
+    });
+    button.addEventListener("keydown", (event) => {
+      if (recordingShortcut !== button) {
+        return;
+      }
+      event.preventDefault();
+      event.stopPropagation();
+      recordShortcut(button, event);
+    });
+    button.addEventListener("blur", () => {
+      if (recordingShortcut === button) {
+        finishShortcutRecording();
+      }
+    });
+  }
+
+  for (const button of formEl.querySelectorAll("[data-shortcut-clear]")) {
+    button.addEventListener("click", () => {
+      if (button.disabled) {
+        return;
+      }
+      field(button.dataset.shortcutClear).value = "none";
+      syncShortcutRecorders();
+      updateDirtyState();
+    });
+  }
 
   document.getElementById("add-display-override").addEventListener("click", handleAddDisplayOverride);
 

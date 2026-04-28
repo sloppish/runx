@@ -178,8 +178,7 @@ pub struct SettingsDraft {
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct HotkeySettingsDraft {
-    pub key: String,
-    pub modifiers: Vec<String>,
+    pub shortcut: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

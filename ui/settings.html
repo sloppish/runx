@@ -41,13 +41,10 @@
             <div class="section">
               <h2>Hotkey</h2>
               <div class="grid two">
-                <label>
-                  <span>Key</span>
-                  <input type="text" data-field="hotkey.key" />
-                </label>
-                <label>
-                  <span>Modifiers</span>
-                  <input type="text" data-field="hotkey.modifiers" />
+                <label class="shortcut-field span-two">
+                  <span>Launcher hotkey</span>
+                  <button type="button" class="shortcut-recorder" data-shortcut-recorder="hotkey.shortcut"></button>
+                  <input type="hidden" data-field="hotkey.shortcut" />
                 </label>
               </div>
             </div>
@@ -77,13 +74,21 @@
             <div class="section">
               <h2>Launcher Shortcuts</h2>
               <div class="grid two">
-                <label>
+                <label class="shortcut-field">
                   <span>Focus selected window</span>
-                  <input type="text" data-field="ui.shortcuts.focus_window" />
+                  <div class="shortcut-row">
+                    <button type="button" class="shortcut-recorder" data-shortcut-recorder="ui.shortcuts.focus_window"></button>
+                    <button type="button" class="button compact shortcut-clear" data-shortcut-clear="ui.shortcuts.focus_window">Clear</button>
+                  </div>
+                  <input type="hidden" data-field="ui.shortcuts.focus_window" />
                 </label>
-                <label>
+                <label class="shortcut-field">
                   <span>Activate app with all windows</span>
-                  <input type="text" data-field="ui.shortcuts.activate_all_windows" />
+                  <div class="shortcut-row">
+                    <button type="button" class="shortcut-recorder" data-shortcut-recorder="ui.shortcuts.activate_all_windows"></button>
+                    <button type="button" class="button compact shortcut-clear" data-shortcut-clear="ui.shortcuts.activate_all_windows">Clear</button>
+                  </div>
+                  <input type="hidden" data-field="ui.shortcuts.activate_all_windows" />
                 </label>
               </div>
             </div>

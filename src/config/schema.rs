@@ -1,14 +1,14 @@
 use std::collections::HashMap;
 
 use anyhow::{Context, Result, anyhow, bail};
-use global_hotkey::hotkey::{HotKey, Modifiers};
+use global_hotkey::hotkey::HotKey;
 use serde::{Deserialize, Serialize};
 use serde_json::Value as JsonValue;
 use toml::Table;
 
 use crate::displays::DisplayProfile;
 
-use super::shortcuts::{deserialize_ui_shortcut, parse_key, parse_modifier};
+use super::shortcuts::{deserialize_ui_shortcut, parse_hotkey_shortcut};
 
 /// Root configuration object deserialized from `config.toml`.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
@@ -38,10 +38,8 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct HotKeyConfig {
-    /// Trigger key for the global launcher shortcut.
-    pub key: String,
-    /// Modifier keys that must be held with `key`.
-    pub modifiers: Vec<String>,
+    /// Global shortcut that opens the launcher.
+    pub shortcut: String,
 }
 
 /// Launcher window behavior and geometry.
@@ -535,7 +533,7 @@ pub struct UiLayoutConfig {
 }
 
 impl Config {
-    /// Converts the configured key/modifier pair into a `global_hotkey` binding.
+    /// Converts the configured shortcut string into a `global_hotkey` binding.
     pub fn hotkey(&self) -> Result<HotKey> {
         self.hotkey.to_hotkey()
     }
@@ -664,21 +662,15 @@ impl UiConfig {
 impl Default for HotKeyConfig {
     fn default() -> Self {
         Self {
-            key: "Space".to_owned(),
-            modifiers: vec!["Alt".to_owned()],
+            shortcut: "Option+Space".to_owned(),
         }
     }
 }
 
 impl HotKeyConfig {
-    /// Parses the config strings into `global_hotkey` types.
+    /// Parses the configured shortcut into a `global_hotkey` binding.
     pub fn to_hotkey(&self) -> Result<HotKey> {
-        let mut modifiers = Modifiers::empty();
-        for modifier in &self.modifiers {
-            modifiers |= parse_modifier(modifier)?;
-        }
-        let code = parse_key(&self.key)?;
-        Ok(HotKey::new(Some(modifiers), code))
+        parse_hotkey_shortcut(&self.shortcut)
     }
 }
 

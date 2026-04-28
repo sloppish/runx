@@ -8,8 +8,7 @@ pub const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
 
 [hotkey]
-key = "Space"
-modifiers = ["Alt"]
+shortcut = "Option+Space"
 
 [window]
 width_fraction = 0.4

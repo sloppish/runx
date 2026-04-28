@@ -275,8 +275,7 @@ fn settings_ipc_event(payload: &str) -> AppEvent {
 fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraft> {
     Ok(SettingsDraft {
         hotkey: HotkeySettingsDraft {
-            key: config.hotkey.key.clone(),
-            modifiers: config.hotkey.modifiers.clone(),
+            shortcut: config.hotkey.shortcut.clone(),
         },
         window: WindowSettingsDraft {
             width_fraction: config.window.width_fraction,
@@ -537,14 +536,8 @@ fn apply_settings_draft_to_raw(
     set_item(
         &mut doc,
         &["hotkey"],
-        "key",
-        value(draft.hotkey.key.clone()),
-    )?;
-    set_item(
-        &mut doc,
-        &["hotkey"],
-        "modifiers",
-        string_array(&draft.hotkey.modifiers),
+        "shortcut",
+        value(draft.hotkey.shortcut.clone()),
     )?;
 
     set_item(
@@ -1172,8 +1165,7 @@ enabled = true
     #[test]
     fn structured_save_covers_dynamic_config_sections() {
         let raw = r#"[hotkey]
-key = "Space"
-modifiers = ["Alt"]
+shortcut = "Option+Space"
 "#;
         let mut draft = settings_draft_from_config(&Config::default(), raw)
             .expect("default config should produce a settings draft");

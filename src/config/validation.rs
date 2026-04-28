@@ -8,7 +8,7 @@ use super::{
     defaults::{BUILTIN_COLORSCHEME_NAMES, KNOWN_PROVIDER_NAMES},
     errors::render_config_validation_error,
     schema::*,
-    shortcuts::{parse_key, parse_modifier},
+    shortcuts::parse_hotkey_shortcut,
 };
 
 #[derive(Debug, Deserialize, Default)]
@@ -69,8 +69,7 @@ struct RawUiEntriesSpans {
 #[derive(Debug, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
 struct RawHotKeySpans {
-    key: Option<Spanned<String>>,
-    modifiers: Vec<Spanned<String>>,
+    shortcut: Option<Spanned<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -217,26 +216,15 @@ pub(super) fn validate_config_with_spans(
     raw: &str,
     spans: &RawConfigSpans,
 ) -> Result<()> {
-    if let Some(key) = &spans.hotkey.key
-        && let Err(error) = parse_key(key.get_ref())
+    if let Some(shortcut) = &spans.hotkey.shortcut
+        && let Err(error) = parse_hotkey_shortcut(shortcut.get_ref())
     {
         return Err(anyhow!(render_config_validation_error(
             config_path,
             raw,
             &error.to_string(),
-            key.span(),
+            shortcut.span(),
         )));
-    }
-
-    for modifier in &spans.hotkey.modifiers {
-        if let Err(error) = parse_modifier(modifier.get_ref()) {
-            return Err(anyhow!(render_config_validation_error(
-                config_path,
-                raw,
-                &error.to_string(),
-                modifier.span(),
-            )));
-        }
     }
 
     validate_spanned_provider_names(

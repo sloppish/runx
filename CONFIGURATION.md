@@ -21,8 +21,7 @@ User-facing global hotkey configuration.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `key` | string (`A-Z`, `0-9`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, arrows) | `"Space"` | Trigger key for the global launcher shortcut. |
-| `modifiers` | array of strings (`Alt`, `Option`, `Control`, `Ctrl`, `Shift`, `Command`, `Cmd`, `Super`, `Meta`) | `["Alt"]` | Modifier keys that must be held with `key`. |
+| `shortcut` | shortcut string such as `Option+Space` or `Cmd+KeyK` | `"Option+Space"` | Global shortcut that opens the launcher. |
 
 ## [window]
 

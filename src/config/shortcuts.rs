@@ -1,8 +1,15 @@
-use anyhow::{Result, bail};
-use global_hotkey::hotkey::{Code, Modifiers};
+use std::str::FromStr;
+
+use anyhow::{Context, Result};
+use global_hotkey::hotkey::HotKey;
 use serde::{Deserialize, Deserializer};
 
 use super::schema::UiShortcutConfig;
+
+pub(super) fn parse_hotkey_shortcut(value: &str) -> Result<HotKey> {
+    HotKey::from_str(value.trim())
+        .with_context(|| format!("unsupported hotkey shortcut `{value}` in config.toml"))
+}
 
 pub(super) fn deserialize_ui_shortcut<'de, D>(
     deserializer: D,
@@ -105,75 +112,4 @@ pub(super) fn parse_ui_shortcut_key(token: &str) -> Option<(Option<String>, Opti
     };
 
     Some((None, Some(key.to_owned())))
-}
-
-pub(super) fn parse_modifier(value: &str) -> Result<Modifiers> {
-    match value.to_ascii_lowercase().as_str() {
-        "alt" | "option" => Ok(Modifiers::ALT),
-        "control" | "ctrl" => Ok(Modifiers::CONTROL),
-        "shift" => Ok(Modifiers::SHIFT),
-        "command" | "cmd" | "super" | "meta" => Ok(Modifiers::META),
-        other => bail!("unsupported hotkey modifier `{other}` in config.toml"),
-    }
-}
-
-pub(super) fn parse_key(value: &str) -> Result<Code> {
-    let normalized = value.trim().to_ascii_uppercase();
-    if normalized.len() == 1 {
-        let Some(ch) = normalized.chars().next() else {
-            bail!("hotkey key must not be empty in config.toml");
-        };
-        return match ch {
-            'A' => Ok(Code::KeyA),
-            'B' => Ok(Code::KeyB),
-            'C' => Ok(Code::KeyC),
-            'D' => Ok(Code::KeyD),
-            'E' => Ok(Code::KeyE),
-            'F' => Ok(Code::KeyF),
-            'G' => Ok(Code::KeyG),
-            'H' => Ok(Code::KeyH),
-            'I' => Ok(Code::KeyI),
-            'J' => Ok(Code::KeyJ),
-            'K' => Ok(Code::KeyK),
-            'L' => Ok(Code::KeyL),
-            'M' => Ok(Code::KeyM),
-            'N' => Ok(Code::KeyN),
-            'O' => Ok(Code::KeyO),
-            'P' => Ok(Code::KeyP),
-            'Q' => Ok(Code::KeyQ),
-            'R' => Ok(Code::KeyR),
-            'S' => Ok(Code::KeyS),
-            'T' => Ok(Code::KeyT),
-            'U' => Ok(Code::KeyU),
-            'V' => Ok(Code::KeyV),
-            'W' => Ok(Code::KeyW),
-            'X' => Ok(Code::KeyX),
-            'Y' => Ok(Code::KeyY),
-            'Z' => Ok(Code::KeyZ),
-            '0' => Ok(Code::Digit0),
-            '1' => Ok(Code::Digit1),
-            '2' => Ok(Code::Digit2),
-            '3' => Ok(Code::Digit3),
-            '4' => Ok(Code::Digit4),
-            '5' => Ok(Code::Digit5),
-            '6' => Ok(Code::Digit6),
-            '7' => Ok(Code::Digit7),
-            '8' => Ok(Code::Digit8),
-            '9' => Ok(Code::Digit9),
-            _ => bail!("unsupported hotkey key `{value}` in config.toml"),
-        };
-    }
-
-    match normalized.as_str() {
-        "SPACE" => Ok(Code::Space),
-        "ENTER" | "RETURN" => Ok(Code::Enter),
-        "ESC" | "ESCAPE" => Ok(Code::Escape),
-        "TAB" => Ok(Code::Tab),
-        "BACKSPACE" => Ok(Code::Backspace),
-        "UP" => Ok(Code::ArrowUp),
-        "DOWN" => Ok(Code::ArrowDown),
-        "LEFT" => Ok(Code::ArrowLeft),
-        "RIGHT" => Ok(Code::ArrowRight),
-        other => bail!("unsupported hotkey key `{other}` in config.toml"),
-    }
 }

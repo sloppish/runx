@@ -244,6 +244,10 @@ h2 {
   grid-template-columns: repeat(5, minmax(0, 1fr));
 }
 
+.grid > .span-two {
+  grid-column: 1 / -1;
+}
+
 label span {
   display: block;
   margin-bottom: 6px;
@@ -317,6 +321,42 @@ textarea::placeholder {
 .toggle span {
   margin: 0;
   color: var(--text);
+}
+
+.shortcut-field {
+  min-width: 0;
+}
+
+.shortcut-row {
+  display: flex;
+  gap: 8px;
+  min-width: 0;
+}
+
+.shortcut-recorder {
+  width: 100%;
+  min-width: 0;
+  height: 34px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  padding: 0 9px;
+  background: var(--surface);
+  color: var(--text);
+  text-align: left;
+}
+
+.shortcut-recorder.empty {
+  color: var(--muted);
+}
+
+.shortcut-recorder.recording {
+  outline: 2px solid color-mix(in srgb, var(--accent) 28%, transparent);
+  border-color: var(--accent);
+}
+
+.shortcut-clear {
+  flex: 0 0 auto;
+  min-width: 58px;
 }
 
 .section-heading,
