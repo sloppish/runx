@@ -159,10 +159,10 @@ mod tests {
             assert_eq!(config.window.show_on, WindowDisplayTarget::Cursor);
             assert_eq!(config.window.width_fraction, 0.4);
             assert_eq!(config.window.visible_rows, 5);
-            assert_eq!(config.window.min_width, 700.0);
-            assert_eq!(config.window.max_width, 980.0);
-            assert_eq!(config.window.min_height, 420.0);
-            assert_eq!(config.window.max_height, 720.0);
+            assert_eq!(config.window.min_width, None);
+            assert_eq!(config.window.max_width, None);
+            assert_eq!(config.window.min_height, None);
+            assert_eq!(config.window.max_height, None);
         }
 
         #[test]
@@ -180,10 +180,10 @@ mod tests {
             .expect("fractional window sizing should parse");
             assert_eq!(config.window.width_fraction, 0.33);
             assert_eq!(config.window.visible_rows, 6);
-            assert_eq!(config.window.min_width, 680.0);
-            assert_eq!(config.window.max_width, 920.0);
-            assert_eq!(config.window.min_height, 400.0);
-            assert_eq!(config.window.max_height, 640.0);
+            assert_eq!(config.window.min_width, Some(680.0));
+            assert_eq!(config.window.max_width, Some(920.0));
+            assert_eq!(config.window.min_height, Some(400.0));
+            assert_eq!(config.window.max_height, Some(640.0));
         }
 
         #[test]
@@ -198,10 +198,19 @@ mod tests {
 
         #[test]
         fn resolves_window_size_with_clamps() {
-            let config: Config = toml::from_str("").expect("empty config should parse");
+            let config: Config = toml::from_str("[window]\nmin_width = 700\nmax_width = 980\n")
+                .expect("window clamps should parse");
             assert_eq!(config.window.resolve_width(1600.0), 700.0);
             assert_eq!(config.window.resolve_width(2560.0), 980.0);
             assert_eq!(config.window.fallback_size(&config.ui).1, 570.0);
+        }
+
+        #[test]
+        fn omitted_window_clamps_leave_size_unclamped() {
+            let config: Config = toml::from_str("").expect("empty config should parse");
+            assert_eq!(config.window.resolve_width(1600.0), 640.0);
+            assert_eq!(config.window.resolve_width(2560.0), 1024.0);
+            assert_eq!(config.window.fallback_size(&config.ui), (768.0, 570.0));
         }
 
         #[test]
@@ -210,7 +219,7 @@ mod tests {
                 "[window]\nvisible_rows = 10\nmax_height = 640\n[ui]\nscale = 1.25\n",
             )
             .expect("row-driven height config should parse");
-            assert_eq!(config.window.resolve_width(2560.0), 980.0);
+            assert_eq!(config.window.resolve_width(2560.0), 1024.0);
             assert_eq!(config.window.fallback_size(&config.ui).1, 640.0);
         }
 

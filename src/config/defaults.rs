@@ -13,10 +13,10 @@ shortcut = "Option+Space"
 [window]
 width_fraction = 0.4
 visible_rows = 5
-min_width = 700
-max_width = 980
-min_height = 420
-max_height = 720
+# min_width = 700
+# max_width = 980
+# min_height = 420
+# max_height = 720
 hide_when_inactive = true
 always_on_top = true
 show_on = "cursor"

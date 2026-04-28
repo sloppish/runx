@@ -180,7 +180,8 @@ impl WindowController {
             .unwrap_or_else(|| config.fallback_size(ui).1);
 
         let Some(monitor) = monitor_for_window(window, config) else {
-            window.set_inner_size(LogicalSize::new(config.min_width, resolved_height));
+            let fallback_width = config.fallback_size(ui).0;
+            window.set_inner_size(LogicalSize::new(fallback_width, resolved_height));
             return;
         };
 

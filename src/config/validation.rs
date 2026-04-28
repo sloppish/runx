@@ -151,32 +151,32 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
         config.window.visible_rows,
         "[window].visible_rows must be greater than 0",
     )?;
-    validate_positive_dimension(
-        config.window.min_width,
-        "[window].min_width must be greater than 0.0",
-    )?;
-    validate_positive_dimension(
-        config.window.max_width,
-        "[window].max_width must be greater than 0.0",
-    )?;
-    validate_positive_dimension(
-        config.window.min_height,
-        "[window].min_height must be greater than 0.0",
-    )?;
-    validate_positive_dimension(
-        config.window.max_height,
-        "[window].max_height must be greater than 0.0",
-    )?;
-    validate_dimension_range(
-        config.window.min_width,
-        config.window.max_width,
-        "[window].min_width must be less than or equal to [window].max_width",
-    )?;
-    validate_dimension_range(
-        config.window.min_height,
-        config.window.max_height,
-        "[window].min_height must be less than or equal to [window].max_height",
-    )?;
+    if let Some(value) = config.window.min_width {
+        validate_positive_dimension(value, "[window].min_width must be greater than 0.0")?;
+    }
+    if let Some(value) = config.window.max_width {
+        validate_positive_dimension(value, "[window].max_width must be greater than 0.0")?;
+    }
+    if let Some(value) = config.window.min_height {
+        validate_positive_dimension(value, "[window].min_height must be greater than 0.0")?;
+    }
+    if let Some(value) = config.window.max_height {
+        validate_positive_dimension(value, "[window].max_height must be greater than 0.0")?;
+    }
+    if let (Some(min), Some(max)) = (config.window.min_width, config.window.max_width) {
+        validate_dimension_range(
+            min,
+            max,
+            "[window].min_width must be less than or equal to [window].max_width",
+        )?;
+    }
+    if let (Some(min), Some(max)) = (config.window.min_height, config.window.max_height) {
+        validate_dimension_range(
+            min,
+            max,
+            "[window].min_height must be less than or equal to [window].max_height",
+        )?;
+    }
     for (index, display_override) in config.display_overrides.iter().enumerate() {
         validate_display_override(
             display_override,

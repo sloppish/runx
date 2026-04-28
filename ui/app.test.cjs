@@ -1,5 +1,7 @@
 const test = require("node:test");
 const assert = require("node:assert/strict");
+const fs = require("node:fs");
+const path = require("node:path");
 const ui = require("./app.js");
 
 test("hover does not steal keyboard selection", () => {
@@ -126,6 +128,15 @@ test("visible rows normalize to a positive integer", () => {
   assert.equal(ui.normalizeVisibleRows(undefined), 1);
   assert.equal(ui.normalizeVisibleRows(0), 1);
   assert.equal(ui.normalizeVisibleRows("4.6"), 5);
+});
+
+test("settings window clamps are optional when left blank", () => {
+  const html = fs.readFileSync(path.join(__dirname, "settings.html"), "utf8");
+
+  for (const field of ["min_width", "max_width", "min_height", "max_height"]) {
+    const pattern = new RegExp(`<input[^>]*data-optional="true"[^>]*data-field="window\\.${field}"`);
+    assert.match(html, pattern);
+  }
 });
 
 test("backend render payload does not overwrite active typing with stale query text", () => {

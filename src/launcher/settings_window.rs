@@ -552,30 +552,10 @@ fn apply_settings_draft_to_raw(
         "visible_rows",
         value(i64::try_from(draft.window.visible_rows).context("visible_rows is too large")?),
     )?;
-    set_item(
-        &mut doc,
-        &["window"],
-        "min_width",
-        value(draft.window.min_width),
-    )?;
-    set_item(
-        &mut doc,
-        &["window"],
-        "max_width",
-        value(draft.window.max_width),
-    )?;
-    set_item(
-        &mut doc,
-        &["window"],
-        "min_height",
-        value(draft.window.min_height),
-    )?;
-    set_item(
-        &mut doc,
-        &["window"],
-        "max_height",
-        value(draft.window.max_height),
-    )?;
+    set_optional_f64_item(&mut doc, &["window"], "min_width", draft.window.min_width)?;
+    set_optional_f64_item(&mut doc, &["window"], "max_width", draft.window.max_width)?;
+    set_optional_f64_item(&mut doc, &["window"], "min_height", draft.window.min_height)?;
+    set_optional_f64_item(&mut doc, &["window"], "max_height", draft.window.max_height)?;
     set_item(
         &mut doc,
         &["window"],
@@ -1078,6 +1058,22 @@ fn set_optional_f64(table: &mut TomlTable, key: &str, item: Option<f64>) {
     }
 }
 
+fn set_optional_f64_item(
+    doc: &mut Document,
+    path: &[&str],
+    key: &str,
+    item: Option<f64>,
+) -> Result<()> {
+    if let Some(item) = item {
+        set_item(doc, path, key, value(item))
+    } else {
+        let mut full_path = Vec::with_capacity(path.len() + 1);
+        full_path.extend_from_slice(path);
+        full_path.push(key);
+        remove_item(doc, &full_path)
+    }
+}
+
 fn remove_item(doc: &mut Document, path: &[&str]) -> Result<()> {
     let Some((key, parent_path)) = path.split_last() else {
         bail!("cannot remove empty config path");
@@ -1160,6 +1156,29 @@ enabled = true
         assert!(saved.contains("visible_rows = 8"));
         assert!(saved.contains("show = false"));
         assert!(saved.contains("disabled = [\"settings\"]"));
+    }
+
+    #[test]
+    fn structured_save_removes_empty_global_window_clamps() {
+        let raw = r#"[window]
+width_fraction = 0.4
+visible_rows = 5
+min_width = 1
+max_width = 9999
+min_height = 1
+max_height = 9999
+"#;
+        let draft = settings_draft_from_config(&Config::default(), raw)
+            .expect("default config should produce a settings draft");
+
+        let saved =
+            apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
+                .expect("draft should save");
+
+        assert!(!saved.contains("min_width"));
+        assert!(!saved.contains("max_width"));
+        assert!(!saved.contains("min_height"));
+        assert!(!saved.contains("max_height"));
     }
 
     #[test]

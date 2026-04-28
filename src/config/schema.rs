@@ -46,18 +46,18 @@ pub struct HotKeyConfig {
 #[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowConfig {
-    /// Fraction of the chosen display's logical width used before width clamps.
+    /// Fraction of the chosen display's logical width used before optional width clamps.
     pub width_fraction: f64,
-    /// Target number of result rows kept visible before height clamps.
+    /// Target number of result rows kept visible before optional height clamps.
     pub visible_rows: usize,
-    /// Minimum launcher width in logical pixels.
-    pub min_width: f64,
-    /// Maximum launcher width in logical pixels.
-    pub max_width: f64,
-    /// Minimum launcher height in logical pixels.
-    pub min_height: f64,
-    /// Maximum launcher height in logical pixels.
-    pub max_height: f64,
+    /// Optional minimum launcher width in logical pixels.
+    pub min_width: Option<f64>,
+    /// Optional maximum launcher width in logical pixels.
+    pub max_width: Option<f64>,
+    /// Optional minimum launcher height in logical pixels.
+    pub min_height: Option<f64>,
+    /// Optional maximum launcher height in logical pixels.
+    pub max_height: Option<f64>,
     /// Hide the launcher automatically when it becomes inactive.
     pub hide_when_inactive: bool,
     /// Keep the launcher above normal windows while it is visible.
@@ -720,10 +720,10 @@ impl Default for WindowConfig {
         Self {
             width_fraction: 0.4,
             visible_rows: 5,
-            min_width: 700.0,
-            max_width: 980.0,
-            min_height: 420.0,
-            max_height: 720.0,
+            min_width: None,
+            max_width: None,
+            min_height: None,
+            max_height: None,
             hide_when_inactive: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Cursor,
@@ -754,10 +754,10 @@ impl DisplayOverrideConfig {
         Self {
             width_fraction: Some(window.width_fraction),
             visible_rows: Some(window.visible_rows),
-            min_width: Some(window.min_width),
-            max_width: Some(window.max_width),
-            min_height: Some(window.min_height),
-            max_height: Some(window.max_height),
+            min_width: window.min_width,
+            max_width: window.max_width,
+            min_height: window.min_height,
+            max_height: window.max_height,
             ui_scale: Some(ui.scale),
             ..Self::for_display(display)
         }
@@ -813,16 +813,16 @@ impl DisplayOverrideConfig {
             window.visible_rows = value;
         }
         if let Some(value) = self.min_width {
-            window.min_width = value;
+            window.min_width = Some(value);
         }
         if let Some(value) = self.max_width {
-            window.max_width = value;
+            window.max_width = Some(value);
         }
         if let Some(value) = self.min_height {
-            window.min_height = value;
+            window.min_height = Some(value);
         }
         if let Some(value) = self.max_height {
-            window.max_height = value;
+            window.max_height = Some(value);
         }
         if let Some(value) = self.ui_scale {
             ui.scale = value;
@@ -858,7 +858,10 @@ impl DisplayOverrideConfig {
 impl WindowConfig {
     /// Returns a conservative logical size used before a display is resolved.
     pub fn fallback_size(&self, ui: &UiConfig) -> (f64, f64) {
-        (self.min_width, self.fallback_height(ui))
+        (
+            self.resolve_width(FALLBACK_DISPLAY_WIDTH),
+            self.fallback_height(ui),
+        )
     }
 
     /// Resolves launcher width for a display with the given logical width.
@@ -1043,6 +1046,9 @@ impl Default for UiLayoutConfig {
     }
 }
 
-fn clamp_axis(value: f64, min: f64, max: f64) -> f64 {
-    value.clamp(min, max)
+fn clamp_axis(value: f64, min: Option<f64>, max: Option<f64>) -> f64 {
+    let value = min.map_or(value, |min| value.max(min));
+    max.map_or(value, |max| value.min(max))
 }
+
+const FALLBACK_DISPLAY_WIDTH: f64 = 1920.0;
