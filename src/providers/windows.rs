@@ -63,14 +63,11 @@ impl WindowsProvider {
         }
     }
 
-    /// Starts a new launcher-visible session and captures a fresh snapshot when permitted.
+    /// Starts a new launcher-visible session.
     pub fn begin_session(&self) {
-        let windows = self
-            .required_permissions_available(false)
-            .then(|| read_windows(self.include_other_desktops));
         let mut session = lock_or_recover(&self.session);
         session.active = true;
-        session.windows = windows;
+        session.windows = None;
     }
 
     /// Ends the current launcher-visible session and clears the cached snapshot.
@@ -155,10 +152,6 @@ impl WindowsProvider {
         Ok(Some(windows))
     }
 
-    fn required_permissions_available(&self, prompt: bool) -> bool {
-        self.ensure_required_permissions(prompt).unwrap_or(false)
-    }
-
     fn ensure_required_permissions(&self, prompt: bool) -> Result<bool> {
         if !macos::ensure_accessibility_trusted(prompt) {
             return Ok(false);
@@ -221,7 +214,7 @@ fn read_window_entries(list_options: u32, fallback_empty_titles: bool) -> Vec<Wi
 
         if matches!(
             owner.as_str(),
-            "Window Server" | "Dock" | "Control Centre" | "Control Center"
+            "Window Server" | "Dock" | "Control Centre" | "Control Center" | "Runx"
         ) {
             continue;
         }
