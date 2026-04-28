@@ -28,7 +28,6 @@ mod scoring;
 mod state;
 mod tray;
 mod types;
-mod ui;
 
 use anyhow::Result;
 use global_hotkey::GlobalHotKeyEvent;
@@ -42,7 +41,7 @@ use types::AppEvent;
 
 use crate::launcher::Launcher;
 
-pub use runx::{config, displays};
+pub use runx::{config, displays, ui};
 
 /// Starts the launcher process and reports any fatal startup error to stderr.
 fn main() {

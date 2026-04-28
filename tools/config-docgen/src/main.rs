@@ -135,8 +135,15 @@ fn main() -> Result<()> {
         .context("failed to parse DEFAULT_CONFIG as TOML")?;
     let provider_names = extract_string_array_const(&file, "KNOWN_PROVIDER_NAMES")?;
     let builtin_schemes = extract_string_array_const(&file, "BUILTIN_COLORSCHEME_NAMES")?;
+    let color_token_names = extract_string_array_const(&file, "UI_COLOR_TOKEN_NAMES")?;
 
-    validate_source_schema(&docs, &defaults, &provider_names, &builtin_schemes)?;
+    validate_source_schema(
+        &docs,
+        &defaults,
+        &provider_names,
+        &builtin_schemes,
+        &color_token_names,
+    )?;
 
     let rendered = render_document(&docs, &defaults, &provider_names, &builtin_schemes)?;
 
@@ -483,6 +490,7 @@ fn validate_source_schema(
     defaults: &Value,
     provider_names: &[String],
     builtin_schemes: &[String],
+    color_token_names: &[String],
 ) -> Result<()> {
     validate_required_const("KNOWN_PROVIDER_NAMES", provider_names)?;
     validate_required_const("BUILTIN_COLORSCHEME_NAMES", builtin_schemes)?;
@@ -492,7 +500,7 @@ fn validate_source_schema(
     validate_config_root_sections(docs)?;
     validate_table_sections(docs, defaults)?;
     validate_rule_sections(docs)?;
-    validate_colorscheme_section(docs)?;
+    validate_colorscheme_section(docs, color_token_names)?;
     Ok(())
 }
 
@@ -671,7 +679,7 @@ fn validate_rule_sections(docs: &DocMap) -> Result<()> {
     Ok(())
 }
 
-fn validate_colorscheme_section(docs: &DocMap) -> Result<()> {
+fn validate_colorscheme_section(docs: &DocMap, color_token_names: &[String]) -> Result<()> {
     let colorscheme = expect_struct(docs, "UiColorschemeConfig")?;
     if !colorscheme
         .fields
@@ -684,6 +692,18 @@ fn validate_colorscheme_section(docs: &DocMap) -> Result<()> {
     let overrides = expect_struct(docs, "UiColorOverridesConfig")?;
     if overrides.fields.is_empty() {
         bail!("[ui.colorschemes.<name>] does not render any override fields");
+    }
+    let override_fields = overrides
+        .fields
+        .iter()
+        .map(|field| field.rust_name.as_str())
+        .collect::<Vec<_>>();
+    let color_token_names = color_token_names
+        .iter()
+        .map(String::as_str)
+        .collect::<Vec<_>>();
+    if override_fields != color_token_names {
+        bail!("UI_COLOR_TOKEN_NAMES must match UiColorOverridesConfig fields in source order");
     }
     for field in &overrides.fields {
         if field.doc.trim().is_empty() {
@@ -920,7 +940,7 @@ fn render_colorscheme_section(
     builtin_schemes: &[String],
 ) -> String {
     let intro = format!(
-        "Named colorscheme definitions. Runx always knows about {}. Custom schemes can use any other name and are selected through `[ui].colorscheme`. For custom schemes, set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Built-in schemes can be partially overridden and must not set `base`. Most users only need `accent`, `background`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.",
+        "Named colorscheme definitions. Runx always knows about {}, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.",
         builtin_schemes
             .iter()
             .map(|name| format!("`{name}`"))
@@ -930,7 +950,7 @@ fn render_colorscheme_section(
     let mut rows = vec![(
         "`base`".to_string(),
         "one of: `builtin_light`, `builtin_dark`".to_string(),
-        "Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token. Built-in schemes must not set this.".to_string(),
+        "Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token.".to_string(),
     )];
     rows.extend(overrides.fields.iter().map(|field| {
         (

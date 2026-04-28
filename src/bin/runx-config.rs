@@ -25,11 +25,14 @@ use ratatui::{
 };
 use runx::config::{
     BUILTIN_COLORSCHEME_NAMES, Config, DisplayOverrideConfig, KNOWN_PROVIDER_NAMES,
-    ensure_user_config, validate_config_toml,
+    UI_COLOR_TOKEN_NAMES, ensure_user_config, validate_config_toml,
 };
 use runx::displays::{DisplayProfile, active_displays, current_display};
+use runx::ui::builtin_colorscheme_token_values;
 use tempfile::Builder as TempFileBuilder;
-use toml_edit::{Array, ArrayOfTables, Document, Item, Key, Table as TomlTable, Value, value};
+use toml_edit::{
+    Array, ArrayOfTables, Decor, Document, Item, Key, Table as TomlTable, Value, value,
+};
 
 const SECTIONS: [Section; 9] = [
     Section::Hotkey,
@@ -961,7 +964,11 @@ impl App {
                 Ok(AppAction::None)
             }
             FieldId::ColorschemeEdit => {
-                self.mode = Mode::Choice(ChoiceMode::edit_colorscheme(&self.editor.config));
+                let Some(choice) = ChoiceMode::edit_colorscheme(&self.editor.config) else {
+                    self.info("No custom colorschemes to edit");
+                    return Ok(AppAction::None);
+                };
+                self.mode = Mode::Choice(choice);
                 Ok(AppAction::None)
             }
             FieldId::ColorschemeDelete => {
@@ -1441,23 +1448,24 @@ impl ChoiceMode {
         }
     }
 
-    fn edit_colorscheme(config: &Config) -> Self {
-        let mut names = BUILTIN_COLORSCHEME_NAMES
-            .iter()
-            .map(|name| (*name).to_owned())
+    fn edit_colorscheme(config: &Config) -> Option<Self> {
+        let mut names = config
+            .ui
+            .colorschemes
+            .keys()
+            .filter(|name| !BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()))
+            .cloned()
             .collect::<Vec<_>>();
-        for name in config.ui.colorschemes.keys() {
-            if !names.iter().any(|existing| existing == name) {
-                names.push(name.clone());
-            }
-        }
         names.sort();
-        Self {
+        if names.is_empty() {
+            return None;
+        }
+        Some(Self {
             title: "Edit colorscheme".to_owned(),
             options: names.into_iter().map(ChoiceOption::from).collect(),
             selected: 0,
             target: ChoiceTarget::EditColorscheme,
-        }
+        })
     }
 
     fn delete_colorscheme(config: &Config) -> Option<Self> {
@@ -2414,25 +2422,42 @@ fn edit_in_external_editor(initial: &str) -> Result<String> {
 
 fn new_colorscheme_snippet(name: &str, base: Option<&str>) -> String {
     let table_name = table_header_key(name);
-    match base {
-        Some(base) => format!(
-            r#"[ui.colorschemes.{table_name}]
-base = "{base}"
-
-# Add only the color tokens you want to override.
-"#
-        ),
-        None => format!(
-            r#"[ui.colorschemes.{table_name}]
-
-# No base is selected. Define every color token before saving, or add:
+    let preset_base = base.unwrap_or("builtin_dark");
+    let mut snippet = format!("[ui.colorschemes.{table_name}]\n");
+    if let Some(base) = base {
+        snippet.push_str(&format!("base = \"{base}\"\n\n"));
+        snippet.push_str(&format!(
+            "# Full {base} token preset. Uncomment only the tokens you want to override.\n"
+        ));
+    } else {
+        snippet.push_str(
+            r#"
+# No base is selected. Uncomment every token before saving, or add one of:
 # base = "builtin_dark"
 # base = "builtin_light"
 
-# Add color tokens here.
-"#
-        ),
+# Full builtin_dark token preset.
+"#,
+        );
     }
+
+    for (name, value) in colorscheme_preset_values(preset_base) {
+        snippet.push_str(&format!("# {name} = {}\n", toml_string(&value)));
+    }
+    snippet
+}
+
+fn colorscheme_preset_values(base: &str) -> Vec<(&'static str, String)> {
+    builtin_colorscheme_token_values(base).unwrap_or_else(|| {
+        UI_COLOR_TOKEN_NAMES
+            .iter()
+            .map(|token| (*token, String::new()))
+            .collect()
+    })
+}
+
+fn toml_string(value: &str) -> String {
+    Value::from(value).to_string()
 }
 
 fn move_index(current: usize, len: usize, delta: isize) -> usize {
@@ -2751,7 +2776,9 @@ fn colorscheme_table_from_snippet(raw: &str, name: &str) -> Result<TomlTable> {
     let doc = raw
         .parse::<Document>()
         .context("colorscheme snippet is not valid TOML")?;
-    doc.get("ui")
+    let trailing = doc.trailing().as_str().unwrap_or("").to_owned();
+    let mut table = doc
+        .get("ui")
         .and_then(Item::as_table)
         .and_then(|ui| ui.get("colorschemes"))
         .and_then(Item::as_table)
@@ -2763,7 +2790,37 @@ fn colorscheme_table_from_snippet(raw: &str, name: &str) -> Result<TomlTable> {
                 "snippet must contain [ui.colorschemes.{}]",
                 table_header_key(name)
             )
-        })
+        })?;
+    append_colorscheme_trailing(&mut table, &trailing);
+    Ok(table)
+}
+
+fn append_colorscheme_trailing(table: &mut TomlTable, trailing: &str) {
+    if trailing.trim().is_empty() {
+        return;
+    }
+
+    if let Some((_, item)) = table.iter_mut().last()
+        && let Some(value) = item.as_value_mut()
+    {
+        append_decor_suffix(value.decor_mut(), trailing);
+        return;
+    }
+
+    append_decor_suffix(table.decor_mut(), trailing);
+}
+
+fn append_decor_suffix(decor: &mut Decor, trailing: &str) {
+    let mut suffix = decor
+        .suffix()
+        .and_then(|raw| raw.as_str())
+        .unwrap_or("")
+        .to_owned();
+    if !trailing.starts_with(['\n', '\r']) {
+        suffix.push('\n');
+    }
+    suffix.push_str(trailing);
+    decor.set_suffix(suffix);
 }
 
 fn set_colorscheme_table(doc: &mut Document, name: &str, table: TomlTable) -> Result<()> {
@@ -2783,4 +2840,101 @@ fn validate_custom_colorscheme_name(name: &str) -> Result<()> {
 
 fn table_header_key(key: &str) -> String {
     Key::new(key).display_repr().into_owned()
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn new_colorscheme_snippet_includes_full_commented_base_preset() {
+        let snippet = new_colorscheme_snippet("solarized", Some("builtin_light"));
+
+        assert!(snippet.contains("[ui.colorschemes.solarized]"));
+        assert!(snippet.contains("base = \"builtin_light\""));
+        for (token, value) in colorscheme_preset_values("builtin_light") {
+            assert!(
+                snippet.contains(&format!("# {token} = {}", toml_string(&value))),
+                "missing commented token `{token}`"
+            );
+        }
+    }
+
+    #[test]
+    fn no_base_colorscheme_preset_can_be_uncommented_into_complete_scheme() {
+        let snippet = new_colorscheme_snippet("gruvbox", None);
+        let uncommented = uncomment_color_token_lines(&snippet);
+        let raw = format!("[ui]\ncolorscheme = \"gruvbox\"\n{uncommented}");
+
+        validate_config_toml(std::path::Path::new("/tmp/runx-config.toml"), &raw)
+            .expect("uncommented full preset should be a complete colorscheme");
+    }
+
+    #[test]
+    fn colorscheme_table_roundtrip_preserves_trailing_comments() {
+        let raw = r##"[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+
+# keep me
+# accent = "#fabd2f"
+"##;
+        let table = colorscheme_table_from_snippet(raw, "gruvbox").expect("snippet should parse");
+        let mut doc = Document::new();
+        set_colorscheme_table(&mut doc, "gruvbox", table).expect("table should insert");
+        let saved = doc.to_string();
+
+        assert!(saved.contains("# keep me"));
+        assert!(saved.contains("# accent = \"#fabd2f\""));
+    }
+
+    #[test]
+    fn colorscheme_table_roundtrip_preserves_empty_table_trailing_comments() {
+        let raw = r##"[ui.colorschemes.gruvbox]
+
+# keep me
+# accent = "#fabd2f"
+"##;
+        let table = colorscheme_table_from_snippet(raw, "gruvbox").expect("snippet should parse");
+        let mut doc = Document::new();
+        set_colorscheme_table(&mut doc, "gruvbox", table).expect("table should insert");
+        let saved = doc.to_string();
+
+        assert!(saved.contains("# keep me"));
+        assert!(saved.contains("# accent = \"#fabd2f\""));
+    }
+
+    #[test]
+    fn colorscheme_table_roundtrip_keeps_adjacent_trailing_comments_on_next_line() {
+        let raw = r##"[ui.colorschemes.gruvbox]
+canvas_bg = "#0000ff"
+# panel = "#282828"
+"##;
+        let table = colorscheme_table_from_snippet(raw, "gruvbox").expect("snippet should parse");
+        let mut doc = Document::new();
+        set_colorscheme_table(&mut doc, "gruvbox", table).expect("table should insert");
+        let saved = doc.to_string();
+
+        assert!(saved.contains("canvas_bg = \"#0000ff\"\n# panel = \"#282828\""));
+        assert!(!saved.contains("canvas_bg = \"#0000ff\"# panel"));
+    }
+
+    fn uncomment_color_token_lines(raw: &str) -> String {
+        let mut lines = Vec::new();
+        for line in raw.lines() {
+            let Some(uncommented) = line.strip_prefix("# ") else {
+                lines.push(line.to_owned());
+                continue;
+            };
+            let Some((token, _)) = uncommented.split_once(" = ") else {
+                lines.push(line.to_owned());
+                continue;
+            };
+            if UI_COLOR_TOKEN_NAMES.contains(&token) {
+                lines.push(uncommented.to_owned());
+            } else {
+                lines.push(line.to_owned());
+            }
+        }
+        lines.join("\n")
+    }
 }

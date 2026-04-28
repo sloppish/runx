@@ -265,20 +265,18 @@ pub struct UiColorschemeConfig {
 pub struct UiColorOverridesConfig {
     /// Accent color used for highlighted details and emphasis.
     pub accent: Option<String>,
-    /// Broad page/background tone used by the built-in palette.
-    pub background: Option<String>,
     /// Panel surface color used by the built-in palette.
     pub panel: Option<String>,
     /// Primary foreground text color.
     pub text: Option<String>,
     /// Secondary or de-emphasized foreground text color.
     pub muted: Option<String>,
-    /// Background fill for the outer launcher shell.
-    pub shell_bg: Option<String>,
-    /// Shadow for the outer launcher shell.
-    pub shell_shadow: Option<String>,
-    /// Border color for the outer launcher shell.
-    pub shell_border: Option<String>,
+    /// Background fill for the outer launcher canvas.
+    pub canvas_bg: Option<String>,
+    /// Shadow for the outer launcher canvas.
+    pub canvas_shadow: Option<String>,
+    /// Border color for the outer launcher canvas.
+    pub canvas_border: Option<String>,
     /// Stronger label color used for prominent small text.
     pub label_strong: Option<String>,
     /// Background of the search input field.
@@ -339,6 +337,46 @@ pub struct UiColorOverridesConfig {
     pub canvas_hidden_config_error_bg: Option<String>,
 }
 
+/// Configurable UI color token names for `[ui.colorschemes.<name>]`.
+pub const UI_COLOR_TOKEN_NAMES: [&str; 36] = [
+    "accent",
+    "panel",
+    "text",
+    "muted",
+    "canvas_bg",
+    "canvas_shadow",
+    "canvas_border",
+    "label_strong",
+    "input_bg",
+    "input_border",
+    "input_shadow",
+    "placeholder",
+    "scrollbar",
+    "item_bg",
+    "item_hover",
+    "item_selected_bg",
+    "item_selected_shadow",
+    "badge_bg",
+    "badge_border",
+    "badge_text",
+    "badge_icon_bg",
+    "chip_text",
+    "chip_bg",
+    "chip_border",
+    "config_error_bg",
+    "config_error_border",
+    "config_error_shadow",
+    "config_error_title",
+    "config_error_copy",
+    "canvas_hidden_input_bg",
+    "canvas_hidden_input_border",
+    "canvas_hidden_input_shadow",
+    "canvas_hidden_item_bg",
+    "canvas_hidden_item_hover",
+    "canvas_hidden_item_selected_bg",
+    "canvas_hidden_config_error_bg",
+];
+
 impl UiColorOverridesConfig {
     pub(super) fn missing_required_fields(&self) -> Vec<&'static str> {
         let mut missing = Vec::new();
@@ -352,13 +390,12 @@ impl UiColorOverridesConfig {
         }
 
         require!(accent);
-        require!(background);
         require!(panel);
         require!(text);
         require!(muted);
-        require!(shell_bg);
-        require!(shell_shadow);
-        require!(shell_border);
+        require!(canvas_bg);
+        require!(canvas_shadow);
+        require!(canvas_border);
         require!(label_strong);
         require!(input_bg);
         require!(input_border);
@@ -906,9 +943,6 @@ impl RankingConfig {
 
 impl Default for UiConfig {
     fn default() -> Self {
-        let mut colorschemes = HashMap::new();
-        colorschemes.insert("builtin_light".to_owned(), UiColorschemeConfig::default());
-        colorschemes.insert("builtin_dark".to_owned(), UiColorschemeConfig::default());
         Self {
             show_header: true,
             cycle_selection: false,
@@ -916,7 +950,7 @@ impl Default for UiConfig {
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
             scale: 1.0,
-            colorschemes,
+            colorschemes: HashMap::new(),
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),
             shortcuts: UiShortcutsConfig::default(),

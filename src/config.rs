@@ -483,13 +483,12 @@ mod tests {
 
             UiColorOverridesConfig {
                 accent: token!(),
-                background: token!(),
                 panel: token!(),
                 text: token!(),
                 muted: token!(),
-                shell_bg: token!(),
-                shell_shadow: token!(),
-                shell_border: token!(),
+                canvas_bg: token!(),
+                canvas_shadow: token!(),
+                canvas_border: token!(),
                 label_strong: token!(),
                 input_bg: token!(),
                 input_border: token!(),
@@ -556,8 +555,7 @@ mod tests {
                     shift: false,
                 })
             );
-            assert!(config.ui.colorschemes.contains_key("builtin_light"));
-            assert!(config.ui.colorschemes.contains_key("builtin_dark"));
+            assert!(config.ui.colorschemes.is_empty());
             assert_eq!(config.ui.font_sizes.label, 10);
             assert_eq!(config.ui.font_sizes.input, 30);
             assert_eq!(config.ui.font_sizes.title, 16);
@@ -670,61 +668,13 @@ mod tests {
         }
 
         #[test]
-        fn accepts_full_ui_color_overrides() {
+        fn accepts_custom_ui_color_overrides() {
             let config: Config = toml::from_str(
-                "[ui]\ncolorscheme = \"gruvbox\"\n[ui.colorschemes.builtin_light]\naccent = \"#111111\"\nshell_bg = \"linear-gradient(180deg, #111, #222)\"\nconfig_error_title = \"#fefefe\"\ncanvas_hidden_input_bg = \"#222222\"\n[ui.colorschemes.builtin_dark]\nitem_bg = \"rgba(1,2,3,0.4)\"\nbadge_icon_bg = \"rgba(0,0,0,0.9)\"\n[ui.colorschemes.gruvbox]\nbase = \"builtin_dark\"\npanel = \"#282828\"\ntext = \"#ebdbb2\"\n",
+                "[ui]\ncolorscheme = \"gruvbox\"\n[ui.colorschemes.gruvbox]\nbase = \"builtin_dark\"\npanel = \"#282828\"\ntext = \"#ebdbb2\"\n",
             )
-            .expect("custom ui color overrides should parse");
+            .expect("custom ui colorscheme should parse");
 
             assert_eq!(config.ui.colorscheme, "gruvbox");
-            assert_eq!(
-                config
-                    .ui
-                    .colorschemes
-                    .get("builtin_light")
-                    .and_then(|scheme| scheme.overrides.accent.as_deref()),
-                Some("#111111")
-            );
-            assert_eq!(
-                config
-                    .ui
-                    .colorschemes
-                    .get("builtin_light")
-                    .and_then(|scheme| scheme.overrides.shell_bg.as_deref()),
-                Some("linear-gradient(180deg, #111, #222)")
-            );
-            assert_eq!(
-                config
-                    .ui
-                    .colorschemes
-                    .get("builtin_light")
-                    .and_then(|scheme| scheme.overrides.config_error_title.as_deref()),
-                Some("#fefefe")
-            );
-            assert_eq!(
-                config
-                    .ui
-                    .colorschemes
-                    .get("builtin_light")
-                    .and_then(|scheme| scheme.overrides.canvas_hidden_input_bg.as_deref()),
-                Some("#222222")
-            );
-            assert_eq!(
-                config
-                    .ui
-                    .colorschemes
-                    .get("builtin_dark")
-                    .and_then(|scheme| scheme.overrides.item_bg.as_deref()),
-                Some("rgba(1,2,3,0.4)")
-            );
-            assert_eq!(
-                config
-                    .ui
-                    .colorschemes
-                    .get("builtin_dark")
-                    .and_then(|scheme| scheme.overrides.badge_icon_bg.as_deref()),
-                Some("rgba(0,0,0,0.9)")
-            );
             assert_eq!(
                 config.ui.colorschemes.get("gruvbox"),
                 Some(&UiColorschemeConfig {
@@ -739,11 +689,32 @@ mod tests {
         }
 
         #[test]
+        fn rejects_builtin_colorscheme_tables() {
+            let mut config = Config::default();
+            config.ui.colorschemes.insert(
+                "builtin_dark".to_owned(),
+                UiColorschemeConfig {
+                    base: None,
+                    overrides: UiColorOverridesConfig {
+                        accent: Some("#fabd2f".to_owned()),
+                        ..UiColorOverridesConfig::default()
+                    },
+                },
+            );
+
+            let error = validate_config(&config).expect_err("builtin override should fail");
+            assert!(error.to_string().contains(
+                "[ui.colorschemes.builtin_dark] is read-only; create a custom colorscheme with base = \"builtin_dark\""
+            ));
+        }
+
+        #[test]
         fn rejects_legacy_color_override_fields() {
             for raw in [
                 "[ui]\naccent = \"#333333\"\n",
                 "[ui.colors]\naccent = \"#111111\"\n",
                 "[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\n",
+                "[ui.colorschemes.gruvbox]\nbase = \"builtin_dark\"\nbackground = \"#000000\"\n",
             ] {
                 let error =
                     toml::from_str::<Config>(raw).expect_err("legacy color override should fail");
@@ -816,7 +787,7 @@ mod tests {
                     .to_string()
                     .contains("[ui.colorschemes.gruvbox] has no base")
             );
-            assert!(error.to_string().contains("background"));
+            assert!(error.to_string().contains("canvas_bg"));
         }
     }
 
@@ -989,12 +960,13 @@ mod tests {
 [ui]
 show_header = true
 cycle_selection = false
-colorscheme = "system"
+colorscheme = "gruvbox"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 
-[ui.colorschemes.builtin_light]
+[ui.colorschemes.gruvbox]
+base = "builtin_light"
 accent = "#c77b49"
-background = "#f3ede5"
+canvas_bg = "#f3ede5"
 panel = "#fffaf3"
 text = "#1f1a16"
 muted = "#756759"
@@ -1036,6 +1008,22 @@ icon_size = 46
                 toml::from_str(raw).expect("raw spans should accept a valid ui block");
             validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
                 .expect("validation should pass");
+        }
+
+        #[test]
+        fn readonly_builtin_colorscheme_errors_include_source_context() {
+            let raw = "[ui.colorschemes.builtin_dark]\naccent = \"#fabd2f\"\n";
+            let spans: RawConfigSpans =
+                toml::from_str(raw).expect("raw spans config should parse structurally");
+            let rendered =
+                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                    .expect_err("validation should fail")
+                    .to_string();
+
+            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("[ui.colorschemes.builtin_dark]"));
+            assert!(rendered.contains("is read-only"));
+            assert!(rendered.contains("base = \"builtin_dark\""));
         }
 
         #[test]

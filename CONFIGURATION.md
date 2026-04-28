@@ -226,19 +226,18 @@ Layout tokens injected into the embedded UI theme.
 
 ## [ui.colorschemes.<name>]
 
-Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin_dark`. Custom schemes can use any other name and are selected through `[ui].colorscheme`. For custom schemes, set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Built-in schemes can be partially overridden and must not set `base`. Most users only need `accent`, `background`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
+Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin_dark`, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
 
 | Option | Type | Description |
 | --- | --- | --- |
-| `base` | one of: `builtin_light`, `builtin_dark` | Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token. Built-in schemes must not set this. |
+| `base` | one of: `builtin_light`, `builtin_dark` | Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token. |
 | `accent` | string | Accent color used for highlighted details and emphasis. |
-| `background` | string | Broad page/background tone used by the built-in palette. |
 | `panel` | string | Panel surface color used by the built-in palette. |
 | `text` | string | Primary foreground text color. |
 | `muted` | string | Secondary or de-emphasized foreground text color. |
-| `shell_bg` | string | Background fill for the outer launcher shell. |
-| `shell_shadow` | string | Shadow for the outer launcher shell. |
-| `shell_border` | string | Border color for the outer launcher shell. |
+| `canvas_bg` | string | Background fill for the outer launcher canvas. |
+| `canvas_shadow` | string | Shadow for the outer launcher canvas. |
+| `canvas_border` | string | Border color for the outer launcher canvas. |
 | `label_strong` | string | Stronger label color used for prominent small text. |
 | `input_bg` | string | Background of the search input field. |
 | `input_border` | string | Border color of the search input field. |

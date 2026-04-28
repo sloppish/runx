@@ -1,21 +1,22 @@
 //! Embeds the static frontend templates into a themed HTML document.
 
-use crate::config::{UiColorOverridesConfig, UiConfig};
+use serde::Serialize;
+
+use crate::config::{UI_COLOR_TOKEN_NAMES, UiColorOverridesConfig, UiConfig};
 
 const HTML_TEMPLATE: &str = include_str!("../ui/index.html");
 const STYLE_TEMPLATE: &str = include_str!("../ui/styles.css");
 const SCRIPT_SOURCE: &str = include_str!("../ui/app.js");
 
-#[derive(Clone)]
+#[derive(Clone, Serialize)]
 struct ResolvedUiColors {
     accent: String,
-    background: String,
     panel: String,
     text: String,
     muted: String,
-    shell_bg: String,
-    shell_shadow: String,
-    shell_border: String,
+    canvas_bg: String,
+    canvas_shadow: String,
+    canvas_border: String,
     label_strong: String,
     input_bg: String,
     input_border: String,
@@ -51,13 +52,12 @@ impl ResolvedUiColors {
     fn builtin_light() -> Self {
         Self {
             accent: "#b57614".to_owned(),
-            background: "#fbf1c7".to_owned(),
             panel: "#f2e5bc".to_owned(),
             text: "#3c3836".to_owned(),
             muted: "#7c6f64".to_owned(),
-            shell_bg: "linear-gradient(180deg, #fbf1c7, #f2e5bc)".to_owned(),
-            shell_shadow: "inset 0 1px 0 rgba(255, 255, 255, 0.34)".to_owned(),
-            shell_border: "rgba(124, 111, 100, 0.18)".to_owned(),
+            canvas_bg: "linear-gradient(180deg, #fbf1c7, #f2e5bc)".to_owned(),
+            canvas_shadow: "inset 0 1px 0 rgba(255, 255, 255, 0.34)".to_owned(),
+            canvas_border: "rgba(124, 111, 100, 0.18)".to_owned(),
             label_strong: "#282828".to_owned(),
             input_bg:
                 "linear-gradient(180deg, rgba(242, 229, 188, 0.98), rgba(235, 219, 178, 0.98))"
@@ -111,13 +111,12 @@ impl ResolvedUiColors {
     fn builtin_dark() -> Self {
         Self {
             accent: "#d79921".to_owned(),
-            background: "#1d2021".to_owned(),
             panel: "#282828".to_owned(),
             text: "#ebdbb2".to_owned(),
             muted: "#a89984".to_owned(),
-            shell_bg: "linear-gradient(180deg, #1d2021, #282828)".to_owned(),
-            shell_shadow: "inset 0 1px 0 rgba(251, 241, 199, 0.04)".to_owned(),
-            shell_border: "rgba(168, 153, 132, 0.18)".to_owned(),
+            canvas_bg: "linear-gradient(180deg, #1d2021, #282828)".to_owned(),
+            canvas_shadow: "inset 0 1px 0 rgba(251, 241, 199, 0.04)".to_owned(),
+            canvas_border: "rgba(168, 153, 132, 0.18)".to_owned(),
             label_strong: "#fbf1c7".to_owned(),
             input_bg: "linear-gradient(180deg, rgba(50, 48, 47, 0.98), rgba(40, 40, 40, 0.98))"
                 .to_owned(),
@@ -176,13 +175,12 @@ impl ResolvedUiColors {
         }
 
         apply!(accent);
-        apply!(background);
         apply!(panel);
         apply!(text);
         apply!(muted);
-        apply!(shell_bg);
-        apply!(shell_shadow);
-        apply!(shell_border);
+        apply!(canvas_bg);
+        apply!(canvas_shadow);
+        apply!(canvas_border);
         apply!(label_strong);
         apply!(input_bg);
         apply!(input_border);
@@ -212,15 +210,34 @@ impl ResolvedUiColors {
         apply!(canvas_hidden_item_hover);
         apply!(canvas_hidden_item_selected_bg);
         apply!(canvas_hidden_config_error_bg);
+
         self
     }
 }
 
+/// Returns the built-in color token values used by the UI renderer.
+pub fn builtin_colorscheme_token_values(name: &str) -> Option<Vec<(&'static str, String)>> {
+    let colors = match name {
+        "builtin_light" => ResolvedUiColors::builtin_light(),
+        "builtin_dark" => ResolvedUiColors::builtin_dark(),
+        _ => return None,
+    };
+    let serialized = serde_json::to_value(colors).ok()?;
+    let values = serialized.as_object()?;
+    UI_COLOR_TOKEN_NAMES
+        .iter()
+        .map(|token| {
+            values
+                .get(*token)
+                .and_then(|value| value.as_str())
+                .map(|value| (*token, value.to_owned()))
+        })
+        .collect()
+}
+
 fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors, &'static str) {
-    let builtin_light = ResolvedUiColors::builtin_light()
-        .with_overrides(&theme.colorscheme_config("builtin_light").overrides);
-    let builtin_dark = ResolvedUiColors::builtin_dark()
-        .with_overrides(&theme.colorscheme_config("builtin_dark").overrides);
+    let builtin_light = ResolvedUiColors::builtin_light();
+    let builtin_dark = ResolvedUiColors::builtin_dark();
 
     match theme.colorscheme() {
         "system" => (builtin_light, builtin_dark, "light dark"),
@@ -316,13 +333,12 @@ pub fn theme_css(theme: &UiConfig) -> String {
 
     let replacements = [
         ("__LIGHT_ACCENT__", light.accent.as_str()),
-        ("__LIGHT_BACKGROUND__", light.background.as_str()),
         ("__LIGHT_PANEL__", light.panel.as_str()),
         ("__LIGHT_TEXT__", light.text.as_str()),
         ("__LIGHT_MUTED__", light.muted.as_str()),
-        ("__LIGHT_SHELL_BG__", light.shell_bg.as_str()),
-        ("__LIGHT_SHELL_SHADOW__", light.shell_shadow.as_str()),
-        ("__LIGHT_SHELL_BORDER__", light.shell_border.as_str()),
+        ("__LIGHT_CANVAS_BG__", light.canvas_bg.as_str()),
+        ("__LIGHT_CANVAS_SHADOW__", light.canvas_shadow.as_str()),
+        ("__LIGHT_CANVAS_BORDER__", light.canvas_border.as_str()),
         ("__LIGHT_LABEL_STRONG__", light.label_strong.as_str()),
         ("__LIGHT_INPUT_BG__", light.input_bg.as_str()),
         ("__LIGHT_INPUT_BORDER__", light.input_border.as_str()),
@@ -392,13 +408,12 @@ pub fn theme_css(theme: &UiConfig) -> String {
             light.canvas_hidden_config_error_bg.as_str(),
         ),
         ("__DARK_ACCENT__", dark.accent.as_str()),
-        ("__DARK_BACKGROUND__", dark.background.as_str()),
         ("__DARK_PANEL__", dark.panel.as_str()),
         ("__DARK_TEXT__", dark.text.as_str()),
         ("__DARK_MUTED__", dark.muted.as_str()),
-        ("__DARK_SHELL_BG__", dark.shell_bg.as_str()),
-        ("__DARK_SHELL_SHADOW__", dark.shell_shadow.as_str()),
-        ("__DARK_SHELL_BORDER__", dark.shell_border.as_str()),
+        ("__DARK_CANVAS_BG__", dark.canvas_bg.as_str()),
+        ("__DARK_CANVAS_SHADOW__", dark.canvas_shadow.as_str()),
+        ("__DARK_CANVAS_BORDER__", dark.canvas_border.as_str()),
         ("__DARK_LABEL_STRONG__", dark.label_strong.as_str()),
         ("__DARK_INPUT_BG__", dark.input_bg.as_str()),
         ("__DARK_INPUT_BORDER__", dark.input_border.as_str()),
@@ -548,18 +563,6 @@ mod tests {
         theme.canvas.background_opacity = 0.91;
         theme.canvas.chrome_opacity = 0.72;
         theme.entries.opacity = 0.64;
-        theme
-            .colorschemes
-            .get_mut("builtin_light")
-            .expect("builtin light scheme should exist")
-            .overrides
-            .shell_bg = Some("linear-gradient(180deg, #111111, #222222)".to_owned());
-        theme
-            .colorschemes
-            .get_mut("builtin_dark")
-            .expect("builtin dark scheme should exist")
-            .overrides
-            .badge_icon_bg = Some("rgba(4, 5, 6, 0.7)".to_owned());
         theme.font_sizes.input = 34;
         theme.font_sizes.title = 18;
         theme.font_sizes.config_error_body = 17;
@@ -578,14 +581,32 @@ mod tests {
         assert!(css.contains("opacity: var(--canvas-background-opacity);"));
         assert!(css.contains("opacity: var(--canvas-chrome-opacity);"));
         assert!(css.contains("--entry-opacity: 0.64;"));
-        assert!(css.contains("--shell-bg: linear-gradient(180deg, #111111, #222222);"));
-        assert!(css.contains("--badge-icon-bg: rgba(4, 5, 6, 0.7);"));
         assert!(css.contains("--input-font-size: 42.5px;"));
         assert!(css.contains("--title-font-size: 22.5px;"));
         assert!(css.contains("--config-error-body-font-size: 21.25px;"));
         assert!(css.contains("--section-gap: 20px;"));
         assert!(css.contains("--input-radius: 27.5px;"));
         assert!(css.contains("--badge-size: 65px;"));
+    }
+
+    #[test]
+    fn builtin_colorscheme_tables_do_not_override_builtin_palettes() {
+        let mut theme = UiConfig::default();
+        theme.colorschemes.insert(
+            "builtin_light".to_owned(),
+            UiColorschemeConfig {
+                base: None,
+                overrides: UiColorOverridesConfig {
+                    canvas_bg: Some("linear-gradient(180deg, #111111, #222222)".to_owned()),
+                    ..UiColorOverridesConfig::default()
+                },
+            },
+        );
+
+        let css = theme_css(&theme);
+
+        assert!(!css.contains("linear-gradient(180deg, #111111, #222222)"));
+        assert!(css.contains("--canvas-bg: linear-gradient(180deg, #fbf1c7, #f2e5bc);"));
     }
 
     #[test]
@@ -612,6 +633,28 @@ mod tests {
         assert!(css.contains("--accent: #fabd2f;"));
         assert!(css.contains("--panel: #282828;"));
         assert!(css.matches("--accent: #fabd2f;").count() >= 2);
+    }
+
+    #[test]
+    fn custom_canvas_bg_override_updates_visible_canvas_background() {
+        let mut theme = UiConfig {
+            colorscheme: "gruvbox".to_owned(),
+            ..UiConfig::default()
+        };
+        theme.colorschemes.insert(
+            "gruvbox".to_owned(),
+            UiColorschemeConfig {
+                base: Some("builtin_dark".to_owned()),
+                overrides: UiColorOverridesConfig {
+                    canvas_bg: Some("#0000ff".to_owned()),
+                    ..UiColorOverridesConfig::default()
+                },
+            },
+        );
+
+        let css = theme_css(&theme);
+
+        assert!(css.contains("--canvas-bg: #0000ff;"));
     }
 
     #[test]

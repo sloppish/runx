@@ -638,18 +638,19 @@ pub(super) fn validate_config_with_spans(
 
     for (name, scheme) in &spans.ui.colorschemes {
         if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
-            if let Some(base) = &scheme.base {
-                let message = format!(
-                    "[ui.colorschemes.{name}].base is not allowed for built-in colorschemes"
-                );
-                return Err(anyhow!(render_config_validation_error(
-                    config_path,
-                    raw,
-                    &message,
-                    base.span(),
-                )));
-            }
-            continue;
+            let message = readonly_builtin_colorscheme_message(name);
+            let span = scheme
+                .base
+                .as_ref()
+                .map(|base| base.span())
+                .or_else(|| colorscheme_table_header_span(raw, name))
+                .unwrap_or(0..0);
+            return Err(anyhow!(render_config_validation_error(
+                config_path,
+                raw,
+                &message,
+                span,
+            )));
         }
 
         if let Some(base) = &scheme.base
@@ -883,10 +884,7 @@ fn validate_ui_colorscheme_selector(config: &Config) -> Result<()> {
 fn validate_ui_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>) -> Result<()> {
     for (name, scheme) in colorschemes {
         if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
-            if scheme.base.is_some() {
-                bail!("[ui.colorschemes.{name}].base is not allowed for built-in colorschemes");
-            }
-            continue;
+            bail!("{}", readonly_builtin_colorscheme_message(name));
         }
 
         if let Some(base) = &scheme.base
@@ -909,6 +907,17 @@ fn validate_ui_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>)
         }
     }
     Ok(())
+}
+
+fn readonly_builtin_colorscheme_message(name: &str) -> String {
+    format!(
+        "[ui.colorschemes.{name}] is read-only; create a custom colorscheme with base = \"{name}\" to override it"
+    )
+}
+
+fn colorscheme_table_header_span(raw: &str, name: &str) -> Option<std::ops::Range<usize>> {
+    let header = format!("[ui.colorschemes.{name}]");
+    raw.find(&header).map(|start| start..start + header.len())
 }
 
 fn validate_ui_colorscheme_name_impl<'a>(

@@ -80,9 +80,7 @@ cycle_selection = false
 colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
 scale = 1.0
-# Built-in light/dark scheme overrides and custom schemes live under:
-# [ui.colorschemes.builtin_light]
-# [ui.colorschemes.builtin_dark]
+# Custom schemes live under:
 # [ui.colorschemes.gruvbox]
 # base = "builtin_dark"
 

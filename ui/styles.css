@@ -1,6 +1,5 @@
 :root {
   --accent: __LIGHT_ACCENT__;
-  --bg: __LIGHT_BACKGROUND__;
   --panel: __LIGHT_PANEL__;
   --text: __LIGHT_TEXT__;
   --muted: __LIGHT_MUTED__;
@@ -33,9 +32,9 @@
   --badge-size: __BADGE_SIZE__;
   --badge-radius: __BADGE_RADIUS__;
   --icon-size: __ICON_SIZE__;
-  --shell-bg: __LIGHT_SHELL_BG__;
-  --shell-shadow: __LIGHT_SHELL_SHADOW__;
-  --shell-border: __LIGHT_SHELL_BORDER__;
+  --canvas-bg: __LIGHT_CANVAS_BG__;
+  --canvas-shadow: __LIGHT_CANVAS_SHADOW__;
+  --canvas-border: __LIGHT_CANVAS_BORDER__;
   --label-strong: __LIGHT_LABEL_STRONG__;
   --input-bg: __LIGHT_INPUT_BG__;
   --input-border: __LIGHT_INPUT_BORDER__;
@@ -71,13 +70,12 @@
 @media (prefers-color-scheme: dark) {
   :root {
     --accent: __DARK_ACCENT__;
-    --bg: __DARK_BACKGROUND__;
     --panel: __DARK_PANEL__;
     --text: __DARK_TEXT__;
     --muted: __DARK_MUTED__;
-    --shell-bg: __DARK_SHELL_BG__;
-    --shell-shadow: __DARK_SHELL_SHADOW__;
-    --shell-border: __DARK_SHELL_BORDER__;
+    --canvas-bg: __DARK_CANVAS_BG__;
+    --canvas-shadow: __DARK_CANVAS_SHADOW__;
+    --canvas-border: __DARK_CANVAS_BORDER__;
     --label-strong: __DARK_LABEL_STRONG__;
     --input-bg: __DARK_INPUT_BG__;
     --input-border: __DARK_INPUT_BORDER__;
@@ -149,7 +147,7 @@ body {
   inset: 0;
   display: var(--canvas-display);
   border-radius: var(--canvas-radius);
-  background: var(--shell-bg);
+  background: var(--canvas-bg);
   opacity: var(--canvas-background-opacity);
   pointer-events: none;
   z-index: -1;
@@ -161,8 +159,8 @@ body {
   inset: 0;
   display: var(--canvas-display);
   border-radius: var(--canvas-radius);
-  box-shadow: var(--shell-shadow);
-  border: 1px solid var(--shell-border);
+  box-shadow: var(--canvas-shadow);
+  border: 1px solid var(--canvas-border);
   opacity: var(--canvas-chrome-opacity);
   pointer-events: none;
   z-index: -1;
