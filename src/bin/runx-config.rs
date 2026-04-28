@@ -214,10 +214,18 @@ impl ConfigEditor {
 
     fn save(&mut self) -> Result<()> {
         let raw = self.doc.to_string();
+        self.save_raw(raw)
+    }
+
+    fn save_raw(&mut self, raw: String) -> Result<()> {
         let config = validate_config_toml(&self.path, &raw)?;
+        let doc = raw
+            .parse::<Document>()
+            .with_context(|| format!("failed to parse {}", self.path.display()))?;
         fs::write(&self.path, &raw)
             .with_context(|| format!("failed to write {}", self.path.display()))?;
         self.raw = raw;
+        self.doc = doc;
         self.config = config;
         Ok(())
     }
@@ -2400,11 +2408,12 @@ fn run_external_editor(app: &mut App, request: ExternalEditorRequest) -> Result<
 
             let initial = colorscheme_snippet(&app.editor.raw, &name)?;
             let edited = edit_in_external_editor(&initial)?;
-            let table = colorscheme_table_from_snippet(&edited, &name)?;
+            colorscheme_table_from_snippet(&edited, &name)?;
             app.editor
                 .reload()
                 .context("failed to reload config.toml before saving colorscheme")?;
-            app.apply(|doc| set_colorscheme_table(doc, &name, table))?;
+            let raw = replace_colorscheme_snippet(&app.editor.raw, &name, &edited)?;
+            app.editor.save_raw(raw)?;
             app.success(format!("Saved colorscheme `{name}`"));
         }
     }
@@ -2790,35 +2799,78 @@ struct TableHeader {
     start: usize,
 }
 
+#[derive(Debug, Clone)]
+struct TomlTableSection {
+    range: std::ops::Range<usize>,
+}
+
+impl TomlTableSection {
+    fn find(raw: &str, target_path: &[&str]) -> Result<Option<Self>> {
+        let doc = raw
+            .parse::<SpannedDocument<String>>()
+            .context("failed to parse config while locating TOML table section")?;
+        let mut headers = Vec::new();
+        collect_table_headers(doc.as_table(), &mut Vec::new(), &mut headers);
+        headers.sort_unstable_by_key(|header| header.start);
+
+        let target_path = target_path
+            .iter()
+            .map(|segment| (*segment).to_owned())
+            .collect::<Vec<_>>();
+        let Some(target) = headers.iter().find(|header| header.path == target_path) else {
+            return Ok(None);
+        };
+
+        let start = line_start(raw, target.start);
+        let end = headers
+            .iter()
+            .map(|header| line_start(raw, header.start))
+            .filter(|header_start| *header_start > start)
+            .min()
+            .unwrap_or(raw.len());
+        Ok(Some(Self { range: start..end }))
+    }
+
+    fn extract(&self, raw: &str) -> String {
+        raw[self.range.clone()].to_owned()
+    }
+
+    fn replace(&self, raw: &str, replacement: &str) -> String {
+        let mut replacement = replacement.to_owned();
+        if !replacement.ends_with('\n') {
+            replacement.push('\n');
+        }
+
+        let mut next = String::with_capacity(
+            raw.len() - (self.range.end - self.range.start) + replacement.len(),
+        );
+        next.push_str(&raw[..self.range.start]);
+        next.push_str(&replacement);
+        next.push_str(&raw[self.range.end..]);
+        next
+    }
+}
+
 fn colorscheme_snippet(raw: &str, name: &str) -> Result<String> {
-    let Some(range) = colorscheme_source_range(raw, name)? else {
+    let path = colorscheme_table_path(name);
+    let Some(section) = TomlTableSection::find(raw, &path)? else {
         return Ok(format!("[ui.colorschemes.{}]\n", table_header_key(name)));
     };
 
-    Ok(raw[range].to_owned())
+    Ok(section.extract(raw))
 }
 
-fn colorscheme_source_range(raw: &str, name: &str) -> Result<Option<std::ops::Range<usize>>> {
-    let doc = raw
-        .parse::<SpannedDocument<String>>()
-        .context("failed to parse config while locating colorscheme section")?;
-    let mut headers = Vec::new();
-    collect_table_headers(doc.as_table(), &mut Vec::new(), &mut headers);
-    headers.sort_unstable_by_key(|header| header.start);
-
-    let target_path = vec!["ui".to_owned(), "colorschemes".to_owned(), name.to_owned()];
-    let Some(target) = headers.iter().find(|header| header.path == target_path) else {
-        return Ok(None);
+fn replace_colorscheme_snippet(raw: &str, name: &str, snippet: &str) -> Result<String> {
+    let path = colorscheme_table_path(name);
+    let Some(section) = TomlTableSection::find(raw, &path)? else {
+        bail!("colorscheme `{name}` no longer exists");
     };
 
-    let start = line_start(raw, target.start);
-    let end = headers
-        .iter()
-        .map(|header| line_start(raw, header.start))
-        .filter(|header_start| *header_start > start)
-        .min()
-        .unwrap_or(raw.len());
-    Ok(Some(start..end))
+    Ok(section.replace(raw, snippet))
+}
+
+fn colorscheme_table_path(name: &str) -> [&str; 3] {
+    ["ui", "colorschemes", name]
 }
 
 fn collect_table_headers(
@@ -3010,6 +3062,33 @@ width_fraction = 0.6
     }
 
     #[test]
+    fn replacing_colorscheme_snippet_does_not_duplicate_trailing_comments() {
+        let raw = r##"[ui]
+colorscheme = "gruvbox"
+
+[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+input_bg = "linear-gradient(180deg, #111111, #222222)"
+# item_hover = "rgba(235, 219, 178, 0.085)"
+# item_selected_bg = "linear-gradient(135deg, rgba(215, 153, 33, 0.24), rgba(60, 56, 54, 0.98))"
+
+[window]
+width_fraction = 0.6
+"##;
+        let snippet =
+            colorscheme_snippet(raw, "gruvbox").expect("colorscheme snippet should render");
+
+        let once =
+            replace_colorscheme_snippet(raw, "gruvbox", &snippet).expect("snippet should replace");
+        let twice = replace_colorscheme_snippet(&once, "gruvbox", &snippet)
+            .expect("snippet should replace again");
+
+        assert_eq!(once, twice);
+        assert_eq!(twice.matches("# item_hover =").count(), 1);
+        assert_eq!(twice.matches("# item_selected_bg =").count(), 1);
+    }
+
+    #[test]
     fn colorscheme_table_roundtrip_preserves_trailing_comments() {
         let raw = r##"[ui.colorschemes.gruvbox]
 base = "builtin_dark"
@@ -3024,6 +3103,23 @@ base = "builtin_dark"
 
         assert!(saved.contains("# keep me"));
         assert!(saved.contains("# accent = \"#fabd2f\""));
+    }
+
+    #[test]
+    fn colorscheme_table_roundtrip_does_not_duplicate_trailing_comments() {
+        let raw = r##"[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+input_bg = "linear-gradient(180deg, #111111, #222222)"
+# item_hover = "rgba(235, 219, 178, 0.085)"
+# item_selected_bg = "linear-gradient(135deg, rgba(215, 153, 33, 0.24), rgba(60, 56, 54, 0.98))"
+"##;
+        let table = colorscheme_table_from_snippet(raw, "gruvbox").expect("snippet should parse");
+        let mut doc = Document::new();
+        set_colorscheme_table(&mut doc, "gruvbox", table).expect("table should insert");
+        let saved = doc.to_string();
+
+        assert_eq!(saved.matches("# item_hover =").count(), 1);
+        assert_eq!(saved.matches("# item_selected_bg =").count(), 1);
     }
 
     #[test]
