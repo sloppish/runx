@@ -796,7 +796,7 @@
         max_width: float("window.max_width"),
         min_height: float("window.min_height"),
         max_height: float("window.max_height"),
-        hide_on_blur: bool("window.hide_on_blur"),
+        hide_when_inactive: bool("window.hide_when_inactive"),
         always_on_top: bool("window.always_on_top"),
         show_on: text("window.show_on"),
       },

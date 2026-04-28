@@ -285,7 +285,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
             max_width: config.window.max_width,
             min_height: config.window.min_height,
             max_height: config.window.max_height,
-            hide_on_blur: config.window.hide_on_blur,
+            hide_when_inactive: config.window.hide_when_inactive,
             always_on_top: config.window.always_on_top,
             show_on: match config.window.show_on {
                 WindowDisplayTarget::Primary => "primary",
@@ -586,8 +586,8 @@ fn apply_settings_draft_to_raw(
     set_item(
         &mut doc,
         &["window"],
-        "hide_on_blur",
-        value(draft.window.hide_on_blur),
+        "hide_when_inactive",
+        value(draft.window.hide_when_inactive),
     )?;
     set_item(
         &mut doc,

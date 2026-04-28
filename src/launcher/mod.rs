@@ -208,7 +208,7 @@ impl Launcher {
             WindowEvent::Focused(false)
                 if self
                     .windows
-                    .should_hide_on_blur(&self.loaded.config.window, &self.state) =>
+                    .should_hide_when_inactive(&self.loaded.config.window, &self.state) =>
             {
                 self.hide_without_focus_restore()?;
             }

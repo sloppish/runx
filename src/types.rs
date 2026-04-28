@@ -190,7 +190,7 @@ pub struct WindowSettingsDraft {
     pub max_width: f64,
     pub min_height: f64,
     pub max_height: f64,
-    pub hide_on_blur: bool,
+    pub hide_when_inactive: bool,
     pub always_on_top: bool,
     pub show_on: String,
 }

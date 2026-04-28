@@ -18,7 +18,7 @@ min_width = 700
 max_width = 980
 min_height = 420
 max_height = 720
-hide_on_blur = true
+hide_when_inactive = true
 always_on_top = true
 show_on = "cursor"
 

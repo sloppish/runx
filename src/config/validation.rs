@@ -82,7 +82,7 @@ struct RawWindowSpans {
     max_width: Option<Spanned<f64>>,
     min_height: Option<Spanned<f64>>,
     max_height: Option<Spanned<f64>>,
-    hide_on_blur: bool,
+    hide_when_inactive: bool,
     always_on_top: bool,
     show_on: WindowDisplayTarget,
 }

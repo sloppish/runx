@@ -36,7 +36,7 @@ Launcher window behavior and geometry.
 | `max_width` | number | `980` | Maximum launcher width in logical pixels. |
 | `min_height` | number | `420` | Minimum launcher height in logical pixels. |
 | `max_height` | number | `720` | Maximum launcher height in logical pixels. |
-| `hide_on_blur` | boolean | `true` | Hide the launcher automatically when it loses focus. |
+| `hide_when_inactive` | boolean | `true` | Hide the launcher automatically when it becomes inactive. |
 | `always_on_top` | boolean | `true` | Keep the launcher above normal windows while it is visible. |
 | `show_on` | one of: `primary`, `cursor` | `"cursor"` | Choose which display Runx appears on when it opens. |
 
@@ -267,4 +267,3 @@ Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin
 | `canvas_hidden_item_hover` | string | Result-row hover background when the outer canvas is disabled. |
 | `canvas_hidden_item_selected_bg` | string | Selected result-row background when the outer canvas is disabled. |
 | `canvas_hidden_config_error_bg` | string | Config-error panel background when the outer canvas is disabled. |
-

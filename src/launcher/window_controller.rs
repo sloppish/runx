@@ -79,9 +79,13 @@ impl WindowController {
         state.note_window_focused();
     }
 
-    /// Returns whether a blur event should auto-hide the launcher window.
-    pub(crate) fn should_hide_on_blur(&self, config: &WindowConfig, state: &AppState) -> bool {
-        config.hide_on_blur
+    /// Returns whether an inactivity event should auto-hide the launcher window.
+    pub(crate) fn should_hide_when_inactive(
+        &self,
+        config: &WindowConfig,
+        state: &AppState,
+    ) -> bool {
+        config.hide_when_inactive
             && state.is_visible()
             && self
                 .shown_at

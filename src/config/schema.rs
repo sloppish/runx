@@ -60,8 +60,8 @@ pub struct WindowConfig {
     pub min_height: f64,
     /// Maximum launcher height in logical pixels.
     pub max_height: f64,
-    /// Hide the launcher automatically when it loses focus.
-    pub hide_on_blur: bool,
+    /// Hide the launcher automatically when it becomes inactive.
+    pub hide_when_inactive: bool,
     /// Keep the launcher above normal windows while it is visible.
     pub always_on_top: bool,
     /// Choose which display Runx appears on when it opens.
@@ -732,7 +732,7 @@ impl Default for WindowConfig {
             max_width: 980.0,
             min_height: 420.0,
             max_height: 720.0,
-            hide_on_blur: true,
+            hide_when_inactive: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Cursor,
         }

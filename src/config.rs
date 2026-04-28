@@ -185,6 +185,16 @@ mod tests {
         }
 
         #[test]
+        fn accepts_hide_when_inactive() {
+            let config = validate_config_toml(
+                Path::new("/tmp/runx-test-config.toml"),
+                "[window]\nhide_when_inactive = false\n",
+            )
+            .expect("hide_when_inactive should parse");
+            assert!(!config.window.hide_when_inactive);
+        }
+
+        #[test]
         fn resolves_window_size_with_clamps() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert_eq!(config.window.resolve_width(1600.0), 700.0);

@@ -304,6 +304,7 @@ textarea::placeholder {
 }
 
 .toggle.inline {
+  align-self: end;
   height: 34px;
 }
 
