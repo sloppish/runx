@@ -1158,8 +1158,9 @@ enabled = true
         draft.ui.canvas.show = false;
         draft.providers.disabled = vec!["settings".to_owned()];
 
-        let saved = apply_settings_draft_to_raw(Path::new("/tmp/runx-config.toml"), raw, &draft)
-            .expect("draft should save");
+        let saved =
+            apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
+                .expect("draft should save");
 
         assert!(saved.contains("# keep header"));
         assert!(saved.contains("[plugin.sample]"));
@@ -1226,8 +1227,9 @@ terminal_app = "Alacritty"
             ]),
         });
 
-        let saved = apply_settings_draft_to_raw(Path::new("/tmp/runx-config.toml"), raw, &draft)
-            .expect("complete draft should save");
+        let saved =
+            apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
+                .expect("complete draft should save");
 
         assert!(saved.contains("[[display_overrides]]"));
         assert!(saved.contains("vendor = 610"));

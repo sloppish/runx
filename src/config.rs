@@ -245,7 +245,7 @@ mod tests {
         #[test]
         fn rejects_display_override_without_matcher() {
             let raw = "[[display_overrides]]\nwidth_fraction = 0.46\n";
-            let error = validate_config_toml(Path::new("/tmp/runx-config.toml"), raw)
+            let error = validate_config_toml(Path::new("/tmp/runx-test-config.toml"), raw)
                 .expect_err("display override without matcher should fail");
 
             assert!(error.to_string().contains(
@@ -256,7 +256,7 @@ mod tests {
         #[test]
         fn rejects_display_override_without_override_values() {
             let raw = "[[display_overrides]]\nbuilt_in = true\n";
-            let error = validate_config_toml(Path::new("/tmp/runx-config.toml"), raw)
+            let error = validate_config_toml(Path::new("/tmp/runx-test-config.toml"), raw)
                 .expect_err("display override without values should fail");
 
             assert!(
@@ -269,7 +269,7 @@ mod tests {
         #[test]
         fn rejects_display_override_vendor_without_model() {
             let raw = "[[display_overrides]]\nvendor = 610\nwidth_fraction = 0.46\n";
-            let error = validate_config_toml(Path::new("/tmp/runx-config.toml"), raw)
+            let error = validate_config_toml(Path::new("/tmp/runx-test-config.toml"), raw)
                 .expect_err("display override vendor without model should fail");
 
             assert!(
@@ -799,9 +799,10 @@ mod tests {
         fn toml_parse_errors_include_source_context() {
             let raw = "[[ranking.score_rules]]\nboost = \"oops\"\n";
             let error = toml::from_str::<Config>(raw).expect_err("config should fail to parse");
-            let rendered = render_toml_parse_error(Path::new("/tmp/runx-config.toml"), raw, &error);
+            let rendered =
+                render_toml_parse_error(Path::new("/tmp/runx-test-config.toml"), raw, &error);
 
-            assert!(rendered.contains("failed to parse /tmp/runx-config.toml"));
+            assert!(rendered.contains("failed to parse /tmp/runx-test-config.toml"));
             assert!(rendered.contains("boost = \"oops\""));
             assert!(rendered.contains("expected i64"));
         }
@@ -812,11 +813,11 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
-            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
             assert!(rendered.contains("provider_order = [\"windows\", \"asdfasdf\"]"));
             assert!(rendered.contains("unknown provider `asdfasdf`"));
         }
@@ -835,11 +836,11 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
-            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
             assert!(rendered.contains("chrome_opacity = 1.2"));
             assert!(rendered.contains("[ui.canvas].chrome_opacity must be between 0.0 and 1.0"));
         }
@@ -850,11 +851,11 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
-            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
             assert!(rendered.contains("background_opacity = 1.2"));
             assert!(
                 rendered.contains("[ui.canvas].background_opacity must be between 0.0 and 1.0",)
@@ -867,11 +868,11 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
-            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
             assert!(rendered.contains("opacity = -0.1"));
             assert!(rendered.contains("[ui.entries].opacity must be between 0.0 and 1.0"));
         }
@@ -882,7 +883,7 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
@@ -899,7 +900,7 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
@@ -913,7 +914,7 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
@@ -927,7 +928,7 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
@@ -945,11 +946,11 @@ mod tests {
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
-            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
             assert!(rendered.contains("colorscheme = \"gruvbox\""));
             assert!(rendered.contains("[ui].colorscheme must be `system`"));
         }
@@ -1006,7 +1007,7 @@ icon_size = 46
 "##;
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans should accept a valid ui block");
-            validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+            validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                 .expect("validation should pass");
         }
 
@@ -1016,11 +1017,11 @@ icon_size = 46
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-config.toml"), raw, &spans)
+                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                     .expect_err("validation should fail")
                     .to_string();
 
-            assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
+            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
             assert!(rendered.contains("[ui.colorschemes.builtin_dark]"));
             assert!(rendered.contains("is read-only"));
             assert!(rendered.contains("base = \"builtin_dark\""));

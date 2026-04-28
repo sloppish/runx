@@ -22,7 +22,7 @@ hide_on_blur = true
 always_on_top = true
 show_on = "cursor"
 
-# Optional per-display size overrides captured from `runx-config`.
+# Optional per-display size overrides.
 # Matching prefers serial number, then vendor/model, then built-in/external.
 # Example:
 # [[display_overrides]]
