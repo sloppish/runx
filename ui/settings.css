@@ -139,6 +139,11 @@ h2 {
   max-width: 520px;
 }
 
+.raw-path {
+  margin-top: 0;
+  max-width: none;
+}
+
 .actions {
   display: flex;
   gap: 8px;
@@ -215,12 +220,29 @@ h2 {
   display: block;
 }
 
+.plugins-pane.active {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 14px;
+  min-height: 100%;
+}
+
 .section {
   border: 1px solid var(--border);
   border-radius: var(--radius);
   background: var(--surface);
   padding: 16px;
   margin-bottom: 14px;
+}
+
+.plugins-pane .section {
+  margin-bottom: 0;
+}
+
+.plugins-toml-section {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  min-height: 0;
 }
 
 .grid {
@@ -424,17 +446,19 @@ textarea::placeholder {
 
 .short-textarea,
 .code-textarea {
-  resize: vertical;
   padding: 10px;
   line-height: 1.4;
 }
 
 .short-textarea {
+  resize: none;
   min-height: 98px;
 }
 
 .code-textarea {
-  min-height: 260px;
+  min-height: 0;
+  height: 100%;
+  resize: none;
   font-family:
     "SF Mono",
     "JetBrains Mono",
@@ -459,10 +483,17 @@ textarea::placeholder {
   height: 100%;
 }
 
+.raw-pane.active {
+  display: grid;
+  grid-template-rows: auto minmax(0, 1fr);
+  gap: 10px;
+}
+
 #raw-toml {
   display: block;
   width: 100%;
-  height: 100%;
+  height: auto;
+  min-height: 0;
   padding: 14px;
   resize: none;
   line-height: 1.45;

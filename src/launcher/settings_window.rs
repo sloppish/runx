@@ -58,7 +58,7 @@ impl SettingsWindow {
             .with_title(SETTINGS_WINDOW_TITLE)
             .with_visible(false)
             .with_resizable(true)
-            .with_inner_size(LogicalSize::new(1020.0, 720.0))
+            .with_inner_size(LogicalSize::new(1020.0, 922.0))
             .build(event_loop)
             .context("failed to build the settings window")?;
 
