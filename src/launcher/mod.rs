@@ -441,7 +441,7 @@ impl Launcher {
                     return Ok(());
                 }
                 self.refresh_settings_window()?;
-                self.set_settings_status("Saved", false)?;
+                self.set_settings_status("", false)?;
             }
             crate::types::SettingsCommand::SaveRaw { raw } => {
                 if let Err(error) = settings_window::save_raw(&raw)
@@ -451,7 +451,7 @@ impl Launcher {
                     return Ok(());
                 }
                 self.refresh_settings_window()?;
-                self.set_settings_status("Saved", false)?;
+                self.set_settings_status("", false)?;
             }
             crate::types::SettingsCommand::ClientError { message } => {
                 self.log_outcome(message.clone(), true);
