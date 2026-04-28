@@ -242,11 +242,6 @@ fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors
 
 /// Returns the full HTML document served into the embedded webview.
 pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64) -> String {
-    let shell_class = if theme.canvas.show {
-        "shell"
-    } else {
-        "shell canvas-hidden"
-    };
     let cycle_selection_value = if theme.cycle_selection {
         "true"
     } else {
@@ -254,7 +249,7 @@ pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64) -> Strin
     };
 
     HTML_TEMPLATE
-        .replace("__SHELL_CLASS__", shell_class)
+        .replace("__SHELL_CLASS__", shell_class(theme))
         .replace("__RUNX_CYCLE_SELECTION_VALUE__", cycle_selection_value)
         .replace(
             "__RUNX_FOCUS_WINDOW_SHORTCUT_VALUE__",
@@ -268,6 +263,15 @@ pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64) -> Strin
         .replace("__RUNX_LAYOUT_VERSION_VALUE__", &layout_version.to_string())
         .replace("__RUNX_STYLE__", &theme_css(theme))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
+}
+
+/// Returns the root shell classes implied by the current canvas mode.
+pub fn shell_class(theme: &UiConfig) -> &'static str {
+    if theme.canvas.show {
+        "shell"
+    } else {
+        "shell canvas-hidden"
+    }
 }
 
 /// Returns the JSON value consumed by the frontend shortcut matcher.

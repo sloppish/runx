@@ -12,7 +12,7 @@
   --canvas-opacity: __CANVAS_OPACITY__;
   --canvas-background-opacity: __CANVAS_BACKGROUND_OPACITY__;
   --entry-opacity: __ENTRY_OPACITY__;
-  --entry-base-bg: transparent;
+  --entry-base-bg: var(--panel);
   --label-font-size: __LABEL_FONT_SIZE__;
   --input-font-size: __INPUT_FONT_SIZE__;
   --title-font-size: __TITLE_FONT_SIZE__;
@@ -175,7 +175,6 @@ body {
   --item-bg: var(--canvas-hidden-item-bg);
   --item-hover: var(--canvas-hidden-item-hover);
   --item-selected-bg: var(--canvas-hidden-item-selected-bg);
-  --entry-base-bg: var(--panel);
 }
 
 .shell.canvas-hidden .config-error {

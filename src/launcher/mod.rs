@@ -614,24 +614,7 @@ impl Launcher {
         theme: &config::UiConfig,
         layout_version: u64,
     ) -> Result<()> {
-        let css = ui::theme_css(theme);
-        let cycle_selection = if theme.cycle_selection {
-            "true"
-        } else {
-            "false"
-        };
-        let focus_window_shortcut = ui::shortcut_json(&theme.shortcuts.focus_window);
-        let activate_all_windows_shortcut =
-            ui::shortcut_json(&theme.shortcuts.activate_all_windows);
-        let script = format!(
-            "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; window.__RUNX_VISIBLE_ROWS__ = {}; window.__RUNX_LAYOUT_VERSION__ = {}; if (window.__RUNX_REQUEST_PREFERRED_HEIGHT) window.__RUNX_REQUEST_PREFERRED_HEIGHT(); }})()",
-            serde_json::to_string(&css)?,
-            cycle_selection,
-            focus_window_shortcut,
-            activate_all_windows_shortcut,
-            window.visible_rows,
-            layout_version
-        );
+        let script = frontend_config_script(window, theme, layout_version)?;
         self.webview
             .evaluate_script(&script)
             .context("failed to apply the reloaded UI theme")
@@ -655,6 +638,32 @@ impl Launcher {
         ));
         Ok(())
     }
+}
+
+fn frontend_config_script(
+    window: &config::WindowConfig,
+    theme: &config::UiConfig,
+    layout_version: u64,
+) -> Result<String> {
+    let css = ui::theme_css(theme);
+    let shell_class = ui::shell_class(theme);
+    let cycle_selection = if theme.cycle_selection {
+        "true"
+    } else {
+        "false"
+    };
+    let focus_window_shortcut = ui::shortcut_json(&theme.shortcuts.focus_window);
+    let activate_all_windows_shortcut = ui::shortcut_json(&theme.shortcuts.activate_all_windows);
+    Ok(format!(
+        "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; const shell = document.querySelector('main'); if (shell) shell.className = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; window.__RUNX_VISIBLE_ROWS__ = {}; window.__RUNX_LAYOUT_VERSION__ = {}; if (window.__RUNX_REQUEST_PREFERRED_HEIGHT) window.__RUNX_REQUEST_PREFERRED_HEIGHT(); }})()",
+        serde_json::to_string(&css)?,
+        serde_json::to_string(shell_class)?,
+        cycle_selection,
+        focus_window_shortcut,
+        activate_all_windows_shortcut,
+        window.visible_rows,
+        layout_version
+    ))
 }
 
 fn clear_recovered_config_error(state: &mut AppState, config_reload_error: &mut Option<String>) {
@@ -703,8 +712,8 @@ fn build_window(
 
 #[cfg(test)]
 mod tests {
-    use super::clear_recovered_config_error;
-    use crate::state::AppState;
+    use super::{clear_recovered_config_error, frontend_config_script};
+    use crate::{config, state::AppState};
 
     #[test]
     fn successful_reload_clears_latched_config_error_state() {
@@ -719,5 +728,17 @@ mod tests {
 
         assert!(config_reload_error.is_none());
         assert!(state.session().view_state().config_error.is_none());
+    }
+
+    #[test]
+    fn reloaded_frontend_config_updates_canvas_shell_class() {
+        let window = config::WindowConfig::default();
+        let mut theme = config::UiConfig::default();
+        theme.canvas.show = false;
+
+        let script = frontend_config_script(&window, &theme, 3).expect("script should render");
+
+        assert!(script.contains(r#"shell.className = "shell canvas-hidden""#));
+        assert!(script.contains("window.__RUNX_LAYOUT_VERSION__ = 3"));
     }
 }
