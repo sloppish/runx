@@ -386,6 +386,10 @@ textarea::placeholder {
   font-size: 12px;
 }
 
+.shortcut-row .button.compact {
+  height: 34px;
+}
+
 .collection {
   display: grid;
   gap: 12px;
