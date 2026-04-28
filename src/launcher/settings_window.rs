@@ -39,6 +39,7 @@ use crate::{
 const HTML_TEMPLATE: &str = include_str!("../../ui/settings.html");
 const STYLE_SOURCE: &str = include_str!("../../ui/settings.css");
 const SCRIPT_SOURCE: &str = include_str!("../../ui/settings.js");
+pub(crate) const SETTINGS_WINDOW_TITLE: &str = "Runx Settings";
 
 /// Owns the native settings window and its webview for as long as it is open.
 pub(crate) struct SettingsWindow {
@@ -54,7 +55,7 @@ impl SettingsWindow {
         let payload = settings_payload()?;
         let html = settings_html(&payload)?;
         let window = WindowBuilder::new()
-            .with_title("Runx Settings")
+            .with_title(SETTINGS_WINDOW_TITLE)
             .with_visible(false)
             .with_resizable(true)
             .with_inner_size(LogicalSize::new(1020.0, 720.0))

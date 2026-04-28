@@ -53,6 +53,9 @@ struct AccessibilityWindowRecord {
     focusable: bool,
 }
 
+const RUNX_OWNER: &str = "Runx";
+const RUNX_LAUNCHER_TITLE: &str = "Runx";
+
 impl WindowsProvider {
     /// Creates a window provider backed by the shared icon cache.
     pub fn new(icons: Arc<IconCache>, include_other_desktops: bool) -> Self {
@@ -214,7 +217,7 @@ fn read_window_entries(list_options: u32, fallback_empty_titles: bool) -> Vec<Wi
 
         if matches!(
             owner.as_str(),
-            "Window Server" | "Dock" | "Control Centre" | "Control Center" | "Runx"
+            "Window Server" | "Dock" | "Control Centre" | "Control Center"
         ) {
             continue;
         }
@@ -291,10 +294,17 @@ fn apply_accessibility_titles(
             }
             window.title.clone_from(&window.owner);
         }
+        if is_runx_launcher_window(&window) {
+            continue;
+        }
         windows.push(window);
     }
 
     windows
+}
+
+fn is_runx_launcher_window(window: &WindowRecord) -> bool {
+    window.owner == RUNX_OWNER && window.title == RUNX_LAUNCHER_TITLE
 }
 
 fn is_focusable_accessibility_subrole(subrole: &str) -> bool {
@@ -595,5 +605,41 @@ mod tests {
         );
 
         assert_eq!(windows[0].title, "Other desktop window");
+    }
+
+    #[test]
+    fn runx_launcher_window_is_hidden() {
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: "Runx".to_owned(),
+                owner: "Runx".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &HashMap::new(),
+            &regular_app_pids(),
+            true,
+        );
+
+        assert!(windows.is_empty());
+    }
+
+    #[test]
+    fn runx_settings_window_is_kept() {
+        let windows = apply_accessibility_titles(
+            vec![WindowRecord {
+                title: "Runx Settings".to_owned(),
+                owner: "Runx".to_owned(),
+                pid: 1,
+                window_id: 10,
+                z_index: 0,
+            }],
+            &HashMap::new(),
+            &regular_app_pids(),
+            true,
+        );
+
+        assert_eq!(windows[0].title, "Runx Settings");
     }
 }

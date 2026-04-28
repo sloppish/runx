@@ -24,7 +24,7 @@ use crate::{
     providers::ProviderSet,
     state::AppState,
     tray,
-    types::{AppEvent, FrontendCommand},
+    types::{Action, AppEvent, FrontendCommand},
     ui,
 };
 use action_runner::ActionRunner;
@@ -48,6 +48,7 @@ use self::{
 };
 
 const INITIAL_LAYOUT_VERSION: u64 = 0;
+const RUNX_APP_NAME: &str = "Runx";
 
 /// Owns the live launcher runtime and routes native events into the smaller controllers.
 ///
@@ -519,6 +520,11 @@ impl Launcher {
             return;
         }
 
+        if is_runx_settings_focus_action(&item.action) {
+            let _ = self.proxy.send_event(AppEvent::TraySettings);
+            return;
+        }
+
         self.actions.spawn(
             &self.runtime,
             self.proxy.clone(),
@@ -527,6 +533,18 @@ impl Launcher {
             context,
         );
     }
+}
+
+fn is_runx_settings_focus_action(action: &Action) -> bool {
+    matches!(
+        action,
+        Action::FocusWindow {
+            app_name,
+            window_title,
+            ..
+        } if app_name == RUNX_APP_NAME
+            && window_title == settings_window::SETTINGS_WINDOW_TITLE
+    )
 }
 
 impl Launcher {
@@ -802,8 +820,10 @@ fn build_window(
 
 #[cfg(test)]
 mod tests {
-    use super::{clear_recovered_config_error, frontend_config_script};
-    use crate::{config, state::AppState};
+    use super::{
+        clear_recovered_config_error, frontend_config_script, is_runx_settings_focus_action,
+    };
+    use crate::{config, state::AppState, types::Action};
 
     #[test]
     fn successful_reload_clears_latched_config_error_state() {
@@ -830,5 +850,27 @@ mod tests {
 
         assert!(script.contains(r#"shell.className = "shell canvas-hidden""#));
         assert!(script.contains("window.__RUNX_LAYOUT_VERSION__ = 3"));
+    }
+
+    #[test]
+    fn runx_settings_focus_action_is_handled_on_main_thread() {
+        let action = Action::FocusWindow {
+            app_name: "Runx".to_owned(),
+            window_title: "Runx Settings".to_owned(),
+            window_id: 42,
+        };
+
+        assert!(is_runx_settings_focus_action(&action));
+    }
+
+    #[test]
+    fn ordinary_window_focus_actions_stay_on_action_runner_path() {
+        let action = Action::FocusWindow {
+            app_name: "Finder".to_owned(),
+            window_title: "Runx Settings".to_owned(),
+            window_id: 42,
+        };
+
+        assert!(!is_runx_settings_focus_action(&action));
     }
 }
