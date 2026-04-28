@@ -1,8 +1,10 @@
 (function (root) {
   const send = (payload) => root.ipc.postMessage(JSON.stringify(payload));
+  document.addEventListener("contextmenu", (event) => event.preventDefault());
   const panes = Array.from(document.querySelectorAll("[data-pane-panel]"));
   const navItems = Array.from(document.querySelectorAll("[data-pane]"));
   const statusEl = document.getElementById("status");
+  const saveButton = document.getElementById("save");
   const formEl = document.getElementById("settings-form");
   const rawEl = document.getElementById("raw-toml");
   const providerListEl = document.getElementById("provider-list");
@@ -13,6 +15,9 @@
   const configPathEl = document.getElementById("config-path");
   let state = root.__RUNX_INITIAL_SETTINGS__;
   let activePane = "general";
+  let cleanSnapshots = { raw: null, structured: null };
+  let isRendering = false;
+  let isSaving = false;
 
   function field(path) {
     return document.querySelector(`[data-field="${path}"]`);
@@ -22,6 +27,10 @@
     statusEl.textContent = message || "";
     statusEl.classList.toggle("visible", !!message);
     statusEl.classList.toggle("error", !!isError);
+    if (!isRendering && message !== "Saving...") {
+      isSaving = false;
+      updateSaveButtonState();
+    }
   }
 
   function setPane(name) {
@@ -32,6 +41,57 @@
     formEl.style.display = name === "raw" ? "none" : "";
     for (const pane of panes) {
       pane.classList.toggle("active", pane.dataset.panePanel === name);
+    }
+    updateDirtyState();
+  }
+
+  function activeEditorKey() {
+    return activePane === "raw" ? "raw" : "structured";
+  }
+
+  function editorSnapshot(key = activeEditorKey()) {
+    if (key === "raw") {
+      return JSON.stringify(rawEl.value);
+    }
+    if (!state?.draft) {
+      return null;
+    }
+    return JSON.stringify(collectDraft());
+  }
+
+  function captureCleanSnapshots() {
+    cleanSnapshots = {
+      raw: editorSnapshot("raw"),
+      structured: state?.draft ? editorSnapshot("structured") : null,
+    };
+  }
+
+  function activeEditorCanSave() {
+    return activeEditorKey() === "raw" || !!state?.draft;
+  }
+
+  function activeEditorIsDirty() {
+    const key = activeEditorKey();
+    return cleanSnapshots[key] != null && editorSnapshot(key) !== cleanSnapshots[key];
+  }
+
+  function updateSaveButtonState() {
+    saveButton.disabled = isSaving || !activeEditorCanSave() || !activeEditorIsDirty();
+  }
+
+  function updateDirtyState() {
+    if (isRendering) {
+      return;
+    }
+    const dirty = activeEditorIsDirty();
+    updateSaveButtonState();
+    if (isSaving) {
+      return;
+    }
+    if (dirty) {
+      setStatus("Unsaved changes");
+    } else if (statusEl.textContent === "Unsaved changes" || statusEl.textContent === "Saving...") {
+      setStatus("");
     }
   }
 
@@ -188,7 +248,13 @@
     header.className = "item-header";
     const heading = document.createElement("h3");
     heading.textContent = title;
-    header.append(heading, actionButton("Delete", () => onRemove(wrapper)));
+    header.append(
+      heading,
+      actionButton("Delete", () => {
+        onRemove(wrapper);
+        updateDirtyState();
+      }),
+    );
     wrapper.append(header);
     return wrapper;
   }
@@ -410,6 +476,7 @@
       addDisplayOverride(manualDisplayEntry(), "manual", true);
       setStatus("All detected displays already have overrides. Added a manual identity override.");
     }
+    updateDirtyState();
   }
 
   function displayForOverride(entry) {
@@ -681,31 +748,38 @@
   }
 
   function render(payload) {
-    state = payload;
-    configPathEl.textContent = payload.config_path || "";
-    rawEl.value = payload.raw || "";
-    renderProviders(payload);
-    renderColorschemes(payload);
+    isRendering = true;
+    try {
+      state = payload;
+      configPathEl.textContent = payload.config_path || "";
+      rawEl.value = payload.raw || "";
+      renderProviders(payload);
+      renderColorschemes(payload);
 
-    const hasDraft = !!payload.draft;
-    document.body.classList.toggle("config-invalid", !hasDraft);
-    if (hasDraft) {
-      renderDraft(payload.draft);
-      renderDisplayOverrides(payload.draft.display_overrides);
-      renderProviderBoosts(payload.draft.ranking.provider_score_boosts);
-      renderScoreRules(payload.draft.ranking.score_rules);
-      renderCustomColorschemes(payload.draft.ui.colorschemes);
-      setStatus("");
-    } else {
-      renderDisplayOverrides([]);
-      renderProviderBoosts({});
-      renderScoreRules([]);
-      renderCustomColorschemes([]);
-      setPane("raw");
-      setStatus(payload.error || "Config is invalid", true);
-    }
-    for (const input of formEl.querySelectorAll("input, select, textarea, button")) {
-      input.disabled = !hasDraft;
+      const hasDraft = !!payload.draft;
+      document.body.classList.toggle("config-invalid", !hasDraft);
+      if (hasDraft) {
+        renderDraft(payload.draft);
+        renderDisplayOverrides(payload.draft.display_overrides);
+        renderProviderBoosts(payload.draft.ranking.provider_score_boosts);
+        renderScoreRules(payload.draft.ranking.score_rules);
+        renderCustomColorschemes(payload.draft.ui.colorschemes);
+        setStatus("");
+      } else {
+        renderDisplayOverrides([]);
+        renderProviderBoosts({});
+        renderScoreRules([]);
+        renderCustomColorschemes([]);
+        setPane("raw");
+        setStatus(payload.error || "Config is invalid", true);
+      }
+      for (const input of formEl.querySelectorAll("input, select, textarea, button")) {
+        input.disabled = !hasDraft;
+      }
+    } finally {
+      captureCleanSnapshots();
+      isRendering = false;
+      updateSaveButtonState();
     }
   }
 
@@ -806,18 +880,25 @@
     item.addEventListener("click", () => setPane(item.dataset.pane));
   }
 
+  formEl.addEventListener("input", updateDirtyState);
+  formEl.addEventListener("change", updateDirtyState);
+  rawEl.addEventListener("input", updateDirtyState);
+
   document.getElementById("add-display-override").addEventListener("click", handleAddDisplayOverride);
 
   document.getElementById("add-provider-boost").addEventListener("click", () => {
     addProviderBoost();
+    updateDirtyState();
   });
 
   document.getElementById("add-score-rule").addEventListener("click", () => {
     addScoreRule();
+    updateDirtyState();
   });
 
   document.getElementById("add-colorscheme").addEventListener("click", () => {
     addColorscheme({ name: nextColorschemeName(), base: "builtin_dark", tokens: {} });
+    updateDirtyState();
   });
 
   document.getElementById("reload").addEventListener("click", () => {
@@ -826,12 +907,18 @@
   });
 
   document.getElementById("save").addEventListener("click", () => {
+    if (saveButton.disabled) {
+      return;
+    }
+    isSaving = true;
+    updateSaveButtonState();
     setStatus("Saving...");
     if (activePane === "raw") {
       send({ type: "save_raw", raw: rawEl.value });
     } else {
       const validationError = validateStructuredForm();
       if (validationError) {
+        isSaving = false;
         setStatus(validationError, true);
         return;
       }
