@@ -172,8 +172,7 @@ fn scan_bundle_metadata() -> Result<HashMap<String, BundleMetadata>> {
                 .get("CFBundleDisplayName")
                 .or_else(|| dict.get("CFBundleName"))
                 .and_then(Value::as_string)
-                .map(str::to_owned)
-                .unwrap_or_else(|| prettify_identifier(&identifier));
+                .map_or_else(|| prettify_identifier(&identifier), str::to_owned);
 
             bundles.insert(
                 identifier,
@@ -254,14 +253,14 @@ fn make_record(raw_id: &str, bundles: &HashMap<String, BundleMetadata>) -> Setti
     let base_id = parts.next().unwrap_or(raw_id);
     let suffix = parts.next();
 
-    let base_name = bundles
-        .get(base_id)
-        .map(|bundle| bundle.name.clone())
-        .unwrap_or_else(|| prettify_identifier(base_id));
+    let base_name = bundles.get(base_id).map_or_else(
+        || prettify_identifier(base_id),
+        |bundle| bundle.name.clone(),
+    );
 
     let title = match suffix {
         Some(fragment) => format!("{} › {}", base_name, prettify_identifier(fragment)),
-        None => base_name.clone(),
+        None => base_name,
     };
 
     SettingRecord {

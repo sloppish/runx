@@ -87,19 +87,16 @@ impl TrayState {
             }
         }));
 
-        TrayIconEvent::set_event_handler(Some({
-            let proxy = proxy.clone();
-            move |event| {
-                if matches!(
-                    event,
-                    TrayIconEvent::Click {
-                        button: MouseButton::Left,
-                        button_state: MouseButtonState::Up,
-                        ..
-                    }
-                ) {
-                    let _ = proxy.send_event(AppEvent::TrayToggle);
+        TrayIconEvent::set_event_handler(Some(move |event| {
+            if matches!(
+                event,
+                TrayIconEvent::Click {
+                    button: MouseButton::Left,
+                    button_state: MouseButtonState::Up,
+                    ..
                 }
+            ) {
+                let _ = proxy.send_event(AppEvent::TrayToggle);
             }
         }));
 

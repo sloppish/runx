@@ -62,11 +62,10 @@ impl SettingsWindow {
             .build(event_loop)
             .context("failed to build the settings window")?;
 
-        let ipc_proxy = proxy.clone();
         let webview = WebViewBuilder::new()
             .with_html(&html)
             .with_ipc_handler(move |request| {
-                let _ = ipc_proxy.send_event(settings_ipc_event(request.body()));
+                let _ = proxy.send_event(settings_ipc_event(request.body()));
             })
             .build(&window)
             .context("failed to build the settings webview")?;

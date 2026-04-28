@@ -135,12 +135,13 @@ impl Launcher {
             .with_html(&html)
             .with_ipc_handler(move |request| {
                 let payload = request.body();
-                let event = serde_json::from_str::<FrontendCommand>(payload)
-                    .map(AppEvent::Frontend)
-                    .unwrap_or_else(|error| AppEvent::ActionOutcome {
+                let event = serde_json::from_str::<FrontendCommand>(payload).map_or_else(
+                    |error| AppEvent::ActionOutcome {
                         message: format!("UI IPC error: {error}"),
                         is_error: true,
-                    });
+                    },
+                    AppEvent::Frontend,
+                );
                 let _ = ipc_proxy.send_event(event);
             })
             .build(&window)
@@ -154,7 +155,7 @@ impl Launcher {
             hotkey_manager,
             hotkey,
             runtime,
-            icons: icons.clone(),
+            icons,
             providers,
             actions: ActionRunner::new(plugins),
             search: SearchController::new(&config.timing),

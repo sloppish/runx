@@ -5,7 +5,10 @@ use super::Score;
 /// Direction the optimal path took to reach a cell.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 #[repr(u8)]
-#[allow(dead_code)] // variants are constructed via transmute from bits
+#[expect(
+    dead_code,
+    reason = "variants are also constructed by decoding packed cell bits via transmute"
+)]
 pub(super) enum Dir {
     /// No valid path (score == 0).
     ///
@@ -47,7 +50,10 @@ impl Cell {
     #[inline(always)]
     pub(super) fn score(self) -> Score {
         // Truncation is intentional: low 16 bits store the score as a bitcast i16.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "only the low 16 score bits are decoded from the packed cell"
+        )]
         let low16 = self.0 as u16;
         low16.cast_signed()
     }
@@ -55,7 +61,10 @@ impl Cell {
     pub(super) fn dir(self) -> Dir {
         // SAFETY: Dir has repr(u8) with values 0..=3 and we only ever store
         // valid Dir values in bits 16-17. Truncation from u32 to u8 is intentional.
-        #[allow(clippy::cast_possible_truncation)]
+        #[expect(
+            clippy::cast_possible_truncation,
+            reason = "the direction tag is masked to two bits before converting to u8"
+        )]
         let tag = (self.0 >> 16) as u8 & 0x3;
         unsafe { std::mem::transmute(tag) }
     }

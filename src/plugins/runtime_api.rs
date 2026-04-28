@@ -63,8 +63,7 @@ fn install_runtime(
     let plugin_path = plugin_path.to_path_buf();
     let plugin_dir = plugin_path
         .parent()
-        .map(Path::to_path_buf)
-        .unwrap_or_else(|| PathBuf::from("."));
+        .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
     runtime.set("api_version", PLUGIN_API_VERSION)?;
 
     runtime.set(
@@ -134,7 +133,7 @@ fn install_runtime(
         )?,
     )?;
 
-    let exec_json_paths = search_paths.clone();
+    let exec_json_paths = search_paths;
     runtime.set(
         "exec_json",
         lua.create_function(move |lua, (program, args): (String, Vec<String>)| {

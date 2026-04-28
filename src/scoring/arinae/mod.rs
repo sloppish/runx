@@ -24,7 +24,10 @@
 //!   or row (full DP), if all cells are zero for several consecutive
 //!   iterations, the alignment is dead and we terminate early.
 
-#![allow(clippy::inline_always)]
+#![expect(
+    clippy::inline_always,
+    reason = "this vendored fuzzy-matching core keeps tiny cell helpers inlined on its hot path"
+)]
 
 mod algo;
 mod atom;
@@ -50,6 +53,7 @@ type Score = i16;
 pub type IndexType = usize;
 pub type ScoreType = i64;
 pub type MatchIndices = Vec<IndexType>;
+type CharBuffers = (Vec<char>, Vec<char>);
 
 /// Case sensitivity mode for fuzzy matching.
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Default)]
@@ -96,8 +100,7 @@ pub struct ArinaeMatcher {
 
     full_buf: ThreadLocal<RefCell<SWMatrix>>,
     indices_buf: ThreadLocal<RefCell<MatchIndices>>,
-    #[allow(clippy::type_complexity)]
-    char_buf: ThreadLocal<RefCell<(Vec<char>, Vec<char>)>>,
+    char_buf: ThreadLocal<RefCell<CharBuffers>>,
     bonus_buf: ThreadLocal<RefCell<Vec<Score>>>,
 }
 

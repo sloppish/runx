@@ -45,9 +45,8 @@ struct RawUiSpans {
 #[serde(default, deny_unknown_fields)]
 struct RawUiColorschemeSpans {
     base: Option<Spanned<String>>,
-    #[allow(dead_code)]
     #[serde(flatten)]
-    overrides: UiColorOverridesConfig,
+    _overrides: UiColorOverridesConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]

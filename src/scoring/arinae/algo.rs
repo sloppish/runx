@@ -24,8 +24,14 @@ use super::{Atom, CELL_ZERO, Cell, Dir, IndexType, MatchIndices, SWMatrix, Score
 /// uses `bool as Score` multipliers and `max` instead of if/else, and the
 /// final direction is selected via a branchless cascade of conditional moves.
 #[inline(always)]
-#[allow(clippy::too_many_arguments)]
-#[allow(clippy::fn_params_excessive_bools)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "hot DP cell kernel passes scalar neighbours directly to avoid packing and unpacking temporary structs"
+)]
+#[expect(
+    clippy::fn_params_excessive_bools,
+    reason = "boolean flags are branchless scoring inputs and const-generic mode switches"
+)]
 fn compute_cell<const ALLOW_TYPOS: bool>(
     is_match: bool,
     is_first: bool,
@@ -114,8 +120,14 @@ fn compute_cell<const ALLOW_TYPOS: bool>(
 ///    column produced a non-zero score, all active alignments for this
 ///    and subsequent rows are dead (since UP/LEFT can only propagate
 ///    existing scores). We track this and allow early termination.
-#[allow(clippy::too_many_lines)]
-#[allow(clippy::too_many_arguments)]
+#[expect(
+    clippy::too_many_lines,
+    reason = "performance-critical DP loop keeps row state and unsafe indexing invariants local"
+)]
+#[expect(
+    clippy::too_many_arguments,
+    reason = "DP driver accepts borrowed buffers and mode flags instead of allocating a context object per search"
+)]
 pub(super) fn full_dp<const ALLOW_TYPOS: bool, const COMPUTE_INDICES: bool, C: Atom>(
     cho: &[C],
     pat: &[C],

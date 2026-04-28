@@ -54,7 +54,7 @@ impl ProviderSet {
             icons.clone(),
             config.providers.apps.clone(),
         )?);
-        let settings = Arc::new(SettingsProvider::new(icons.clone())?);
+        let settings = Arc::new(SettingsProvider::new(icons)?);
         let disabled_providers = config.providers.disabled.iter().cloned().collect();
 
         Ok(Self {
@@ -128,8 +128,7 @@ impl ProviderSet {
                 .search(proxy.clone(), generation, query.clone());
         }
         if enabled.contains("plugins") {
-            self.plugins
-                .search(proxy.clone(), generation, query.clone());
+            self.plugins.search(proxy, generation, query);
         }
     }
 }

@@ -153,8 +153,7 @@ mod imp {
             .deviceDescription()
             .objectForKey(ns_string!("NSScreenNumber"))
             .and_then(|value| value.downcast::<NSNumber>().ok())
-            .map(|value| value.as_u32())
-            .unwrap_or(0)
+            .map_or(0, |value| value.as_u32())
     }
 }
 

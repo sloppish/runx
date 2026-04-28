@@ -174,10 +174,10 @@ impl WindowController {
         config: &WindowConfig,
         ui: &crate::config::UiConfig,
     ) {
-        let resolved_height = self
-            .preferred_height
-            .map(|height| config.clamp_height(height))
-            .unwrap_or_else(|| config.fallback_size(ui).1);
+        let resolved_height = self.preferred_height.map_or_else(
+            || config.fallback_size(ui).1,
+            |height| config.clamp_height(height),
+        );
 
         let Some(monitor) = monitor_for_window(window, config) else {
             let fallback_width = config.fallback_size(ui).0;
