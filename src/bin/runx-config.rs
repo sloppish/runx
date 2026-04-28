@@ -1188,14 +1188,24 @@ impl App {
             }
             ChoiceTarget::ConfirmDeleteColorscheme { name } => {
                 if option.value == "delete" {
+                    self.editor
+                        .reload()
+                        .context("failed to reload config.toml before deleting colorscheme")?;
+                    if !self.editor.config.ui.colorschemes.contains_key(&name) {
+                        bail!("colorscheme `{name}` no longer exists");
+                    }
+
                     let reset_selection = self.editor.config.ui.colorscheme == name;
-                    self.apply(|doc| {
-                        remove_item(doc, &["ui", "colorschemes", name.as_str()])?;
-                        if reset_selection {
-                            set_item(doc, &["ui"], "colorscheme", value("system"))?;
-                        }
-                        Ok(())
-                    })?;
+                    let raw = remove_colorscheme_snippet(&self.editor.raw, &name)?;
+                    if reset_selection {
+                        let mut doc = raw
+                            .parse::<Document>()
+                            .context("failed to parse config after deleting colorscheme")?;
+                        set_item(&mut doc, &["ui"], "colorscheme", value("system"))?;
+                        self.editor.save_raw(doc.to_string())?;
+                    } else {
+                        self.editor.save_raw(raw)?;
+                    }
                     if reset_selection {
                         self.success(format!(
                             "Deleted colorscheme `{name}` and reset selection to `system`"
@@ -2849,6 +2859,13 @@ impl TomlTableSection {
         next.push_str(&raw[self.range.end..]);
         next
     }
+
+    fn remove(&self, raw: &str) -> String {
+        let mut next = String::with_capacity(raw.len() - (self.range.end - self.range.start));
+        next.push_str(&raw[..self.range.start]);
+        next.push_str(&raw[self.range.end..]);
+        next
+    }
 }
 
 fn colorscheme_snippet(raw: &str, name: &str) -> Result<String> {
@@ -2867,6 +2884,37 @@ fn replace_colorscheme_snippet(raw: &str, name: &str, snippet: &str) -> Result<S
     };
 
     Ok(section.replace(raw, snippet))
+}
+
+fn remove_colorscheme_snippet(raw: &str, name: &str) -> Result<String> {
+    let path = colorscheme_table_path(name);
+    let Some(section) = TomlTableSection::find(raw, &path)? else {
+        bail!("colorscheme `{name}` no longer exists");
+    };
+
+    remove_empty_colorschemes_parent(&section.remove(raw))
+}
+
+fn remove_empty_colorschemes_parent(raw: &str) -> Result<String> {
+    let doc = raw
+        .parse::<Document>()
+        .context("failed to parse config after deleting colorscheme section")?;
+    let Some(colorschemes) = doc
+        .get("ui")
+        .and_then(Item::as_table)
+        .and_then(|ui| ui.get("colorschemes"))
+        .and_then(Item::as_table)
+    else {
+        return Ok(raw.to_owned());
+    };
+    if !colorschemes.is_empty() {
+        return Ok(raw.to_owned());
+    }
+
+    let Some(section) = TomlTableSection::find(raw, &["ui", "colorschemes"])? else {
+        return Ok(raw.to_owned());
+    };
+    Ok(section.remove(raw))
 }
 
 fn colorscheme_table_path(name: &str) -> [&str; 3] {
@@ -3086,6 +3134,58 @@ width_fraction = 0.6
         assert_eq!(once, twice);
         assert_eq!(twice.matches("# item_hover =").count(), 1);
         assert_eq!(twice.matches("# item_selected_bg =").count(), 1);
+    }
+
+    #[test]
+    fn removing_last_colorscheme_removes_section_comments_and_empty_parent() {
+        let raw = r##"[ui]
+colorscheme = "gruvbox"
+
+[ui.colorschemes]
+
+[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+
+# Full builtin_dark token preset. Uncomment only the tokens you want to override.
+accent = "#fabd2f"
+# item_selected_bg = "linear-gradient(135deg, rgba(215, 153, 33, 0.24), rgba(60, 56, 54, 0.98))"
+
+[[display_overrides]]
+app = "Terminal"
+"##;
+        let next =
+            remove_colorscheme_snippet(raw, "gruvbox").expect("colorscheme snippet should remove");
+
+        assert!(!next.contains("[ui.colorschemes]"));
+        assert!(!next.contains("[ui.colorschemes.gruvbox]"));
+        assert!(!next.contains("Full builtin_dark token preset"));
+        assert!(!next.contains("item_selected_bg"));
+        assert!(next.contains("[[display_overrides]]"));
+    }
+
+    #[test]
+    fn removing_colorscheme_keeps_sibling_colorschemes() {
+        let raw = r##"[ui.colorschemes]
+# shared colorscheme notes
+
+[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+# remove me
+accent = "#fabd2f"
+
+[ui.colorschemes.solarized]
+base = "builtin_light"
+accent = "#268bd2"
+"##;
+        let next =
+            remove_colorscheme_snippet(raw, "gruvbox").expect("colorscheme snippet should remove");
+
+        assert!(next.contains("[ui.colorschemes]"));
+        assert!(next.contains("# shared colorscheme notes"));
+        assert!(!next.contains("[ui.colorschemes.gruvbox]"));
+        assert!(!next.contains("# remove me"));
+        assert!(next.contains("[ui.colorschemes.solarized]"));
+        assert!(next.contains("accent = \"#268bd2\""));
     }
 
     #[test]
