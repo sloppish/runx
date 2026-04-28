@@ -52,5 +52,5 @@ Runx targets macOS 11 Big Sur and newer.
 | ---                              | ---                                              |
 | window-first search              | no builtin web search, AI, or cloud integrations |
 | macOS-tied experience            | no support for other OSes is expected            |
-| a single TOML config file        | no GUI for configuration                         |
+| a single TOML config file        | settings UI writes the same user-owned file      |
 | a small host API for Lua plugins | no visual workflows builder                      |

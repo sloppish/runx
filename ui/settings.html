@@ -1,0 +1,345 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>Runx Settings</title>
+    <style>
+      __SETTINGS_CSS__
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="nav" aria-label="Settings sections">
+        <div class="brand">Runx</div>
+        <button class="nav-item active" type="button" data-pane="general">General</button>
+        <button class="nav-item" type="button" data-pane="window">Window</button>
+        <button class="nav-item" type="button" data-pane="providers">Providers</button>
+        <button class="nav-item" type="button" data-pane="plugins">Plugins</button>
+        <button class="nav-item" type="button" data-pane="appearance">Appearance</button>
+        <button class="nav-item" type="button" data-pane="advanced">Advanced</button>
+        <button class="nav-item" type="button" data-pane="raw">TOML</button>
+      </aside>
+
+      <main class="content">
+        <header class="topbar">
+          <div>
+            <h1>Settings</h1>
+            <div id="config-path" class="path"></div>
+          </div>
+          <div class="actions">
+            <button id="reload" class="button secondary" type="button">Reload</button>
+            <button id="save" class="button primary" type="button">Save</button>
+            <button id="close" class="button ghost" type="button">Close</button>
+          </div>
+        </header>
+
+        <div id="status" class="status" role="status" aria-live="polite"></div>
+
+        <form id="settings-form" autocomplete="off">
+          <section class="pane active" data-pane-panel="general">
+            <div class="section">
+              <h2>Hotkey</h2>
+              <div class="grid two">
+                <label>
+                  <span>Key</span>
+                  <input type="text" data-field="hotkey.key" />
+                </label>
+                <label>
+                  <span>Modifiers</span>
+                  <input type="text" data-field="hotkey.modifiers" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Behavior</h2>
+              <div class="toggles">
+                <label class="toggle">
+                  <input type="checkbox" data-field="window.hide_on_blur" />
+                  <span>Hide on blur</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" data-field="window.always_on_top" />
+                  <span>Always on top</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" data-field="ui.cycle_selection" />
+                  <span>Cycle selection</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" data-field="ui.show_header" />
+                  <span>Show header</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Launcher Shortcuts</h2>
+              <div class="grid two">
+                <label>
+                  <span>Focus selected window</span>
+                  <input type="text" data-field="ui.shortcuts.focus_window" />
+                </label>
+                <label>
+                  <span>Activate app with all windows</span>
+                  <input type="text" data-field="ui.shortcuts.activate_all_windows" />
+                </label>
+              </div>
+            </div>
+          </section>
+
+          <section class="pane" data-pane-panel="window">
+            <div class="section">
+              <h2>Placement</h2>
+              <div class="grid two">
+                <label>
+                  <span>Show on</span>
+                  <select data-field="window.show_on">
+                    <option value="primary">Primary display</option>
+                    <option value="cursor">Cursor display</option>
+                  </select>
+                </label>
+                <label>
+                  <span>Visible rows</span>
+                  <input type="number" min="1" step="1" data-field="window.visible_rows" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Size</h2>
+              <div class="grid three">
+                <label>
+                  <span>Width fraction</span>
+                  <input type="number" min="0.1" max="1" step="0.01" data-field="window.width_fraction" />
+                </label>
+                <label>
+                  <span>Min width</span>
+                  <input type="number" min="1" step="1" data-field="window.min_width" />
+                </label>
+                <label>
+                  <span>Max width</span>
+                  <input type="number" min="1" step="1" data-field="window.max_width" />
+                </label>
+                <label>
+                  <span>Min height</span>
+                  <input type="number" min="1" step="1" data-field="window.min_height" />
+                </label>
+                <label>
+                  <span>Max height</span>
+                  <input type="number" min="1" step="1" data-field="window.max_height" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <h2>Display Overrides</h2>
+                <button id="add-display-override" class="button compact" type="button">Add</button>
+              </div>
+              <div id="display-overrides" class="collection"></div>
+            </div>
+          </section>
+
+          <section class="pane" data-pane-panel="providers">
+            <div class="section">
+              <h2>Enabled Providers</h2>
+              <div id="provider-list" class="toggles"></div>
+            </div>
+
+            <div class="section">
+              <h2>Windows</h2>
+              <div class="toggles">
+                <label class="toggle">
+                  <input type="checkbox" data-field="providers.windows.show_on_empty_query" />
+                  <span>Show windows on empty query</span>
+                </label>
+                <label class="toggle">
+                  <input type="checkbox" data-field="providers.windows.include_other_desktops" />
+                  <span>Include other desktops</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Ranking</h2>
+              <div class="grid two">
+                <label>
+                  <span>Provider order</span>
+                  <input type="text" data-field="ranking.provider_order" />
+                </label>
+                <label>
+                  <span>Tie threshold</span>
+                  <input type="number" step="1" data-field="ranking.tie_threshold" />
+                </label>
+                <label>
+                  <span>Result limit</span>
+                  <input type="number" min="1" step="1" data-field="ranking.result_limit" />
+                </label>
+                <label>
+                  <span>Exact app boost</span>
+                  <input type="number" step="1" data-field="providers.apps.exact_name_boost" />
+                </label>
+                <label>
+                  <span>Prefix app boost</span>
+                  <input type="number" step="1" data-field="providers.apps.prefix_name_boost" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <h2>Provider Score Boosts</h2>
+                <button id="add-provider-boost" class="button compact" type="button">Add</button>
+              </div>
+              <div id="provider-score-boosts" class="collection"></div>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <h2>Score Rules</h2>
+                <button id="add-score-rule" class="button compact" type="button">Add</button>
+              </div>
+              <div id="score-rules" class="collection"></div>
+            </div>
+          </section>
+
+          <section class="pane" data-pane-panel="plugins">
+            <div class="section">
+              <h2>Discovery</h2>
+              <div class="grid two">
+                <label>
+                  <span>Plugin directories</span>
+                  <textarea class="short-textarea" data-field="plugins.directories" spellcheck="false"></textarea>
+                </label>
+                <label>
+                  <span>Plugin search paths</span>
+                  <textarea class="short-textarea" data-field="plugins.search_paths" spellcheck="false"></textarea>
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Per-plugin TOML</h2>
+              <textarea class="code-textarea" data-field="plugins.plugin_toml" spellcheck="false"></textarea>
+            </div>
+          </section>
+
+          <section class="pane" data-pane-panel="appearance">
+            <div class="section">
+              <h2>Theme</h2>
+              <div class="grid two">
+                <label>
+                  <span>Colorscheme</span>
+                  <select data-field="ui.colorscheme"></select>
+                </label>
+                <label>
+                  <span>Font family</span>
+                  <input type="text" data-field="ui.font_family" />
+                </label>
+                <label>
+                  <span>UI scale</span>
+                  <input type="number" min="0.5" max="2" step="0.05" data-field="ui.scale" />
+                </label>
+                <label>
+                  <span>Entry opacity</span>
+                  <input type="number" min="0" max="1" step="0.01" data-field="ui.entries.opacity" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Canvas</h2>
+              <div class="grid two">
+                <label class="toggle inline">
+                  <input type="checkbox" data-field="ui.canvas.show" />
+                  <span>Show canvas</span>
+                </label>
+                <label>
+                  <span>Radius</span>
+                  <input type="number" min="0" step="1" data-field="ui.canvas.radius" />
+                </label>
+                <label>
+                  <span>Background opacity</span>
+                  <input type="number" min="0" max="1" step="0.01" data-field="ui.canvas.background_opacity" />
+                </label>
+                <label>
+                  <span>Chrome opacity</span>
+                  <input type="number" min="0" max="1" step="0.01" data-field="ui.canvas.chrome_opacity" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <div class="section-heading">
+                <h2>Custom Colorschemes</h2>
+                <button id="add-colorscheme" class="button compact" type="button">Add</button>
+              </div>
+              <div id="custom-colorschemes" class="collection"></div>
+            </div>
+          </section>
+
+          <section class="pane" data-pane-panel="advanced">
+            <div class="section">
+              <h2>Timing</h2>
+              <div class="grid two">
+                <label>
+                  <span>Search debounce ms</span>
+                  <input type="number" min="0" step="1" data-field="timing.search_debounce_ms" />
+                </label>
+                <label>
+                  <span>Render coalesce ms</span>
+                  <input type="number" min="0" step="1" data-field="timing.render_coalesce_ms" />
+                </label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Font Sizes</h2>
+              <div class="grid four">
+                <label><span>Label</span><input type="number" min="1" step="1" data-field="ui.font_sizes.label" /></label>
+                <label><span>Input</span><input type="number" min="1" step="1" data-field="ui.font_sizes.input" /></label>
+                <label><span>Title</span><input type="number" min="1" step="1" data-field="ui.font_sizes.title" /></label>
+                <label><span>Subtitle</span><input type="number" min="1" step="1" data-field="ui.font_sizes.subtitle" /></label>
+                <label><span>Badge</span><input type="number" min="1" step="1" data-field="ui.font_sizes.badge" /></label>
+                <label><span>Accelerator</span><input type="number" min="1" step="1" data-field="ui.font_sizes.accelerator" /></label>
+                <label><span>Error title</span><input type="number" min="1" step="1" data-field="ui.font_sizes.config_error_title" /></label>
+                <label><span>Error body</span><input type="number" min="1" step="1" data-field="ui.font_sizes.config_error_body" /></label>
+              </div>
+            </div>
+
+            <div class="section">
+              <h2>Layout</h2>
+              <div class="grid four">
+                <label><span>Section gap</span><input type="number" min="0" step="1" data-field="ui.layout.section_gap" /></label>
+                <label><span>Input Y</span><input type="number" min="0" step="1" data-field="ui.layout.input_padding_y" /></label>
+                <label><span>Input X</span><input type="number" min="0" step="1" data-field="ui.layout.input_padding_x" /></label>
+                <label><span>Input radius</span><input type="number" min="0" step="1" data-field="ui.layout.input_radius" /></label>
+                <label><span>List gap</span><input type="number" min="0" step="1" data-field="ui.layout.list_gap" /></label>
+                <label><span>Entry Y</span><input type="number" min="0" step="1" data-field="ui.layout.entry_padding_y" /></label>
+                <label><span>Entry X</span><input type="number" min="0" step="1" data-field="ui.layout.entry_padding_x" /></label>
+                <label><span>Entry gap</span><input type="number" min="0" step="1" data-field="ui.layout.entry_gap" /></label>
+                <label><span>Row radius</span><input type="number" min="0" step="1" data-field="ui.layout.row_radius" /></label>
+                <label><span>Badge size</span><input type="number" min="1" step="1" data-field="ui.layout.badge_size" /></label>
+                <label><span>Badge radius</span><input type="number" min="0" step="1" data-field="ui.layout.badge_radius" /></label>
+                <label><span>Icon size</span><input type="number" min="1" step="1" data-field="ui.layout.icon_size" /></label>
+              </div>
+            </div>
+          </section>
+        </form>
+
+        <section class="pane raw-pane" data-pane-panel="raw">
+          <textarea id="raw-toml" spellcheck="false"></textarea>
+        </section>
+      </main>
+    </div>
+
+    <script>
+      window.__RUNX_INITIAL_SETTINGS__ = __INITIAL_SETTINGS__;
+    </script>
+    <script>
+      __SETTINGS_JS__
+    </script>
+  </body>
+</html>

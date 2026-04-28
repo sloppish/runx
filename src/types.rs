@@ -3,6 +3,8 @@
 //! These types are the common language between the launcher runtime, providers,
 //! plugins, and the embedded frontend.
 
+use std::collections::HashMap;
+
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
@@ -109,6 +111,7 @@ impl Action {
 #[derive(Debug, Clone)]
 pub enum AppEvent {
     Frontend(FrontendCommand),
+    Settings(SettingsCommand),
     Render,
     IconReady,
     StartSearch {
@@ -146,6 +149,184 @@ pub enum FrontendCommand {
     CopyText { text: String },
     PasteText,
     Hide,
+}
+
+/// Commands emitted by the Settings webview back into the Rust event loop.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(tag = "type", rename_all = "snake_case")]
+pub enum SettingsCommand {
+    Ready,
+    Reload,
+    Save { draft: Box<SettingsDraft> },
+    SaveRaw { raw: String },
+    ClientError { message: String },
+    Close,
+}
+
+/// Structured subset edited by the first Settings window implementation.
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct SettingsDraft {
+    pub hotkey: HotkeySettingsDraft,
+    pub window: WindowSettingsDraft,
+    pub display_overrides: Vec<DisplayOverrideSettingsDraft>,
+    pub providers: ProvidersSettingsDraft,
+    pub ranking: RankingSettingsDraft,
+    pub timing: TimingSettingsDraft,
+    pub plugins: PluginsSettingsDraft,
+    pub ui: UiSettingsDraft,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct HotkeySettingsDraft {
+    pub key: String,
+    pub modifiers: Vec<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WindowSettingsDraft {
+    pub width_fraction: f64,
+    pub visible_rows: usize,
+    pub min_width: f64,
+    pub max_width: f64,
+    pub min_height: f64,
+    pub max_height: f64,
+    pub hide_on_blur: bool,
+    pub always_on_top: bool,
+    pub show_on: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct DisplayOverrideSettingsDraft {
+    pub built_in: Option<bool>,
+    pub vendor: Option<u32>,
+    pub model: Option<u32>,
+    pub serial: Option<u32>,
+    pub width_fraction: Option<f64>,
+    pub visible_rows: Option<usize>,
+    pub min_width: Option<f64>,
+    pub max_width: Option<f64>,
+    pub min_height: Option<f64>,
+    pub max_height: Option<f64>,
+    pub ui_scale: Option<f64>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct ProvidersSettingsDraft {
+    pub disabled: Vec<String>,
+    pub windows: WindowsProviderSettingsDraft,
+    pub apps: AppsProviderSettingsDraft,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct WindowsProviderSettingsDraft {
+    pub include_other_desktops: bool,
+    pub show_on_empty_query: bool,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct AppsProviderSettingsDraft {
+    pub exact_name_boost: i64,
+    pub prefix_name_boost: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RankingSettingsDraft {
+    pub tie_threshold: i64,
+    pub provider_order: Vec<String>,
+    pub provider_score_boosts: HashMap<String, i64>,
+    pub score_rules: Vec<RankingScoreRuleSettingsDraft>,
+    pub result_limit: usize,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct RankingScoreRuleSettingsDraft {
+    pub providers: Vec<String>,
+    pub field: String,
+    pub match_kind: String,
+    pub pattern: String,
+    pub boost: i64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct TimingSettingsDraft {
+    pub search_debounce_ms: u64,
+    pub render_coalesce_ms: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginsSettingsDraft {
+    pub directories: Vec<String>,
+    pub search_paths: Vec<String>,
+    pub plugin_toml: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiSettingsDraft {
+    pub show_header: bool,
+    pub cycle_selection: bool,
+    pub colorscheme: String,
+    pub font_family: String,
+    pub scale: f64,
+    pub canvas: UiCanvasSettingsDraft,
+    pub entries: UiEntriesSettingsDraft,
+    pub shortcuts: UiShortcutsSettingsDraft,
+    pub colorschemes: Vec<UiColorschemeSettingsDraft>,
+    pub font_sizes: UiFontSizesSettingsDraft,
+    pub layout: UiLayoutSettingsDraft,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiCanvasSettingsDraft {
+    pub show: bool,
+    pub radius: u16,
+    pub background_opacity: f64,
+    pub chrome_opacity: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiEntriesSettingsDraft {
+    pub opacity: f64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiShortcutsSettingsDraft {
+    pub focus_window: String,
+    pub activate_all_windows: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiColorschemeSettingsDraft {
+    pub name: String,
+    pub base: String,
+    pub tokens: HashMap<String, String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiFontSizesSettingsDraft {
+    pub label: u16,
+    pub input: u16,
+    pub title: u16,
+    pub subtitle: u16,
+    pub badge: u16,
+    pub accelerator: u16,
+    pub config_error_title: u16,
+    pub config_error_body: u16,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct UiLayoutSettingsDraft {
+    pub section_gap: u16,
+    pub input_padding_y: u16,
+    pub input_padding_x: u16,
+    pub input_radius: u16,
+    pub list_gap: u16,
+    pub entry_padding_y: u16,
+    pub entry_padding_x: u16,
+    pub entry_gap: u16,
+    pub row_radius: u16,
+    pub badge_size: u16,
+    pub badge_radius: u16,
+    pub icon_size: u16,
 }
 
 /// Serialized frontend state pushed into the webview on each render.

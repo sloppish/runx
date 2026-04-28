@@ -9,6 +9,7 @@
 
 mod action_runner;
 mod search_controller;
+mod settings_window;
 mod window_controller;
 
 use std::sync::Arc;
@@ -35,13 +36,16 @@ use tao::{
     dpi::LogicalSize,
     event::WindowEvent,
     event_loop::{EventLoopProxy, EventLoopWindowTarget},
-    window::{Window, WindowBuilder},
+    window::{Window, WindowBuilder, WindowId},
 };
 use tokio::runtime::{Builder, Runtime};
 use wry::http::Request;
 use wry::{WebView, WebViewBuilder};
 
-use self::{search_controller::SearchController, window_controller::WindowController};
+use self::{
+    search_controller::SearchController, settings_window::SettingsWindow,
+    window_controller::WindowController,
+};
 
 const INITIAL_LAYOUT_VERSION: u64 = 0;
 
@@ -69,6 +73,7 @@ pub struct Launcher {
     proxy: EventLoopProxy<AppEvent>,
     window: Window,
     webview: WebView,
+    settings: Option<SettingsWindow>,
     state: AppState,
     tray: Option<tray::TrayState>,
 }
@@ -157,6 +162,7 @@ impl Launcher {
             proxy,
             window,
             webview,
+            settings: None,
             state: AppState::new(),
             tray: None,
         })
@@ -182,7 +188,18 @@ impl Launcher {
     }
 
     /// Applies Tao `WindowEvent`s to visibility and focus state.
-    pub fn handle_window_event(&mut self, event: WindowEvent) -> Result<()> {
+    pub fn handle_window_event(&mut self, window_id: WindowId, event: WindowEvent) -> Result<()> {
+        if self
+            .settings
+            .as_ref()
+            .is_some_and(|settings| settings.window_id() == window_id)
+        {
+            if matches!(event, WindowEvent::CloseRequested) {
+                self.settings = None;
+            }
+            return Ok(());
+        }
+
         match event {
             WindowEvent::CloseRequested => self.hide()?,
             WindowEvent::Focused(true) => {
@@ -201,17 +218,22 @@ impl Launcher {
     }
 
     /// Handles app-specific events emitted by the frontend, tray, and providers.
-    pub fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
+    pub fn handle_user_event(
+        &mut self,
+        event_loop: &EventLoopWindowTarget<AppEvent>,
+        event: AppEvent,
+    ) -> Result<()> {
         match event {
             AppEvent::TrayToggle => self.toggle()?,
             AppEvent::TrayOpen => {
                 self.windows.capture_previous_app();
                 self.show_or_focus()?;
             }
-            AppEvent::TraySettings => self.open_settings_editor()?,
+            AppEvent::TraySettings => self.open_settings_editor(event_loop)?,
             AppEvent::TrayToggleAutostart => self.toggle_autostart()?,
             AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
+            AppEvent::Settings(command) => self.handle_settings_command(command)?,
             AppEvent::Render => {
                 self.search.flush_render(
                     &mut self.state,
@@ -393,8 +415,80 @@ impl Launcher {
         Ok(())
     }
 
-    fn open_settings_editor(&mut self) -> Result<()> {
-        macos::open_settings_editor()
+    fn open_settings_editor(&mut self, event_loop: &EventLoopWindowTarget<AppEvent>) -> Result<()> {
+        if self.settings.is_none() {
+            self.settings = Some(SettingsWindow::new(event_loop, self.proxy.clone())?);
+        } else if let Some(settings) = &self.settings {
+            settings.refresh()?;
+        }
+
+        if let Some(settings) = &self.settings {
+            settings.show()?;
+        }
+        Ok(())
+    }
+
+    fn handle_settings_command(&mut self, command: crate::types::SettingsCommand) -> Result<()> {
+        match command {
+            crate::types::SettingsCommand::Ready | crate::types::SettingsCommand::Reload => {
+                self.refresh_settings_window()?;
+            }
+            crate::types::SettingsCommand::Save { draft } => {
+                if let Err(error) = settings_window::save_draft(&draft)
+                    .and_then(|_| self.reload_config_after_settings_save())
+                {
+                    self.report_settings_error(error)?;
+                    return Ok(());
+                }
+                self.refresh_settings_window()?;
+                self.set_settings_status("Saved", false)?;
+            }
+            crate::types::SettingsCommand::SaveRaw { raw } => {
+                if let Err(error) = settings_window::save_raw(&raw)
+                    .and_then(|_| self.reload_config_after_settings_save())
+                {
+                    self.report_settings_error(error)?;
+                    return Ok(());
+                }
+                self.refresh_settings_window()?;
+                self.set_settings_status("Saved", false)?;
+            }
+            crate::types::SettingsCommand::ClientError { message } => {
+                self.log_outcome(message.clone(), true);
+                self.set_settings_status(&message, true)?;
+            }
+            crate::types::SettingsCommand::Close => {
+                self.settings = None;
+            }
+        }
+        Ok(())
+    }
+
+    fn refresh_settings_window(&self) -> Result<()> {
+        if let Some(settings) = &self.settings {
+            settings.refresh()?;
+        }
+        Ok(())
+    }
+
+    fn report_settings_error(&self, error: anyhow::Error) -> Result<()> {
+        let message = format!("{error:#}");
+        self.log_outcome(format!("Settings save failed: {message}"), true);
+        self.set_settings_status(&message, true)
+    }
+
+    fn set_settings_status(&self, message: &str, is_error: bool) -> Result<()> {
+        if let Some(settings) = &self.settings {
+            settings.set_status(message, is_error)?;
+        }
+        Ok(())
+    }
+
+    fn reload_config_after_settings_save(&mut self) -> Result<()> {
+        self.reload_config()?;
+        self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
+        clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
+        Ok(())
     }
 
     fn activate(&mut self, index: usize, all_windows: bool) {

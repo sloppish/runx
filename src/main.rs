@@ -63,7 +63,7 @@ fn run() -> Result<()> {
     let proxy = event_loop.create_proxy();
     let mut launcher = Launcher::bootstrap(&event_loop, proxy)?;
 
-    event_loop.run(move |event, _, control_flow| {
+    event_loop.run(move |event, event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
 
         while let Ok(global_event) = GlobalHotKeyEvent::receiver().try_recv() {
@@ -78,13 +78,15 @@ fn run() -> Result<()> {
                     launcher.set_error(error.to_string());
                 }
             }
-            Event::WindowEvent { event, .. } => {
-                if let Err(error) = launcher.handle_window_event(event) {
+            Event::WindowEvent {
+                window_id, event, ..
+            } => {
+                if let Err(error) = launcher.handle_window_event(window_id, event) {
                     launcher.set_error(error.to_string());
                 }
             }
             Event::UserEvent(message) => {
-                if let Err(error) = launcher.handle_user_event(message) {
+                if let Err(error) = launcher.handle_user_event(event_loop, message) {
                     launcher.set_error(error.to_string());
                 }
             }
