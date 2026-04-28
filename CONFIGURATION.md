@@ -266,3 +266,4 @@ Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin
 | `canvas_hidden_item_hover` | string | Result-row hover background when the outer canvas is disabled. |
 | `canvas_hidden_item_selected_bg` | string | Selected result-row background when the outer canvas is disabled. |
 | `canvas_hidden_config_error_bg` | string | Config-error panel background when the outer canvas is disabled. |
+

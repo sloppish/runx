@@ -5,7 +5,10 @@ use std::{
 
 use anyhow::{Context, Result, bail};
 use quote::ToTokens;
-use syn::{Attribute, Expr, Fields, Item, ItemEnum, ItemStruct, Lit, Meta, Variant, parse_file};
+use syn::{
+    Attribute, Expr, Fields, Item, ItemEnum, ItemStruct, Lit, Meta, PathArguments, Type, Variant,
+    parse_file,
+};
 use toml::Value;
 
 const SECTION_ORDER: &[SectionSpec] = &[
@@ -122,7 +125,8 @@ fn main() -> Result<()> {
     let mut source = String::new();
     for path in &config_sources {
         source.push_str(
-            &fs::read_to_string(path).with_context(|| format!("failed to read {}", path.display()))?,
+            &fs::read_to_string(path)
+                .with_context(|| format!("failed to read {}", path.display()))?,
         );
         source.push('\n');
     }
@@ -205,6 +209,7 @@ struct FieldDef {
     rust_name: String,
     toml_name: String,
     rust_type: String,
+    is_optional: bool,
     doc: String,
 }
 
@@ -265,6 +270,7 @@ fn parse_struct(item: &ItemStruct) -> Result<StructDef> {
                 .unwrap_or_else(|| render_field_name(&rust_name, rename_all.as_deref())),
             rust_name,
             rust_type: field.ty.to_token_stream().to_string().replace(' ', ""),
+            is_optional: is_option_type(&field.ty),
             doc: doc_text(&field.attrs),
         });
     }
@@ -283,6 +289,18 @@ fn parse_enum(item: &ItemEnum) -> EnumDef {
         .map(|variant| render_variant_name(variant, rename_all.as_deref()))
         .collect();
     EnumDef { variants }
+}
+
+fn is_option_type(ty: &Type) -> bool {
+    let Type::Path(type_path) = ty else {
+        return false;
+    };
+    if type_path.qself.is_some() {
+        return false;
+    }
+    type_path.path.segments.last().is_some_and(|segment| {
+        segment.ident == "Option" && matches!(segment.arguments, PathArguments::AngleBracketed(_))
+    })
 }
 
 fn render_field_name(raw: &str, rename_all: Option<&str>) -> String {
@@ -516,10 +534,8 @@ fn validate_provider_defaults(defaults: &Value, provider_names: &[String]) -> Re
         .iter()
         .map(String::as_str)
         .collect::<HashSet<_>>();
-    let provider_array_paths: &[&[&str]] = &[
-        &["providers", "disabled"],
-        &["ranking", "provider_order"],
-    ];
+    let provider_array_paths: &[&[&str]] =
+        &[&["providers", "disabled"], &["ranking", "provider_order"]];
 
     for path in provider_array_paths {
         let label = dotted_path(path);
@@ -610,7 +626,7 @@ fn validate_table_sections(docs: &DocMap, defaults: &Value) -> Result<()> {
                     field.rust_name
                 );
             }
-            if lookup_field_default(defaults, section, field).is_none() {
+            if lookup_field_default(defaults, section, field).is_none() && !field.is_optional {
                 bail!(
                     "{} field `{}` has no DEFAULT_CONFIG value at `{}`",
                     section.path,
@@ -1008,11 +1024,7 @@ fn render_section_without_defaults(
 fn field_filter(path: &str) -> Option<&'static [&'static str]> {
     match path {
         "[providers]" => Some(&["disabled"]),
-        "[ranking]" => Some(&[
-            "tie_threshold",
-            "provider_order",
-            "result_limit",
-        ]),
+        "[ranking]" => Some(&["tie_threshold", "provider_order", "result_limit"]),
         "[ui]" => Some(&[
             "show_header",
             "cycle_selection",
@@ -1136,9 +1148,8 @@ fn describe_type(
     enum_values: &HashMap<String, Vec<String>>,
 ) -> String {
     match (section_path, field.rust_name.as_str()) {
-        ("[hotkey]", "key") => {
-            "string (`A-Z`, `0-9`, `Space`, `Enter`, `Escape`, `Tab`, `Backspace`, arrows)"
-                .to_string()
+        ("[hotkey]", "shortcut") => {
+            "shortcut string such as `Option+Space` or `Cmd+KeyK`".to_string()
         }
         ("[ui.shortcuts]", _) if is_ui_shortcut_field(field) => {
             "shortcut string such as `Enter` or `Option+Enter`, or `none`".to_string()
@@ -1205,10 +1216,7 @@ fn is_ui_shortcut_field(field: &FieldDef) -> bool {
 }
 
 fn is_provider_name_array_field(field_name: &str) -> bool {
-    matches!(
-        field_name,
-        "provider_order" | "providers" | "disabled"
-    )
+    matches!(field_name, "provider_order" | "providers" | "disabled")
 }
 
 fn simple_type_name(rust_type: &str) -> String {
