@@ -11,7 +11,7 @@ Most users only touch a few sections:
 - `[window]` for placement and basic launcher behavior
 - `[providers]` to disable built-in providers
 - `[providers.windows]` and `[providers.apps]` for provider-specific behavior
-- `[ranking]` for provider order and empty-query behavior
+- `[ranking]` for provider order and scoring behavior
 - `[ui]` and `[ui.colorschemes.<name>]` for appearance
 - `[plugin.<id>]` only when a plugin needs configuration
 
@@ -73,6 +73,7 @@ Settings for the macOS windows provider.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `include_other_desktops` | boolean | `false` | Include windows from other macOS desktops/spaces in search results. Requires Screen Recording permission. |
+| `show_on_empty_query` | boolean | `true` | Show open windows before the query is non-empty. |
 
 ## [providers.apps]
 
@@ -91,7 +92,6 @@ Ranking and truncation rules for the merged result list.
 | --- | --- | --- | --- |
 | `tie_threshold` | integer | `120` | Maximum raw-score gap that still counts as a tie between providers. |
 | `provider_order` | array of provider names (`windows`, `apps`, `settings`, `plugins`) | `["windows", "apps", "settings", "plugins"]` | Tie-break priority when multiple providers return similarly scored items. |
-| `empty_query_providers` | array of provider names (`windows`, `apps`, `settings`, `plugins`) | `["windows"]` | Providers that should run before the query is non-empty. |
 | `result_limit` | integer | `24` | Maximum number of rows shown in the launcher. |
 
 ## [ranking.provider_score_boosts]

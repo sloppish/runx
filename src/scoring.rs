@@ -158,7 +158,6 @@ mod tests {
                 "apps".to_owned(),
                 "settings".to_owned(),
             ],
-            empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: Default::default(),
             score_rules: vec![],
             result_limit: 10,
@@ -191,7 +190,6 @@ mod tests {
         let ranking = RankingConfig {
             tie_threshold: 0,
             provider_order: vec!["settings".to_owned(), "apps".to_owned()],
-            empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: [("apps".to_owned(), 20)].into_iter().collect(),
             score_rules: vec![],
             result_limit: 10,
@@ -215,7 +213,6 @@ mod tests {
         let ranking = RankingConfig {
             tie_threshold: 0,
             provider_order: vec!["apps".to_owned()],
-            empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: Default::default(),
             score_rules: vec![RankingScoreRule {
                 providers: vec!["apps".to_owned(), "windows".to_owned()],

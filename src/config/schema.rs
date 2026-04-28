@@ -20,9 +20,9 @@ pub struct Config {
     pub window: WindowConfig,
     /// Per-display size and density overrides applied after the target display is resolved.
     pub display_overrides: Vec<DisplayOverrideConfig>,
-    /// Provider-specific search and activation behavior.
+    /// Provider-specific search, empty-query, and activation behavior.
     pub providers: ProvidersConfig,
-    /// Result ranking, tie-breaking, and empty-query behavior.
+    /// Result ranking and tie-breaking behavior.
     pub ranking: RankingConfig,
     /// Search and render scheduling knobs.
     pub timing: TimingConfig,
@@ -81,11 +81,13 @@ pub struct ProvidersConfig {
 }
 
 /// Settings for the macOS windows provider.
-#[derive(Debug, Clone, Deserialize, Default, PartialEq)]
+#[derive(Debug, Clone, Deserialize, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct WindowsProviderConfig {
     /// Include windows from other macOS desktops/spaces in search results. Requires Screen Recording permission.
     pub include_other_desktops: bool,
+    /// Show open windows before the query is non-empty.
+    pub show_on_empty_query: bool,
 }
 
 /// Settings for installed application search ranking.
@@ -145,8 +147,6 @@ pub struct RankingConfig {
     pub tie_threshold: i64,
     /// Tie-break priority when multiple providers return similarly scored items.
     pub provider_order: Vec<String>,
-    /// Providers that should run before the query is non-empty.
-    pub empty_query_providers: Vec<String>,
     /// Per-provider additive score adjustments applied after matching.
     pub provider_score_boosts: HashMap<String, i64>,
     /// Text-based additive score rules evaluated on merged results.
@@ -861,10 +861,18 @@ impl Default for RankingConfig {
                 "settings".to_owned(),
                 "plugins".to_owned(),
             ],
-            empty_query_providers: vec!["windows".to_owned()],
             provider_score_boosts: HashMap::new(),
             score_rules: Vec::new(),
             result_limit: 24,
+        }
+    }
+}
+
+impl Default for WindowsProviderConfig {
+    fn default() -> Self {
+        Self {
+            include_other_desktops: false,
+            show_on_empty_query: true,
         }
     }
 }

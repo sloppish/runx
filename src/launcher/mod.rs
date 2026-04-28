@@ -225,7 +225,6 @@ impl Launcher {
                     self.search.handle_start_search(
                         &mut self.state,
                         token,
-                        &self.loaded.config.ranking,
                         &self.providers,
                         self.proxy.clone(),
                     );
@@ -234,7 +233,6 @@ impl Launcher {
             AppEvent::StartSearch { token } => self.search.handle_start_search(
                 &mut self.state,
                 token,
-                &self.loaded.config.ranking,
                 &self.providers,
                 self.proxy.clone(),
             ),
@@ -305,7 +303,6 @@ impl Launcher {
         self.search.handle_start_search(
             &mut self.state,
             token,
-            &self.loaded.config.ranking,
             &self.providers,
             self.proxy.clone(),
         );
@@ -540,7 +537,6 @@ impl Launcher {
             self.search.handle_start_search(
                 &mut self.state,
                 token,
-                &self.loaded.config.ranking,
                 &self.providers,
                 self.proxy.clone(),
             );

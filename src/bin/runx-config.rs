@@ -57,12 +57,12 @@ const PATH_WINDOW_SHOW_ON: &[&str] = &["window", "show_on"];
 const PATH_PROVIDERS_DISABLED: &[&str] = &["providers", "disabled"];
 const PATH_WINDOWS_INCLUDE_OTHER_DESKTOPS: &[&str] =
     &["providers", "windows", "include_other_desktops"];
+const PATH_WINDOWS_SHOW_ON_EMPTY_QUERY: &[&str] = &["providers", "windows", "show_on_empty_query"];
 const PATH_APPS_EXACT_NAME_BOOST: &[&str] = &["providers", "apps", "exact_name_boost"];
 const PATH_APPS_PREFIX_NAME_BOOST: &[&str] = &["providers", "apps", "prefix_name_boost"];
 const PATH_RANKING_TIE_THRESHOLD: &[&str] = &["ranking", "tie_threshold"];
 const PATH_RANKING_RESULT_LIMIT: &[&str] = &["ranking", "result_limit"];
 const PATH_RANKING_PROVIDER_ORDER: &[&str] = &["ranking", "provider_order"];
-const PATH_RANKING_EMPTY_QUERY_PROVIDERS: &[&str] = &["ranking", "empty_query_providers"];
 const PATH_UI_SHOW_HEADER: &[&str] = &["ui", "show_header"];
 const PATH_UI_CYCLE_SELECTION: &[&str] = &["ui", "cycle_selection"];
 const PATH_UI_FONT_FAMILY: &[&str] = &["ui", "font_family"];
@@ -917,16 +917,21 @@ impl App {
                 self.success("Saved include_other_desktops");
                 Ok(AppAction::None)
             }
-            FieldId::RankingProviderOrder => {
-                self.mode = Mode::ProviderOrder(ProviderOrderMode::new(&self.editor.config));
+            FieldId::WindowsShowOnEmptyQuery => {
+                let next = !self.editor.config.providers.windows.show_on_empty_query;
+                self.apply(|doc| {
+                    set_item(
+                        doc,
+                        &["providers", "windows"],
+                        "show_on_empty_query",
+                        value(next),
+                    )
+                })?;
+                self.success("Saved show_on_empty_query");
                 Ok(AppAction::None)
             }
-            FieldId::RankingEmptyQueryProviders => {
-                self.mode = Mode::Toggle(ToggleMode::providers(
-                    "Empty-query providers",
-                    ToggleTarget::EmptyQueryProviders,
-                    &self.editor.config.ranking.empty_query_providers,
-                ));
+            FieldId::RankingProviderOrder => {
+                self.mode = Mode::ProviderOrder(ProviderOrderMode::new(&self.editor.config));
                 Ok(AppAction::None)
             }
             FieldId::UiShowHeader => {
@@ -1268,17 +1273,6 @@ impl App {
                     set_item(doc, &["providers"], "disabled", string_array(&selected))
                 })?;
                 self.success("Saved disabled providers");
-            }
-            ToggleTarget::EmptyQueryProviders => {
-                self.apply(|doc| {
-                    set_item(
-                        doc,
-                        &["ranking"],
-                        "empty_query_providers",
-                        string_array(&selected),
-                    )
-                })?;
-                self.success("Saved empty-query providers");
             }
         }
         Ok(AppAction::None)
@@ -1862,7 +1856,6 @@ struct ToggleOption {
 enum ToggleTarget {
     HotkeyModifiers,
     DisabledProviders,
-    EmptyQueryProviders,
 }
 
 #[derive(Clone)]
@@ -1938,12 +1931,12 @@ enum FieldId {
     DisplayOverridesChoose,
     ProvidersDisabled,
     WindowsIncludeOtherDesktops,
+    WindowsShowOnEmptyQuery,
     AppsExactNameBoost,
     AppsPrefixNameBoost,
     RankingTieThreshold,
     RankingResultLimit,
     RankingProviderOrder,
-    RankingEmptyQueryProviders,
     UiShowHeader,
     UiCycleSelection,
     UiFontFamily,
@@ -1976,12 +1969,12 @@ impl FieldId {
             Self::DisplayOverridesChoose => "Choose display",
             Self::ProvidersDisabled => "Disabled providers",
             Self::WindowsIncludeOtherDesktops => "Include windows from other desktops",
+            Self::WindowsShowOnEmptyQuery => "Show windows on empty query",
             Self::AppsExactNameBoost => "Exact app name boost",
             Self::AppsPrefixNameBoost => "Prefix app name boost",
             Self::RankingTieThreshold => "Tie threshold",
             Self::RankingResultLimit => "Result limit",
             Self::RankingProviderOrder => "Provider order",
-            Self::RankingEmptyQueryProviders => "Empty-query providers",
             Self::UiShowHeader => "Show header",
             Self::UiCycleSelection => "Cycle selection",
             Self::UiFontFamily => "Font family",
@@ -2014,12 +2007,12 @@ impl FieldId {
             Self::DisplayOverridesChoose => None,
             Self::ProvidersDisabled => Some(PATH_PROVIDERS_DISABLED),
             Self::WindowsIncludeOtherDesktops => Some(PATH_WINDOWS_INCLUDE_OTHER_DESKTOPS),
+            Self::WindowsShowOnEmptyQuery => Some(PATH_WINDOWS_SHOW_ON_EMPTY_QUERY),
             Self::AppsExactNameBoost => Some(PATH_APPS_EXACT_NAME_BOOST),
             Self::AppsPrefixNameBoost => Some(PATH_APPS_PREFIX_NAME_BOOST),
             Self::RankingTieThreshold => Some(PATH_RANKING_TIE_THRESHOLD),
             Self::RankingResultLimit => Some(PATH_RANKING_RESULT_LIMIT),
             Self::RankingProviderOrder => Some(PATH_RANKING_PROVIDER_ORDER),
-            Self::RankingEmptyQueryProviders => Some(PATH_RANKING_EMPTY_QUERY_PROVIDERS),
             Self::UiShowHeader => Some(PATH_UI_SHOW_HEADER),
             Self::UiCycleSelection => Some(PATH_UI_CYCLE_SELECTION),
             Self::UiFontFamily => Some(PATH_UI_FONT_FAMILY),
@@ -2067,12 +2060,14 @@ impl FieldId {
             Self::WindowsIncludeOtherDesktops => {
                 bool_summary(config.providers.windows.include_other_desktops).to_owned()
             }
+            Self::WindowsShowOnEmptyQuery => {
+                bool_summary(config.providers.windows.show_on_empty_query).to_owned()
+            }
             Self::AppsExactNameBoost => config.providers.apps.exact_name_boost.to_string(),
             Self::AppsPrefixNameBoost => config.providers.apps.prefix_name_boost.to_string(),
             Self::RankingTieThreshold => config.ranking.tie_threshold.to_string(),
             Self::RankingResultLimit => config.ranking.result_limit.to_string(),
             Self::RankingProviderOrder => list_summary(&config.ranking.provider_order),
-            Self::RankingEmptyQueryProviders => list_summary(&config.ranking.empty_query_providers),
             Self::UiShowHeader => bool_summary(config.ui.show_header).to_owned(),
             Self::UiCycleSelection => bool_summary(config.ui.cycle_selection).to_owned(),
             Self::UiFontFamily => config.ui.font_family.clone(),
@@ -2108,6 +2103,7 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
         Section::Providers => &[
             FieldId::ProvidersDisabled,
             FieldId::WindowsIncludeOtherDesktops,
+            FieldId::WindowsShowOnEmptyQuery,
             FieldId::AppsExactNameBoost,
             FieldId::AppsPrefixNameBoost,
         ],
@@ -2115,7 +2111,6 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
             FieldId::RankingTieThreshold,
             FieldId::RankingResultLimit,
             FieldId::RankingProviderOrder,
-            FieldId::RankingEmptyQueryProviders,
         ],
         Section::UiBasics => &[
             FieldId::UiShowHeader,

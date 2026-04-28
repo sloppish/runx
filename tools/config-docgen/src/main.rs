@@ -511,7 +511,6 @@ fn validate_provider_defaults(defaults: &Value, provider_names: &[String]) -> Re
     let provider_array_paths: &[&[&str]] = &[
         &["providers", "disabled"],
         &["ranking", "provider_order"],
-        &["ranking", "empty_query_providers"],
     ];
 
     for path in provider_array_paths {
@@ -742,7 +741,7 @@ fn render_document(
     out.push_str("- `[window]` for placement and basic launcher behavior\n");
     out.push_str("- `[providers]` to disable built-in providers\n");
     out.push_str("- `[providers.windows]` and `[providers.apps]` for provider-specific behavior\n");
-    out.push_str("- `[ranking]` for provider order and empty-query behavior\n");
+    out.push_str("- `[ranking]` for provider order and scoring behavior\n");
     out.push_str("- `[ui]` and `[ui.colorschemes.<name>]` for appearance\n");
     out.push_str("- `[plugin.<id>]` only when a plugin needs configuration\n\n");
 
@@ -992,7 +991,6 @@ fn field_filter(path: &str) -> Option<&'static [&'static str]> {
         "[ranking]" => Some(&[
             "tie_threshold",
             "provider_order",
-            "empty_query_providers",
             "result_limit",
         ]),
         "[ui]" => Some(&[
@@ -1189,7 +1187,7 @@ fn is_ui_shortcut_field(field: &FieldDef) -> bool {
 fn is_provider_name_array_field(field_name: &str) -> bool {
     matches!(
         field_name,
-        "provider_order" | "empty_query_providers" | "providers" | "disabled"
+        "provider_order" | "providers" | "disabled"
     )
 }
 

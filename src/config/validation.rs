@@ -116,7 +116,6 @@ struct RawProvidersSpans {
 struct RawRankingSpans {
     tie_threshold: i64,
     provider_order: Vec<Spanned<String>>,
-    empty_query_providers: Vec<Spanned<String>>,
     provider_score_boosts: RawProviderScoreBoostsSpans,
     score_rules: Vec<RawRankingScoreRuleSpans>,
     result_limit: usize,
@@ -145,10 +144,6 @@ struct RawRankingScoreRuleSpans {
 pub(super) fn validate_config(config: &Config) -> Result<()> {
     validate_provider_names(&config.providers.disabled, "[providers].disabled")?;
     validate_provider_names(&config.ranking.provider_order, "[ranking].provider_order")?;
-    validate_provider_names(
-        &config.ranking.empty_query_providers,
-        "[ranking].empty_query_providers",
-    )?;
     validate_window_dimension_fraction(
         config.window.width_fraction,
         "[window].width_fraction must be greater than 0.0 and at most 1.0",
@@ -255,12 +250,6 @@ pub(super) fn validate_config_with_spans(
         raw,
         &spans.ranking.provider_order,
         "[ranking].provider_order",
-    )?;
-    validate_spanned_provider_names(
-        config_path,
-        raw,
-        &spans.ranking.empty_query_providers,
-        "[ranking].empty_query_providers",
     )?;
 
     if let Some(width_fraction) = &spans.window.width_fraction

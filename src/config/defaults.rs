@@ -2,7 +2,7 @@ pub const DEFAULT_CONFIG: &str = r##"# Runx configuration
 #
 # `provider_order` controls which provider wins when scores are close.
 # `tie_threshold` is the raw fuzzy-score delta that still counts as "similar".
-# `empty_query_providers` controls which providers run before you type anything.
+# `show_on_empty_query` controls whether open windows are listed before you type anything.
 # `provider_score_boosts` lets you nudge merged scores per provider.
 # `score_rules` lets you boost or demote specific result text patterns.
 # `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
@@ -42,6 +42,7 @@ disabled = []
 
 [providers.windows]
 include_other_desktops = false
+show_on_empty_query = true
 
 [providers.apps]
 exact_name_boost = 200
@@ -50,7 +51,6 @@ prefix_name_boost = 100
 [ranking]
 tie_threshold = 120
 provider_order = ["windows", "apps", "settings", "plugins"]
-empty_query_providers = ["windows"]
 result_limit = 24
 # Example:
 # [ranking.provider_score_boosts]

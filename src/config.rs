@@ -283,6 +283,7 @@ mod tests {
         fn defaults_to_current_windows_provider_settings() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert!(!config.providers.windows.include_other_desktops);
+            assert!(config.providers.windows.show_on_empty_query);
         }
 
         #[test]
@@ -291,6 +292,14 @@ mod tests {
                 toml::from_str("[providers.windows]\ninclude_other_desktops = true\n")
                     .expect("include_other_desktops should parse");
             assert!(config.providers.windows.include_other_desktops);
+        }
+
+        #[test]
+        fn accepts_show_windows_on_empty_query() {
+            let config: Config =
+                toml::from_str("[providers.windows]\nshow_on_empty_query = false\n")
+                    .expect("show_on_empty_query should parse");
+            assert!(!config.providers.windows.show_on_empty_query);
         }
 
         #[test]
@@ -336,28 +345,11 @@ mod tests {
         }
     }
 
-    mod empty_query_provider_tests {
+    mod ranking_config_tests {
         use super::Config;
         use crate::config::{
             RankingScoreRule, RankingScoreRuleField, RankingScoreRuleMatchKind, validate_config,
         };
-
-        #[test]
-        fn defaults_to_windows_only() {
-            let config: Config = toml::from_str("").expect("empty config should parse");
-            assert_eq!(config.ranking.empty_query_providers, vec!["windows"]);
-        }
-
-        #[test]
-        fn accepts_custom_provider_list() {
-            let config: Config =
-                toml::from_str("[ranking]\nempty_query_providers = [\"windows\", \"plugins\"]\n")
-                    .expect("custom empty query providers should parse");
-            assert_eq!(
-                config.ranking.empty_query_providers,
-                vec!["windows", "plugins"]
-            );
-        }
 
         #[test]
         fn accepts_provider_score_boosts() {
@@ -410,19 +402,6 @@ mod tests {
                 error
                     .to_string()
                     .contains("[ranking].provider_order contains unknown provider `asdfasdf`")
-            );
-        }
-
-        #[test]
-        fn rejects_unknown_provider_in_empty_query_providers() {
-            let mut config = Config::default();
-            config.ranking.empty_query_providers = vec!["asdfasdf".to_owned()];
-
-            let error = validate_config(&config).expect_err("unknown provider should fail");
-            assert!(
-                error.to_string().contains(
-                    "[ranking].empty_query_providers contains unknown provider `asdfasdf`"
-                )
             );
         }
 
