@@ -318,40 +318,15 @@
     updateDirtyState();
   }
 
-  function labelText(input) {
-    return input.closest("label")?.querySelector("span")?.textContent || input.dataset.field || "Value";
-  }
-
   function validateStructuredForm() {
-    for (const input of formEl.querySelectorAll('input[type="number"]')) {
-      if (input.disabled || (input.dataset.optional === "true" && input.value.trim() === "")) {
-        continue;
-      }
-      const value = Number(input.value);
-      const label = labelText(input);
-      if (!Number.isFinite(value)) {
-        return `${label} must be a number.`;
-      }
-      if (input.min !== "" && value < Number(input.min)) {
-        return `${label} must be at least ${input.min}.`;
-      }
-      if (input.max !== "" && value > Number(input.max)) {
-        return `${label} must be at most ${input.max}.`;
-      }
-      if (input.step === "1" && !Number.isInteger(value)) {
-        return `${label} must be a whole number.`;
-      }
+    const resultLimit = field("ranking.result_limit");
+    if (resultLimit && !resultLimit.disabled && Number(resultLimit.value) < 1) {
+      return "Result limit must be at least 1.";
     }
 
     const colorschemeNames = new Set();
     for (const input of colorschemesEl.querySelectorAll("[data-colorscheme-name]")) {
       const name = input.value.trim();
-      if (!name) {
-        return "Custom colorscheme name must not be empty.";
-      }
-      if (name === "system" || (state.builtin_colorschemes || []).includes(name)) {
-        return "Custom colorscheme name must not be system or a built-in name.";
-      }
       if (colorschemeNames.has(name)) {
         return `Custom colorscheme ${name} is duplicated.`;
       }
@@ -542,25 +517,19 @@
     const grid = document.createElement("div");
     grid.className = "grid four";
 
-    for (const [key, label, integer, min, max] of [
-      ["width_fraction", "Width fraction", false, 0.000001, 1],
-      ["visible_rows", "Visible rows", true, 1],
-      ["min_width", "Min width", false, 1],
-      ["max_width", "Max width", false, 1],
-      ["min_height", "Min height", false, 1],
-      ["max_height", "Max height", false, 1],
-      ["ui_scale", "UI scale", false, 0.000001],
+    for (const [key, label, integer] of [
+      ["width_fraction", "Width fraction", false],
+      ["visible_rows", "Visible rows", true],
+      ["min_width", "Min width", false],
+      ["max_width", "Max width", false],
+      ["min_height", "Min height", false],
+      ["max_height", "Max height", false],
+      ["ui_scale", "UI scale", false],
     ]) {
       const [labelNode, input] = labeledInput(label, "number");
       input.dataset.overrideField = key;
       input.dataset.optional = "true";
       input.step = integer ? "1" : "0.01";
-      if (min != null) {
-        input.min = String(min);
-      }
-      if (max != null) {
-        input.max = String(max);
-      }
       input.value = entry[key] ?? "";
       grid.append(labelNode);
     }

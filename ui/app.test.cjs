@@ -139,6 +139,16 @@ test("settings window clamps are optional when left blank", () => {
   }
 });
 
+test("settings frontend keeps only result limit minimum", () => {
+  const html = fs.readFileSync(path.join(__dirname, "settings.html"), "utf8");
+  const settingsJs = fs.readFileSync(path.join(__dirname, "settings.js"), "utf8");
+  const minInputs = [...html.matchAll(/<input\b[^>]*\bmin="[^"]*"[^>]*>/g)].map((match) => match[0]);
+
+  assert.equal(minInputs.length, 1);
+  assert.match(minInputs[0], /data-field="ranking\.result_limit"/);
+  assert.doesNotMatch(settingsJs, /input\.min\s*=/);
+});
+
 test("backend render payload does not overwrite active typing with stale query text", () => {
   const state = ui.createState();
   state.query = "gmail";

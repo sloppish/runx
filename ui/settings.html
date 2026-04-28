@@ -107,7 +107,7 @@
                 </label>
                 <label>
                   <span>Visible rows</span>
-                  <input type="number" min="1" step="1" data-field="window.visible_rows" />
+                  <input type="number" step="1" data-field="window.visible_rows" />
                 </label>
               </div>
             </div>
@@ -117,23 +117,23 @@
               <div class="grid three">
                 <label>
                   <span>Width fraction</span>
-                  <input type="number" min="0.1" max="1" step="0.01" data-field="window.width_fraction" />
+                  <input type="number" step="0.01" data-field="window.width_fraction" />
                 </label>
                 <label>
                   <span>Min width</span>
-                  <input type="number" min="1" step="1" data-optional="true" data-field="window.min_width" />
+                  <input type="number" step="1" data-optional="true" data-field="window.min_width" />
                 </label>
                 <label>
                   <span>Max width</span>
-                  <input type="number" min="1" step="1" data-optional="true" data-field="window.max_width" />
+                  <input type="number" step="1" data-optional="true" data-field="window.max_width" />
                 </label>
                 <label>
                   <span>Min height</span>
-                  <input type="number" min="1" step="1" data-optional="true" data-field="window.min_height" />
+                  <input type="number" step="1" data-optional="true" data-field="window.min_height" />
                 </label>
                 <label>
                   <span>Max height</span>
-                  <input type="number" min="1" step="1" data-optional="true" data-field="window.max_height" />
+                  <input type="number" step="1" data-optional="true" data-field="window.max_height" />
                 </label>
               </div>
             </div>
@@ -245,11 +245,11 @@
                 </label>
                 <label>
                   <span>UI scale</span>
-                  <input type="number" min="0.5" max="2" step="0.05" data-field="ui.scale" />
+                  <input type="number" step="0.05" data-field="ui.scale" />
                 </label>
                 <label>
                   <span>Entry opacity</span>
-                  <input type="number" min="0" max="1" step="0.01" data-field="ui.entries.opacity" />
+                  <input type="number" step="0.01" data-field="ui.entries.opacity" />
                 </label>
               </div>
             </div>
@@ -263,15 +263,15 @@
                 </label>
                 <label>
                   <span>Radius</span>
-                  <input type="number" min="0" step="1" data-field="ui.canvas.radius" />
+                  <input type="number" step="1" data-field="ui.canvas.radius" />
                 </label>
                 <label>
                   <span>Background opacity</span>
-                  <input type="number" min="0" max="1" step="0.01" data-field="ui.canvas.background_opacity" />
+                  <input type="number" step="0.01" data-field="ui.canvas.background_opacity" />
                 </label>
                 <label>
                   <span>Chrome opacity</span>
-                  <input type="number" min="0" max="1" step="0.01" data-field="ui.canvas.chrome_opacity" />
+                  <input type="number" step="0.01" data-field="ui.canvas.chrome_opacity" />
                 </label>
               </div>
             </div>
@@ -291,11 +291,11 @@
               <div class="grid two">
                 <label>
                   <span>Search debounce ms</span>
-                  <input type="number" min="0" step="1" data-field="timing.search_debounce_ms" />
+                  <input type="number" step="1" data-field="timing.search_debounce_ms" />
                 </label>
                 <label>
                   <span>Render coalesce ms</span>
-                  <input type="number" min="0" step="1" data-field="timing.render_coalesce_ms" />
+                  <input type="number" step="1" data-field="timing.render_coalesce_ms" />
                 </label>
               </div>
             </div>
@@ -303,32 +303,32 @@
             <div class="section">
               <h2>Font Sizes</h2>
               <div class="grid four">
-                <label><span>Label</span><input type="number" min="1" step="1" data-field="ui.font_sizes.label" /></label>
-                <label><span>Input</span><input type="number" min="1" step="1" data-field="ui.font_sizes.input" /></label>
-                <label><span>Title</span><input type="number" min="1" step="1" data-field="ui.font_sizes.title" /></label>
-                <label><span>Subtitle</span><input type="number" min="1" step="1" data-field="ui.font_sizes.subtitle" /></label>
-                <label><span>Badge</span><input type="number" min="1" step="1" data-field="ui.font_sizes.badge" /></label>
-                <label><span>Accelerator</span><input type="number" min="1" step="1" data-field="ui.font_sizes.accelerator" /></label>
-                <label><span>Error title</span><input type="number" min="1" step="1" data-field="ui.font_sizes.config_error_title" /></label>
-                <label><span>Error body</span><input type="number" min="1" step="1" data-field="ui.font_sizes.config_error_body" /></label>
+                <label><span>Label</span><input type="number" step="1" data-field="ui.font_sizes.label" /></label>
+                <label><span>Input</span><input type="number" step="1" data-field="ui.font_sizes.input" /></label>
+                <label><span>Title</span><input type="number" step="1" data-field="ui.font_sizes.title" /></label>
+                <label><span>Subtitle</span><input type="number" step="1" data-field="ui.font_sizes.subtitle" /></label>
+                <label><span>Badge</span><input type="number" step="1" data-field="ui.font_sizes.badge" /></label>
+                <label><span>Accelerator</span><input type="number" step="1" data-field="ui.font_sizes.accelerator" /></label>
+                <label><span>Error title</span><input type="number" step="1" data-field="ui.font_sizes.config_error_title" /></label>
+                <label><span>Error body</span><input type="number" step="1" data-field="ui.font_sizes.config_error_body" /></label>
               </div>
             </div>
 
             <div class="section">
               <h2>Layout</h2>
               <div class="grid four">
-                <label><span>Section gap</span><input type="number" min="0" step="1" data-field="ui.layout.section_gap" /></label>
-                <label><span>Input Y</span><input type="number" min="0" step="1" data-field="ui.layout.input_padding_y" /></label>
-                <label><span>Input X</span><input type="number" min="0" step="1" data-field="ui.layout.input_padding_x" /></label>
-                <label><span>Input radius</span><input type="number" min="0" step="1" data-field="ui.layout.input_radius" /></label>
-                <label><span>List gap</span><input type="number" min="0" step="1" data-field="ui.layout.list_gap" /></label>
-                <label><span>Entry Y</span><input type="number" min="0" step="1" data-field="ui.layout.entry_padding_y" /></label>
-                <label><span>Entry X</span><input type="number" min="0" step="1" data-field="ui.layout.entry_padding_x" /></label>
-                <label><span>Entry gap</span><input type="number" min="0" step="1" data-field="ui.layout.entry_gap" /></label>
-                <label><span>Row radius</span><input type="number" min="0" step="1" data-field="ui.layout.row_radius" /></label>
-                <label><span>Badge size</span><input type="number" min="1" step="1" data-field="ui.layout.badge_size" /></label>
-                <label><span>Badge radius</span><input type="number" min="0" step="1" data-field="ui.layout.badge_radius" /></label>
-                <label><span>Icon size</span><input type="number" min="1" step="1" data-field="ui.layout.icon_size" /></label>
+                <label><span>Section gap</span><input type="number" step="1" data-field="ui.layout.section_gap" /></label>
+                <label><span>Input Y</span><input type="number" step="1" data-field="ui.layout.input_padding_y" /></label>
+                <label><span>Input X</span><input type="number" step="1" data-field="ui.layout.input_padding_x" /></label>
+                <label><span>Input radius</span><input type="number" step="1" data-field="ui.layout.input_radius" /></label>
+                <label><span>List gap</span><input type="number" step="1" data-field="ui.layout.list_gap" /></label>
+                <label><span>Entry Y</span><input type="number" step="1" data-field="ui.layout.entry_padding_y" /></label>
+                <label><span>Entry X</span><input type="number" step="1" data-field="ui.layout.entry_padding_x" /></label>
+                <label><span>Entry gap</span><input type="number" step="1" data-field="ui.layout.entry_gap" /></label>
+                <label><span>Row radius</span><input type="number" step="1" data-field="ui.layout.row_radius" /></label>
+                <label><span>Badge size</span><input type="number" step="1" data-field="ui.layout.badge_size" /></label>
+                <label><span>Badge radius</span><input type="number" step="1" data-field="ui.layout.badge_radius" /></label>
+                <label><span>Icon size</span><input type="number" step="1" data-field="ui.layout.icon_size" /></label>
               </div>
             </div>
           </section>
