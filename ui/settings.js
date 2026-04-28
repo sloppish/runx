@@ -1087,12 +1087,29 @@
     updateDirtyState();
   });
 
-  document.getElementById("reload").addEventListener("click", () => {
+  function reloadSettings() {
     setStatus("Reloading...");
     send({ type: "reload" });
-  });
+  }
 
-  document.getElementById("save").addEventListener("click", () => {
+  function closeSettings() {
+    send({ type: "close" });
+  }
+
+  function isPlainCommandShortcut(event, code) {
+    return (
+      event.code === code &&
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !recordingShortcut
+    );
+  }
+
+  document.getElementById("reload").addEventListener("click", reloadSettings);
+
+  function saveActiveEditor() {
     if (saveButton.disabled) {
       return;
     }
@@ -1110,11 +1127,24 @@
       }
       send({ type: "save", draft: collectDraft() });
     }
+  }
+
+  document.getElementById("save").addEventListener("click", saveActiveEditor);
+
+  document.addEventListener("keydown", (event) => {
+    if (isPlainCommandShortcut(event, "KeyS")) {
+      event.preventDefault();
+      saveActiveEditor();
+    } else if (isPlainCommandShortcut(event, "KeyR")) {
+      event.preventDefault();
+      reloadSettings();
+    } else if (isPlainCommandShortcut(event, "KeyW")) {
+      event.preventDefault();
+      closeSettings();
+    }
   });
 
-  document.getElementById("close").addEventListener("click", () => {
-    send({ type: "close" });
-  });
+  document.getElementById("close").addEventListener("click", closeSettings);
 
   root.__RUNX_SETTINGS_STATE__ = render;
   root.__RUNX_SETTINGS_STATUS__ = setStatus;
