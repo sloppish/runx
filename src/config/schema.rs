@@ -263,7 +263,7 @@ pub struct UiColorschemeConfig {
 #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct UiColorOverridesConfig {
-    /// Accent color used for highlighted details and emphasis.
+    /// Primary highlight color. In custom schemes, this also derives hover, selected-row, badge, and chip highlight surfaces unless those advanced tokens are set.
     pub accent: Option<String>,
     /// Panel surface color used by the built-in palette.
     pub panel: Option<String>,

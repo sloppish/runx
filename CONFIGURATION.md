@@ -231,7 +231,7 @@ Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin
 | Option | Type | Description |
 | --- | --- | --- |
 | `base` | one of: `builtin_light`, `builtin_dark` | Base palette inherited by a custom scheme. Without `base`, custom schemes must define every color token. |
-| `accent` | string | Accent color used for highlighted details and emphasis. |
+| `accent` | string | Primary highlight color. In custom schemes, this also derives hover, selected-row, badge, and chip highlight surfaces unless those advanced tokens are set. |
 | `panel` | string | Panel surface color used by the built-in palette. |
 | `text` | string | Primary foreground text color. |
 | `muted` | string | Secondary or de-emphasized foreground text color. |

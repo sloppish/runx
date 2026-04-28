@@ -31,7 +31,8 @@ use runx::displays::{DisplayProfile, active_displays, current_display};
 use runx::ui::builtin_colorscheme_token_values;
 use tempfile::Builder as TempFileBuilder;
 use toml_edit::{
-    Array, ArrayOfTables, Decor, Document, Item, Key, Table as TomlTable, Value, value,
+    Array, ArrayOfTables, Decor, Document as SpannedDocument, DocumentMut as Document, Item, Key,
+    Table as TomlTable, Value, value,
 };
 
 const SECTIONS: [Section; 9] = [
@@ -169,6 +170,7 @@ fn run_app(terminal: &mut Terminal<CrosstermBackend<Stdout>>, app: &mut App) -> 
 
 struct ConfigEditor {
     path: PathBuf,
+    raw: String,
     doc: Document,
     config: Config,
 }
@@ -181,11 +183,17 @@ impl ConfigEditor {
         let doc = raw
             .parse::<Document>()
             .with_context(|| format!("failed to parse {}", path.display()))?;
-        Ok(Self { path, doc, config })
+        Ok(Self {
+            path,
+            raw,
+            doc,
+            config,
+        })
     }
 
     fn reload(&mut self) -> Result<()> {
         let next = Self::load(self.path.clone())?;
+        self.raw = next.raw;
         self.doc = next.doc;
         self.config = next.config;
         Ok(())
@@ -207,8 +215,9 @@ impl ConfigEditor {
     fn save(&mut self) -> Result<()> {
         let raw = self.doc.to_string();
         let config = validate_config_toml(&self.path, &raw)?;
-        fs::write(&self.path, raw)
+        fs::write(&self.path, &raw)
             .with_context(|| format!("failed to write {}", self.path.display()))?;
+        self.raw = raw;
         self.config = config;
         Ok(())
     }
@@ -2361,9 +2370,19 @@ fn centered_rect(percent_x: u16, percent_y: u16, area: Rect) -> Rect {
 fn run_external_editor(app: &mut App, request: ExternalEditorRequest) -> Result<()> {
     match request {
         ExternalEditorRequest::CreateColorscheme { name, base } => {
+            app.editor
+                .reload()
+                .context("failed to reload config.toml before creating colorscheme")?;
+            if app.editor.config.ui.colorschemes.contains_key(&name) {
+                bail!("colorscheme `{name}` already exists");
+            }
+
             let initial = new_colorscheme_snippet(&name, base.as_deref());
             let edited = edit_in_external_editor(&initial)?;
             let table = colorscheme_table_from_snippet(&edited, &name)?;
+            app.editor
+                .reload()
+                .context("failed to reload config.toml before saving colorscheme")?;
             app.apply(|doc| {
                 set_colorscheme_table(doc, &name, table)?;
                 set_item(doc, &["ui"], "colorscheme", value(name.clone()))?;
@@ -2372,9 +2391,19 @@ fn run_external_editor(app: &mut App, request: ExternalEditorRequest) -> Result<
             app.success(format!("Created and selected colorscheme `{name}`"));
         }
         ExternalEditorRequest::EditColorscheme { name } => {
-            let initial = colorscheme_snippet(&app.editor.doc, &name)?;
+            app.editor
+                .reload()
+                .context("failed to reload config.toml before editing colorscheme")?;
+            if !app.editor.config.ui.colorschemes.contains_key(&name) {
+                bail!("colorscheme `{name}` no longer exists");
+            }
+
+            let initial = colorscheme_snippet(&app.editor.raw, &name)?;
             let edited = edit_in_external_editor(&initial)?;
             let table = colorscheme_table_from_snippet(&edited, &name)?;
+            app.editor
+                .reload()
+                .context("failed to reload config.toml before saving colorscheme")?;
             app.apply(|doc| set_colorscheme_table(doc, &name, table))?;
             app.success(format!("Saved colorscheme `{name}`"));
         }
@@ -2755,21 +2784,75 @@ fn display_override_table(display_override: &DisplayOverrideConfig) -> Result<To
     Ok(table)
 }
 
-fn colorscheme_snippet(doc: &Document, name: &str) -> Result<String> {
-    let Some(table) = doc
-        .get("ui")
-        .and_then(Item::as_table)
-        .and_then(|ui| ui.get("colorschemes"))
-        .and_then(Item::as_table)
-        .and_then(|colorschemes| colorschemes.get(name))
-        .and_then(Item::as_table)
-    else {
+#[derive(Debug)]
+struct TableHeader {
+    path: Vec<String>,
+    start: usize,
+}
+
+fn colorscheme_snippet(raw: &str, name: &str) -> Result<String> {
+    let Some(range) = colorscheme_source_range(raw, name)? else {
         return Ok(format!("[ui.colorschemes.{}]\n", table_header_key(name)));
     };
 
-    let mut snippet = Document::new();
-    set_colorscheme_table(&mut snippet, name, table.clone())?;
-    Ok(snippet.to_string())
+    Ok(raw[range].to_owned())
+}
+
+fn colorscheme_source_range(raw: &str, name: &str) -> Result<Option<std::ops::Range<usize>>> {
+    let doc = raw
+        .parse::<SpannedDocument<String>>()
+        .context("failed to parse config while locating colorscheme section")?;
+    let mut headers = Vec::new();
+    collect_table_headers(doc.as_table(), &mut Vec::new(), &mut headers);
+    headers.sort_unstable_by_key(|header| header.start);
+
+    let target_path = vec!["ui".to_owned(), "colorschemes".to_owned(), name.to_owned()];
+    let Some(target) = headers.iter().find(|header| header.path == target_path) else {
+        return Ok(None);
+    };
+
+    let start = line_start(raw, target.start);
+    let end = headers
+        .iter()
+        .map(|header| line_start(raw, header.start))
+        .filter(|header_start| *header_start > start)
+        .min()
+        .unwrap_or(raw.len());
+    Ok(Some(start..end))
+}
+
+fn collect_table_headers(
+    table: &TomlTable,
+    path: &mut Vec<String>,
+    headers: &mut Vec<TableHeader>,
+) {
+    if let Some(span) = table.span()
+        && span.start < span.end
+        && !path.is_empty()
+    {
+        headers.push(TableHeader {
+            path: path.clone(),
+            start: span.start,
+        });
+    }
+
+    for (key, item) in table.iter() {
+        if let Some(table) = item.as_table() {
+            path.push(key.to_owned());
+            collect_table_headers(table, path, headers);
+            path.pop();
+        } else if let Some(array) = item.as_array_of_tables() {
+            path.push(key.to_owned());
+            for table in array.iter() {
+                collect_table_headers(table, path, headers);
+            }
+            path.pop();
+        }
+    }
+}
+
+fn line_start(raw: &str, index: usize) -> usize {
+    raw[..index].rfind('\n').map_or(0, |position| position + 1)
 }
 
 fn colorscheme_table_from_snippet(raw: &str, name: &str) -> Result<TomlTable> {
@@ -2868,6 +2951,62 @@ mod tests {
 
         validate_config_toml(std::path::Path::new("/tmp/runx-config.toml"), &raw)
             .expect("uncommented full preset should be a complete colorscheme");
+    }
+
+    #[test]
+    fn edit_colorscheme_snippet_starts_at_selected_table() {
+        let raw = r##"[ui]
+colorscheme = "gruvbox"
+
+[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+
+# keep me
+accent = "#fabd2f"
+input_bg = "linear-gradient(180deg, rgba(50, 48, 67, 0.98), rgba(40, 40, 60, 0.98))"
+# item_hover = "rgba(235, 219, 178, 0.085)"
+# item_selected_bg = "linear-gradient(135deg, rgba(215, 153, 33, 0.24), rgba(60, 56, 54, 0.98))"
+
+[window]
+width_fraction = 0.6
+"##;
+
+        let snippet =
+            colorscheme_snippet(raw, "gruvbox").expect("colorscheme snippet should render");
+
+        assert!(snippet.starts_with("[ui.colorschemes.gruvbox]\n"));
+        assert!(!snippet.starts_with("[ui]\n"));
+        assert!(!snippet.contains("\n[ui.colorschemes]\n"));
+        assert!(snippet.contains("# keep me"));
+        assert!(snippet.contains("accent = \"#fabd2f\""));
+        assert!(snippet.contains("input_bg = \"linear-gradient"));
+        assert!(snippet.contains("# item_hover = \"rgba(235, 219, 178, 0.085)\""));
+        assert!(snippet.contains("# item_selected_bg = \"linear-gradient"));
+        assert!(!snippet.contains("[window]"));
+    }
+
+    #[test]
+    fn edit_colorscheme_snippet_uses_parsed_table_headers_as_boundaries() {
+        let raw = r##"[ui]
+colorscheme = "gruvbox"
+
+[ui.colorschemes.gruvbox]
+base = "builtin_dark"
+input_bg = """
+[window]
+"""
+# item_hover = "rgba(235, 219, 178, 0.085)"
+
+[window]
+width_fraction = 0.6
+"##;
+
+        let snippet =
+            colorscheme_snippet(raw, "gruvbox").expect("colorscheme snippet should render");
+
+        assert!(snippet.contains("input_bg = \"\"\"\n[window]\n\"\"\""));
+        assert!(snippet.contains("# item_hover = \"rgba(235, 219, 178, 0.085)\""));
+        assert!(!snippet.contains("width_fraction = 0.6"));
     }
 
     #[test]

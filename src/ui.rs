@@ -174,6 +174,8 @@ impl ResolvedUiColors {
             };
         }
 
+        let accent_override = overrides.accent.clone();
+
         apply!(accent);
         apply!(panel);
         apply!(text);
@@ -211,8 +213,55 @@ impl ResolvedUiColors {
         apply!(canvas_hidden_item_selected_bg);
         apply!(canvas_hidden_config_error_bg);
 
+        if let Some(accent) = accent_override {
+            self.apply_accent_derivatives(&accent, overrides);
+        }
+
         self
     }
+
+    fn apply_accent_derivatives(&mut self, accent: &str, overrides: &UiColorOverridesConfig) {
+        if overrides.item_hover.is_none() {
+            self.item_hover = accent_mix(accent, 14);
+        }
+        if overrides.item_selected_bg.is_none() {
+            self.item_selected_bg = accent_gradient(accent, 28, 12);
+        }
+        if overrides.item_selected_shadow.is_none() {
+            self.item_selected_shadow = format!(
+                "0 18px 44px {}, inset 0 0 0 1px {}",
+                accent_mix(accent, 18),
+                accent_mix(accent, 36)
+            );
+        }
+        if overrides.badge_bg.is_none() {
+            self.badge_bg = accent_gradient(accent, 22, 8);
+        }
+        if overrides.badge_border.is_none() {
+            self.badge_border = accent_mix(accent, 35);
+        }
+        if overrides.chip_border.is_none() {
+            self.chip_border = accent_mix(accent, 35);
+        }
+        if overrides.canvas_hidden_item_hover.is_none() {
+            self.canvas_hidden_item_hover = accent_mix(accent, 16);
+        }
+        if overrides.canvas_hidden_item_selected_bg.is_none() {
+            self.canvas_hidden_item_selected_bg = accent_gradient(accent, 24, 10);
+        }
+    }
+}
+
+fn accent_gradient(accent: &str, start_percent: u8, end_percent: u8) -> String {
+    format!(
+        "linear-gradient(135deg, {}, {})",
+        accent_mix(accent, start_percent),
+        accent_mix(accent, end_percent)
+    )
+}
+
+fn accent_mix(accent: &str, percent: u8) -> String {
+    format!("color-mix(in srgb, {accent} {percent}%, transparent)")
 }
 
 /// Returns the built-in color token values used by the UI renderer.
@@ -633,6 +682,82 @@ mod tests {
         assert!(css.contains("--accent: #fabd2f;"));
         assert!(css.contains("--panel: #282828;"));
         assert!(css.matches("--accent: #fabd2f;").count() >= 2);
+    }
+
+    #[test]
+    fn custom_accent_derives_highlight_surfaces() {
+        let mut theme = UiConfig {
+            colorscheme: "gruvbox".to_owned(),
+            ..UiConfig::default()
+        };
+        theme.colorschemes.insert(
+            "gruvbox".to_owned(),
+            UiColorschemeConfig {
+                base: Some("builtin_dark".to_owned()),
+                overrides: UiColorOverridesConfig {
+                    accent: Some("#ffcc00".to_owned()),
+                    ..UiColorOverridesConfig::default()
+                },
+            },
+        );
+
+        let css = theme_css(&theme);
+
+        assert!(css.contains("--accent: #ffcc00;"));
+        assert!(css.contains("--item-hover: color-mix(in srgb, #ffcc00 14%, transparent);"));
+        assert!(css.contains("--item-selected-bg: linear-gradient(135deg, color-mix(in srgb, #ffcc00 28%, transparent), color-mix(in srgb, #ffcc00 12%, transparent));"));
+        assert!(css.contains("--item-selected-shadow: 0 18px 44px color-mix(in srgb, #ffcc00 18%, transparent), inset 0 0 0 1px color-mix(in srgb, #ffcc00 36%, transparent);"));
+        assert!(css.contains("--badge-bg: linear-gradient(135deg, color-mix(in srgb, #ffcc00 22%, transparent), color-mix(in srgb, #ffcc00 8%, transparent));"));
+        assert!(css.contains("--badge-border: color-mix(in srgb, #ffcc00 35%, transparent);"));
+        assert!(css.contains("--chip-border: color-mix(in srgb, #ffcc00 35%, transparent);"));
+        assert!(
+            css.contains(
+                "--canvas-hidden-item-hover: color-mix(in srgb, #ffcc00 16%, transparent);"
+            )
+        );
+        assert!(css.contains("--canvas-hidden-item-selected-bg: linear-gradient(135deg, color-mix(in srgb, #ffcc00 24%, transparent), color-mix(in srgb, #ffcc00 10%, transparent));"));
+    }
+
+    #[test]
+    fn explicit_highlight_tokens_override_accent_derivatives() {
+        let mut theme = UiConfig {
+            colorscheme: "gruvbox".to_owned(),
+            ..UiConfig::default()
+        };
+        theme.colorschemes.insert(
+            "gruvbox".to_owned(),
+            UiColorschemeConfig {
+                base: Some("builtin_dark".to_owned()),
+                overrides: UiColorOverridesConfig {
+                    accent: Some("#ffcc00".to_owned()),
+                    item_hover: Some("#101010".to_owned()),
+                    item_selected_bg: Some("#111111".to_owned()),
+                    item_selected_shadow: Some("0 0 0 1px #222222".to_owned()),
+                    badge_bg: Some("#333333".to_owned()),
+                    badge_border: Some("#444444".to_owned()),
+                    chip_border: Some("#555555".to_owned()),
+                    canvas_hidden_item_hover: Some("#606060".to_owned()),
+                    canvas_hidden_item_selected_bg: Some("#666666".to_owned()),
+                    ..UiColorOverridesConfig::default()
+                },
+            },
+        );
+
+        let css = theme_css(&theme);
+
+        assert!(css.contains("--accent: #ffcc00;"));
+        assert!(css.contains("--item-hover: #101010;"));
+        assert!(css.contains("--item-selected-bg: #111111;"));
+        assert!(css.contains("--item-selected-shadow: 0 0 0 1px #222222;"));
+        assert!(css.contains("--badge-bg: #333333;"));
+        assert!(css.contains("--badge-border: #444444;"));
+        assert!(css.contains("--chip-border: #555555;"));
+        assert!(css.contains("--canvas-hidden-item-hover: #606060;"));
+        assert!(css.contains("--canvas-hidden-item-selected-bg: #666666;"));
+        assert!(!css.contains("--item-hover: color-mix(in srgb, #ffcc00 14%, transparent);"));
+        assert!(!css.contains(
+            "--item-selected-bg: linear-gradient(135deg, color-mix(in srgb, #ffcc00 28%"
+        ));
     }
 
     #[test]
