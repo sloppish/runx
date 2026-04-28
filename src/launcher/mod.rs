@@ -455,6 +455,14 @@ impl Launcher {
                 self.refresh_settings_window()?;
                 self.set_settings_status("", false)?;
             }
+            crate::types::SettingsCommand::CopyText { text } => {
+                macos::copy_text_to_clipboard(&text)?;
+            }
+            crate::types::SettingsCommand::PasteText => {
+                if let (Some(settings), Ok(text)) = (&self.settings, macos::read_clipboard_text()) {
+                    settings.paste_text(&text)?;
+                }
+            }
             crate::types::SettingsCommand::ClientError { message } => {
                 self.log_outcome(message.clone(), true);
                 self.set_settings_status(&message, true)?;

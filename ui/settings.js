@@ -167,6 +167,111 @@
     return select.value === "true";
   }
 
+  function normalizeNumberInput(input) {
+    if (input.type !== "number") {
+      return;
+    }
+    input.type = "text";
+    input.inputMode = "decimal";
+  }
+
+  function isTextEditor(element) {
+    if (!element || element.disabled || element.readOnly) {
+      return false;
+    }
+    if (element instanceof HTMLTextAreaElement) {
+      return true;
+    }
+    if (!(element instanceof HTMLInputElement)) {
+      return false;
+    }
+    return ["email", "number", "password", "search", "tel", "text", "url"].includes(element.type);
+  }
+
+  function isFormControl(element) {
+    if (!element || element.disabled || element.readOnly) {
+      return false;
+    }
+    return (
+      element instanceof HTMLInputElement ||
+      element instanceof HTMLTextAreaElement ||
+      element instanceof HTMLSelectElement
+    );
+  }
+
+  function selectedEditorText(editor) {
+    const range = editorSelectionRange(editor);
+    if (!range) {
+      return editor.value;
+    }
+    return editor.value.slice(range.start, range.end);
+  }
+
+  function pasteTextIntoEditor(text) {
+    const editor = document.activeElement;
+    if (!isTextEditor(editor)) {
+      return;
+    }
+    editor.focus();
+    if (document.execCommand("insertText", false, text)) {
+      updateDirtyState();
+      return;
+    }
+    const range = editorSelectionRange(editor);
+    if (range) {
+      editor.setRangeText(text, range.start, range.end, "end");
+    } else {
+      editor.value = text;
+    }
+    editor.dispatchEvent(new Event("input", { bubbles: true }));
+  }
+
+  function editorSelectionRange(editor) {
+    try {
+      if (typeof editor.selectionStart !== "number" || typeof editor.selectionEnd !== "number") {
+        return null;
+      }
+      return {
+        start: Math.min(editor.selectionStart, editor.selectionEnd),
+        end: Math.max(editor.selectionStart, editor.selectionEnd),
+      };
+    } catch (_error) {
+      return null;
+    }
+  }
+
+  function handleEditorCommandShortcut(event) {
+    const editor = event.target;
+    if (isFormControl(editor) && isCommandUndoShortcut(event)) {
+      event.preventDefault();
+      document.execCommand(event.shiftKey ? "redo" : "undo");
+      updateDirtyState();
+      return true;
+    }
+    if (!isTextEditor(editor)) {
+      return false;
+    }
+    if (isPlainCommandShortcut(event, "KeyA")) {
+      event.preventDefault();
+      editor.select();
+      return true;
+    }
+    if (isPlainCommandShortcut(event, "KeyC")) {
+      event.preventDefault();
+      const text = selectedEditorText(editor);
+      if (text) {
+        send({ type: "copy_text", text });
+      }
+      return true;
+    }
+    if (isPlainCommandShortcut(event, "KeyV")) {
+      event.preventDefault();
+      send({ type: "paste_text" });
+      return true;
+    }
+    return false;
+  }
+
   let recordingShortcut = null;
 
   function modifierParts(event) {
@@ -395,6 +500,7 @@
     const input = document.createElement("input");
     span.textContent = label;
     input.type = type;
+    normalizeNumberInput(input);
     if (className) {
       input.className = className;
     }
@@ -1008,6 +1114,10 @@
   formEl.addEventListener("change", updateDirtyState);
   rawEl.addEventListener("input", updateDirtyState);
 
+  for (const input of document.querySelectorAll('input[type="number"]')) {
+    normalizeNumberInput(input);
+  }
+
   for (const button of formEl.querySelectorAll("[data-shortcut-recorder]")) {
     button.addEventListener("click", () => {
       if (button.disabled) {
@@ -1080,6 +1190,16 @@
     );
   }
 
+  function isCommandUndoShortcut(event) {
+    return (
+      event.code === "KeyZ" &&
+      event.metaKey &&
+      !event.ctrlKey &&
+      !event.altKey &&
+      !recordingShortcut
+    );
+  }
+
   document.getElementById("reload").addEventListener("click", reloadSettings);
 
   function saveActiveEditor() {
@@ -1105,6 +1225,9 @@
   document.getElementById("save").addEventListener("click", saveActiveEditor);
 
   document.addEventListener("keydown", (event) => {
+    if (handleEditorCommandShortcut(event)) {
+      return;
+    }
     if (isPlainCommandShortcut(event, "KeyS")) {
       event.preventDefault();
       saveActiveEditor();
@@ -1121,6 +1244,7 @@
 
   root.__RUNX_SETTINGS_STATE__ = render;
   root.__RUNX_SETTINGS_STATUS__ = setStatus;
+  root.__RUNX_SETTINGS_PASTE_TEXT__ = pasteTextIntoEditor;
   render(state);
   send({ type: "ready" });
 })(window);

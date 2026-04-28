@@ -106,6 +106,16 @@ impl SettingsWindow {
             .evaluate_script(&script)
             .context("failed to update the settings status")
     }
+
+    pub(crate) fn paste_text(&self, text: &str) -> Result<()> {
+        let script = format!(
+            "window.__RUNX_SETTINGS_PASTE_TEXT__ && window.__RUNX_SETTINGS_PASTE_TEXT__({});",
+            serde_json::to_string(text)?
+        );
+        self.webview
+            .evaluate_script(&script)
+            .context("failed to paste clipboard text into settings editor")
+    }
 }
 
 #[derive(Debug, Serialize)]
