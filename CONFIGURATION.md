@@ -170,8 +170,8 @@ Canvas tokens injected into the embedded UI theme.
 | --- | --- | --- | --- |
 | `show` | boolean | `true` | Show the outer launcher panel behind the input and results. |
 | `radius` | integer | `24` | Corner radius of the outer launcher panel. |
-| `opacity` | number | `1` | Overall opacity multiplier for the panel layer. |
-| `background_opacity` | number | `0.97` | Opacity of the panel fill itself, separate from border/shadow opacity. |
+| `background_opacity` | number | `0.97` | Opacity of the panel fill behind the launcher contents. |
+| `chrome_opacity` | number | `1` | Opacity of the panel border and shadow. |
 
 ## [ui.entries]
 

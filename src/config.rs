@@ -552,8 +552,8 @@ mod tests {
             assert_eq!(config.ui.scale, 1.0);
             assert!(config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 24);
-            assert_eq!(config.ui.canvas.opacity, 1.0);
             assert_eq!(config.ui.canvas.background_opacity, 0.97);
+            assert_eq!(config.ui.canvas.chrome_opacity, 1.0);
             assert_eq!(config.ui.entries.opacity, 1.0);
             assert_eq!(
                 config.ui.shortcuts.focus_window,
@@ -604,7 +604,7 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\nscale = 1.2\n[ui.canvas]\nshow = false\nradius = 18\nopacity = 0.75\nbackground_opacity = 0.9\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\nscale = 1.2\n[ui.canvas]\nshow = false\nradius = 18\nbackground_opacity = 0.9\nchrome_opacity = 0.75\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
@@ -614,8 +614,8 @@ mod tests {
             assert_eq!(config.ui.scale, 1.2);
             assert!(!config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 18);
-            assert_eq!(config.ui.canvas.opacity, 0.75);
             assert_eq!(config.ui.canvas.background_opacity, 0.9);
+            assert_eq!(config.ui.canvas.chrome_opacity, 0.75);
             assert_eq!(config.ui.entries.opacity, 0.64);
             assert_eq!(config.ui.font_sizes.label, 11);
             assert_eq!(config.ui.font_sizes.input, 34);
@@ -872,8 +872,16 @@ mod tests {
         }
 
         #[test]
-        fn canvas_opacity_validation_errors_include_source_context() {
-            let raw = "[ui.canvas]\nopacity = 1.2\n";
+        fn legacy_canvas_opacity_still_configures_chrome_opacity() {
+            let config: Config =
+                toml::from_str("[ui.canvas]\nopacity = 0.42\n").expect("legacy key should parse");
+
+            assert_eq!(config.ui.canvas.chrome_opacity, 0.42);
+        }
+
+        #[test]
+        fn canvas_chrome_opacity_validation_errors_include_source_context() {
+            let raw = "[ui.canvas]\nchrome_opacity = 1.2\n";
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
@@ -882,8 +890,8 @@ mod tests {
                     .to_string();
 
             assert!(rendered.contains("invalid configuration /tmp/runx-config.toml"));
-            assert!(rendered.contains("opacity = 1.2"));
-            assert!(rendered.contains("[ui.canvas].opacity must be between 0.0 and 1.0"));
+            assert!(rendered.contains("chrome_opacity = 1.2"));
+            assert!(rendered.contains("[ui.canvas].chrome_opacity must be between 0.0 and 1.0"));
         }
 
         #[test]
@@ -1015,8 +1023,8 @@ muted = "#756759"
 [ui.canvas]
 show = true
 radius = 24
-opacity = 1.0
 background_opacity = 0.97
+chrome_opacity = 1.0
 
 [ui.entries]
 opacity = 0.92

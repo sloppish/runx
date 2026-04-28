@@ -9,8 +9,8 @@
   --header-display: __HEADER_DISPLAY__;
   --canvas-display: __CANVAS_DISPLAY__;
   --canvas-radius: __CANVAS_RADIUS__;
-  --canvas-opacity: __CANVAS_OPACITY__;
   --canvas-background-opacity: __CANVAS_BACKGROUND_OPACITY__;
+  --canvas-chrome-opacity: __CANVAS_CHROME_OPACITY__;
   --entry-opacity: __ENTRY_OPACITY__;
   --entry-base-bg: var(--panel);
   --label-font-size: __LABEL_FONT_SIZE__;
@@ -150,7 +150,7 @@ body {
   display: var(--canvas-display);
   border-radius: var(--canvas-radius);
   background: var(--shell-bg);
-  opacity: calc(var(--canvas-opacity) * var(--canvas-background-opacity));
+  opacity: var(--canvas-background-opacity);
   pointer-events: none;
   z-index: -1;
 }
@@ -163,7 +163,7 @@ body {
   border-radius: var(--canvas-radius);
   box-shadow: var(--shell-shadow);
   border: 1px solid var(--shell-border);
-  opacity: var(--canvas-opacity);
+  opacity: var(--canvas-chrome-opacity);
   pointer-events: none;
   z-index: -1;
 }

@@ -290,8 +290,8 @@ pub fn theme_css(theme: &UiConfig) -> String {
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
     let ui_scale = format_float(scale);
     let canvas_radius = scaled_px(theme.canvas.radius, scale);
-    let canvas_opacity = format!("{}", theme.canvas.opacity);
     let canvas_background_opacity = format!("{}", theme.canvas.background_opacity);
+    let canvas_chrome_opacity = format!("{}", theme.canvas.chrome_opacity);
     let entry_opacity = format!("{}", theme.entries.opacity);
     let label_font_size = scaled_px(theme.font_sizes.label, scale);
     let input_font_size = scaled_px(theme.font_sizes.input, scale);
@@ -470,11 +470,11 @@ pub fn theme_css(theme: &UiConfig) -> String {
         ("__HEADER_DISPLAY__", header_display),
         ("__CANVAS_DISPLAY__", canvas_display),
         ("__CANVAS_RADIUS__", canvas_radius.as_str()),
-        ("__CANVAS_OPACITY__", canvas_opacity.as_str()),
         (
             "__CANVAS_BACKGROUND_OPACITY__",
             canvas_background_opacity.as_str(),
         ),
+        ("__CANVAS_CHROME_OPACITY__", canvas_chrome_opacity.as_str()),
         ("__ENTRY_OPACITY__", entry_opacity.as_str()),
         ("__LABEL_FONT_SIZE__", label_font_size.as_str()),
         ("__INPUT_FONT_SIZE__", input_font_size.as_str()),
@@ -545,8 +545,8 @@ mod tests {
         theme.scale = 1.25;
         theme.canvas.show = false;
         theme.canvas.radius = 20;
-        theme.canvas.opacity = 0.72;
         theme.canvas.background_opacity = 0.91;
+        theme.canvas.chrome_opacity = 0.72;
         theme.entries.opacity = 0.64;
         theme
             .colorschemes
@@ -573,8 +573,10 @@ mod tests {
         assert!(css.contains("--ui-scale: 1.25;"));
         assert!(css.contains("--canvas-display: none;"));
         assert!(css.contains("--canvas-radius: 25px;"));
-        assert!(css.contains("--canvas-opacity: 0.72;"));
         assert!(css.contains("--canvas-background-opacity: 0.91;"));
+        assert!(css.contains("--canvas-chrome-opacity: 0.72;"));
+        assert!(css.contains("opacity: var(--canvas-background-opacity);"));
+        assert!(css.contains("opacity: var(--canvas-chrome-opacity);"));
         assert!(css.contains("--entry-opacity: 0.64;"));
         assert!(css.contains("--shell-bg: linear-gradient(180deg, #111111, #222222);"));
         assert!(css.contains("--badge-icon-bg: rgba(4, 5, 6, 0.7);"));

@@ -401,10 +401,11 @@ pub struct UiCanvasConfig {
     pub show: bool,
     /// Corner radius of the outer launcher panel.
     pub radius: u16,
-    /// Overall opacity multiplier for the panel layer.
-    pub opacity: f64,
-    /// Opacity of the panel fill itself, separate from border/shadow opacity.
+    /// Opacity of the panel fill behind the launcher contents.
     pub background_opacity: f64,
+    /// Opacity of the panel border and shadow.
+    #[serde(alias = "opacity")]
+    pub chrome_opacity: f64,
 }
 
 /// Entry background tokens injected into the embedded UI theme.
@@ -931,8 +932,8 @@ impl Default for UiCanvasConfig {
         Self {
             show: true,
             radius: 24,
-            opacity: 1.0,
             background_opacity: 0.97,
+            chrome_opacity: 1.0,
         }
     }
 }

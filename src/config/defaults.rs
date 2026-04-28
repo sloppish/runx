@@ -89,8 +89,8 @@ scale = 1.0
 [ui.canvas]
 show = true
 radius = 24
-opacity = 1.0
 background_opacity = 0.97
+chrome_opacity = 1.0
 
 [ui.entries]
 opacity = 1.0

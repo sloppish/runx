@@ -70,8 +70,9 @@ const PATH_UI_SCALE: &[&str] = &["ui", "scale"];
 const PATH_UI_COLORSCHEME: &[&str] = &["ui", "colorscheme"];
 const PATH_UI_CANVAS_SHOW: &[&str] = &["ui", "canvas", "show"];
 const PATH_UI_CANVAS_RADIUS: &[&str] = &["ui", "canvas", "radius"];
-const PATH_UI_CANVAS_OPACITY: &[&str] = &["ui", "canvas", "opacity"];
 const PATH_UI_CANVAS_BACKGROUND_OPACITY: &[&str] = &["ui", "canvas", "background_opacity"];
+const PATH_UI_CANVAS_CHROME_OPACITY: &[&str] = &["ui", "canvas", "chrome_opacity"];
+const PATH_UI_CANVAS_LEGACY_OPACITY: &[&str] = &["ui", "canvas", "opacity"];
 const PATH_UI_ENTRIES_OPACITY: &[&str] = &["ui", "entries", "opacity"];
 
 fn main() {
@@ -212,14 +213,6 @@ impl ConfigEditor {
     fn validate_current(&self) -> Result<()> {
         validate_config_toml(&self.path, &self.doc.to_string())?;
         Ok(())
-    }
-
-    fn source_for(&self, path: &[&str]) -> &'static str {
-        if item_exists(&self.doc, path) {
-            "config.toml"
-        } else {
-            "default"
-        }
     }
 }
 
@@ -868,8 +861,8 @@ impl App {
             | FieldId::UiFontFamily
             | FieldId::UiScale
             | FieldId::UiCanvasRadius
-            | FieldId::UiCanvasOpacity
             | FieldId::UiCanvasBackgroundOpacity
+            | FieldId::UiCanvasChromeOpacity
             | FieldId::UiEntriesOpacity => {
                 self.mode = Mode::Input(InputMode::for_field(id, &self.editor.config));
                 Ok(AppAction::None)
@@ -1112,17 +1105,20 @@ impl App {
                 })?;
                 self.success("Saved canvas.radius");
             }
-            FieldId::UiCanvasOpacity => {
-                let parsed = parse_f64(&raw, "canvas opacity")?;
-                self.apply(|doc| set_item(doc, &["ui", "canvas"], "opacity", value(parsed)))?;
-                self.success("Saved canvas.opacity");
-            }
             FieldId::UiCanvasBackgroundOpacity => {
                 let parsed = parse_f64(&raw, "canvas background opacity")?;
                 self.apply(|doc| {
                     set_item(doc, &["ui", "canvas"], "background_opacity", value(parsed))
                 })?;
                 self.success("Saved canvas.background_opacity");
+            }
+            FieldId::UiCanvasChromeOpacity => {
+                let parsed = parse_f64(&raw, "canvas chrome opacity")?;
+                self.apply(|doc| {
+                    remove_item(doc, PATH_UI_CANVAS_LEGACY_OPACITY)?;
+                    set_item(doc, &["ui", "canvas"], "chrome_opacity", value(parsed))
+                })?;
+                self.success("Saved canvas.chrome_opacity");
             }
             FieldId::UiEntriesOpacity => {
                 let parsed = parse_f64(&raw, "entries opacity")?;
@@ -1302,11 +1298,17 @@ impl App {
             self.info("Selected row is an action, not a config key");
             return Ok(());
         };
-        if !item_exists(&self.editor.doc, path) {
+        if !field.id.exists_in(&self.editor.doc) {
             self.info("Field already uses the default");
             return Ok(());
         }
-        self.apply(|doc| remove_item(doc, path))?;
+        self.apply(|doc| {
+            remove_item(doc, path)?;
+            for legacy_path in field.id.legacy_paths() {
+                remove_item(doc, legacy_path)?;
+            }
+            Ok(())
+        })?;
         self.success(format!("Reset {} to default", field.label));
         Ok(())
     }
@@ -1949,8 +1951,8 @@ enum FieldId {
     UiColorscheme,
     UiCanvasShow,
     UiCanvasRadius,
-    UiCanvasOpacity,
     UiCanvasBackgroundOpacity,
+    UiCanvasChromeOpacity,
     UiEntriesOpacity,
     ColorschemeCreate,
     ColorschemeEdit,
@@ -1987,8 +1989,8 @@ impl FieldId {
             Self::UiColorscheme => "Selected colorscheme",
             Self::UiCanvasShow => "Show canvas",
             Self::UiCanvasRadius => "Canvas radius",
-            Self::UiCanvasOpacity => "Canvas opacity",
             Self::UiCanvasBackgroundOpacity => "Canvas background opacity",
+            Self::UiCanvasChromeOpacity => "Canvas chrome opacity",
             Self::UiEntriesOpacity => "Entry background opacity",
             Self::ColorschemeCreate => "Create custom colorscheme",
             Self::ColorschemeEdit => "Edit colorscheme in $EDITOR",
@@ -2025,11 +2027,26 @@ impl FieldId {
             Self::UiColorscheme => Some(PATH_UI_COLORSCHEME),
             Self::UiCanvasShow => Some(PATH_UI_CANVAS_SHOW),
             Self::UiCanvasRadius => Some(PATH_UI_CANVAS_RADIUS),
-            Self::UiCanvasOpacity => Some(PATH_UI_CANVAS_OPACITY),
             Self::UiCanvasBackgroundOpacity => Some(PATH_UI_CANVAS_BACKGROUND_OPACITY),
+            Self::UiCanvasChromeOpacity => Some(PATH_UI_CANVAS_CHROME_OPACITY),
             Self::UiEntriesOpacity => Some(PATH_UI_ENTRIES_OPACITY),
             Self::ColorschemeCreate | Self::ColorschemeEdit | Self::ColorschemeDelete => None,
         }
+    }
+
+    fn legacy_paths(self) -> &'static [&'static [&'static str]] {
+        match self {
+            Self::UiCanvasChromeOpacity => &[PATH_UI_CANVAS_LEGACY_OPACITY],
+            _ => &[],
+        }
+    }
+
+    fn exists_in(self, doc: &Document) -> bool {
+        self.path().is_some_and(|path| item_exists(doc, path))
+            || self
+                .legacy_paths()
+                .iter()
+                .any(|path| item_exists(doc, path))
     }
 
     fn value(self, config: &Config) -> String {
@@ -2063,8 +2080,8 @@ impl FieldId {
             Self::UiColorscheme => config.ui.colorscheme.clone(),
             Self::UiCanvasShow => bool_summary(config.ui.canvas.show).to_owned(),
             Self::UiCanvasRadius => config.ui.canvas.radius.to_string(),
-            Self::UiCanvasOpacity => format_float(config.ui.canvas.opacity),
             Self::UiCanvasBackgroundOpacity => format_float(config.ui.canvas.background_opacity),
+            Self::UiCanvasChromeOpacity => format_float(config.ui.canvas.chrome_opacity),
             Self::UiEntriesOpacity => format_float(config.ui.entries.opacity),
             Self::ColorschemeCreate => "choose base, then open $EDITOR".to_owned(),
             Self::ColorschemeEdit => "opens $EDITOR".to_owned(),
@@ -2107,8 +2124,8 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
             FieldId::UiScale,
             FieldId::UiCanvasShow,
             FieldId::UiCanvasRadius,
-            FieldId::UiCanvasOpacity,
             FieldId::UiCanvasBackgroundOpacity,
+            FieldId::UiCanvasChromeOpacity,
             FieldId::UiEntriesOpacity,
         ],
         Section::Colorschemes => &[
@@ -2122,10 +2139,15 @@ fn fields_for(editor: &ConfigEditor, section: Section) -> Vec<Field> {
 
     ids.iter()
         .map(|id| {
-            let source = id
-                .path()
-                .map(|path| editor.source_for(path).to_owned())
-                .unwrap_or_else(|| "action".to_owned());
+            let source = if id.path().is_some() {
+                if id.exists_in(&editor.doc) {
+                    "config.toml".to_owned()
+                } else {
+                    "default".to_owned()
+                }
+            } else {
+                "action".to_owned()
+            };
             Field {
                 id: *id,
                 label: id.label().to_owned(),

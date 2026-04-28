@@ -55,8 +55,9 @@ struct RawUiColorschemeSpans {
 struct RawUiCanvasSpans {
     show: bool,
     radius: u16,
-    opacity: Option<Spanned<f64>>,
     background_opacity: Option<Spanned<f64>>,
+    #[serde(alias = "opacity")]
+    chrome_opacity: Option<Spanned<f64>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -190,12 +191,12 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
     }
     validate_positive_scale(config.ui.scale, "[ui].scale must be greater than 0.0")?;
     validate_opacity(
-        config.ui.canvas.opacity,
-        "[ui.canvas].opacity must be between 0.0 and 1.0",
-    )?;
-    validate_opacity(
         config.ui.canvas.background_opacity,
         "[ui.canvas].background_opacity must be between 0.0 and 1.0",
+    )?;
+    validate_opacity(
+        config.ui.canvas.chrome_opacity,
+        "[ui.canvas].chrome_opacity must be between 0.0 and 1.0",
     )?;
     validate_opacity(
         config.ui.entries.opacity,
@@ -590,10 +591,10 @@ pub(super) fn validate_config_with_spans(
         )));
     }
 
-    if let Some(opacity) = &spans.ui.canvas.opacity
+    if let Some(opacity) = &spans.ui.canvas.background_opacity
         && let Err(error) = validate_opacity(
             *opacity.get_ref(),
-            "[ui.canvas].opacity must be between 0.0 and 1.0",
+            "[ui.canvas].background_opacity must be between 0.0 and 1.0",
         )
     {
         return Err(anyhow!(render_config_validation_error(
@@ -604,10 +605,10 @@ pub(super) fn validate_config_with_spans(
         )));
     }
 
-    if let Some(opacity) = &spans.ui.canvas.background_opacity
+    if let Some(opacity) = &spans.ui.canvas.chrome_opacity
         && let Err(error) = validate_opacity(
             *opacity.get_ref(),
-            "[ui.canvas].background_opacity must be between 0.0 and 1.0",
+            "[ui.canvas].chrome_opacity must be between 0.0 and 1.0",
         )
     {
         return Err(anyhow!(render_config_validation_error(
