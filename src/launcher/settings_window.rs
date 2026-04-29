@@ -1,22 +1,26 @@
 //! Webview-backed settings editor.
 //!
-//! This keeps the user-facing settings surface inside the main Runx process,
-//! while the Rust side remains the only place that parses, validates, and writes
-//! `config.toml`.
+//! The settings surface runs in a standalone process so it can behave like a
+//! regular macOS app, separate from the accessory launcher process.
 
 use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
+#[cfg(target_os = "macos")]
+use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tao::{
     dpi::LogicalSize,
-    event_loop::{EventLoopProxy, EventLoopWindowTarget},
+    event::{Event, StartCause, WindowEvent},
+    event_loop::{ControlFlow, EventLoopBuilder, EventLoopProxy, EventLoopWindowTarget},
     window::{Window, WindowBuilder, WindowId},
 };
 use toml_edit::{
     Array, ArrayOfTables, DocumentMut as Document, Item, Table as TomlTable, Value, value,
 };
 use wry::WebViewBuilder;
+
+use super::config_reload_ipc;
 
 use crate::{
     config::{
@@ -25,6 +29,7 @@ use crate::{
         WindowDisplayTarget, ensure_user_config, validate_config_toml,
     },
     displays::active_displays,
+    macos,
     types::{
         AppEvent, AppsProviderSettingsDraft, DisplayOverrideSettingsDraft, HotkeySettingsDraft,
         PluginsSettingsDraft, ProvidersSettingsDraft, RankingScoreRuleSettingsDraft,
@@ -116,6 +121,90 @@ impl SettingsWindow {
             .evaluate_script(&script)
             .context("failed to paste clipboard text into settings editor")
     }
+}
+
+pub(crate) fn run_standalone_app() -> Result<()> {
+    let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
+    #[cfg(target_os = "macos")]
+    {
+        event_loop.set_activation_policy(ActivationPolicy::Regular);
+        event_loop.set_dock_visibility(true);
+    }
+
+    let proxy = event_loop.create_proxy();
+    let settings = SettingsWindow::new(&event_loop, proxy)?;
+
+    event_loop.run(move |event, _, control_flow| {
+        *control_flow = ControlFlow::Wait;
+
+        let result = match event {
+            Event::NewEvents(StartCause::Init) => settings.show(),
+            Event::WindowEvent {
+                window_id,
+                event: WindowEvent::CloseRequested,
+                ..
+            } if window_id == settings.window_id() => {
+                *control_flow = ControlFlow::Exit;
+                Ok(())
+            }
+            Event::UserEvent(AppEvent::Settings(command)) => {
+                handle_standalone_settings_command(&settings, command, control_flow)
+            }
+            _ => Ok(()),
+        };
+
+        if let Err(error) = result {
+            let message = format!("{error:#}");
+            eprintln!("Settings error: {message}");
+            let _ = settings.set_status(&message, true);
+        }
+    });
+}
+
+fn handle_standalone_settings_command(
+    settings: &SettingsWindow,
+    command: SettingsCommand,
+    control_flow: &mut ControlFlow,
+) -> Result<()> {
+    match command {
+        SettingsCommand::Ready | SettingsCommand::Reload => {
+            settings.refresh()?;
+        }
+        SettingsCommand::Save { draft } => {
+            save_draft(draft.as_ref())?;
+            notify_launcher_reload();
+            settings.refresh()?;
+            settings.set_status("", false)?;
+        }
+        SettingsCommand::SaveRaw { raw } => {
+            save_raw(&raw)?;
+            notify_launcher_reload();
+            settings.refresh()?;
+            settings.set_status("", false)?;
+        }
+        SettingsCommand::CopyText { text } => {
+            macos::copy_text_to_clipboard(&text)?;
+        }
+        SettingsCommand::PasteText => {
+            if let Ok(text) = macos::read_clipboard_text() {
+                settings.paste_text(&text)?;
+            }
+        }
+        SettingsCommand::ClientError { message } => {
+            settings.set_status(&message, true)?;
+        }
+        SettingsCommand::Close => {
+            *control_flow = ControlFlow::Exit;
+        }
+    }
+    Ok(())
+}
+
+fn notify_launcher_reload() {
+    let Ok(path) = ensure_user_config() else {
+        return;
+    };
+    let _ = config_reload_ipc::notify_reload(&path);
 }
 
 #[derive(Debug, Serialize)]

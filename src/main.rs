@@ -53,6 +53,10 @@ fn main() {
 
 /// Builds the Tao event loop and hands control over to the native event loop.
 fn run() -> Result<()> {
+    if launcher::is_settings_app_invocation() {
+        return launcher::run_settings_app();
+    }
+
     let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     #[cfg(target_os = "macos")]
     {
@@ -61,16 +65,15 @@ fn run() -> Result<()> {
     }
 
     let proxy = event_loop.create_proxy();
+    let hotkey_proxy = proxy.clone();
+    GlobalHotKeyEvent::set_event_handler(Some(move |event: GlobalHotKeyEvent| {
+        let _ = hotkey_proxy.send_event(AppEvent::GlobalHotKey(event));
+    }));
     let mut launcher = Launcher::bootstrap(&event_loop, proxy)?;
+    launcher.start_config_reload_listener()?;
 
-    event_loop.run(move |event, event_loop, control_flow| {
+    event_loop.run(move |event, _event_loop, control_flow| {
         *control_flow = ControlFlow::Wait;
-
-        while let Ok(global_event) = GlobalHotKeyEvent::receiver().try_recv() {
-            if let Err(error) = launcher.handle_global_hotkey_event(global_event) {
-                launcher.set_error(error.to_string());
-            }
-        }
 
         match event {
             Event::NewEvents(StartCause::Init) => {
@@ -86,7 +89,7 @@ fn run() -> Result<()> {
                 }
             }
             Event::UserEvent(message) => {
-                if let Err(error) = launcher.handle_user_event(event_loop, message) {
+                if let Err(error) = launcher.handle_user_event(message) {
                     launcher.set_error(error.to_string());
                 }
             }

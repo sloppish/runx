@@ -5,6 +5,7 @@
 
 use std::collections::HashMap;
 
+use global_hotkey::GlobalHotKeyEvent;
 use serde::{Deserialize, Serialize};
 use serde_json::{Map as JsonMap, Value as JsonValue};
 
@@ -110,8 +111,10 @@ impl Action {
 /// User events sent through Tao's custom event channel.
 #[derive(Debug, Clone)]
 pub enum AppEvent {
+    GlobalHotKey(GlobalHotKeyEvent),
     Frontend(FrontendCommand),
     Settings(SettingsCommand),
+    ReloadConfig,
     Render,
     IconReady,
     StartSearch {

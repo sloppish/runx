@@ -4,6 +4,8 @@ set -euo pipefail
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 APP_NAME="Runx"
 APP_BUNDLE_ID="io.github.sloppish.runx"
+SETTINGS_APP_NAME="Runx Settings"
+SETTINGS_APP_BUNDLE_ID="io.github.sloppish.runx.settings"
 PROFILE="release"
 OUT_DIR="$ROOT_DIR/dist"
 APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
@@ -196,14 +198,21 @@ BUNDLE_PATH="$OUT_DIR/${APP_NAME}.app"
 CONTENTS_PATH="$BUNDLE_PATH/Contents"
 MACOS_PATH="$CONTENTS_PATH/MacOS"
 RESOURCES_PATH="$CONTENTS_PATH/Resources"
+SETTINGS_APP_PATH="$CONTENTS_PATH/Applications/${SETTINGS_APP_NAME}.app"
+SETTINGS_CONTENTS_PATH="$SETTINGS_APP_PATH/Contents"
+SETTINGS_MACOS_PATH="$SETTINGS_CONTENTS_PATH/MacOS"
+SETTINGS_RESOURCES_PATH="$SETTINGS_CONTENTS_PATH/Resources"
 
 rm -rf "$BUNDLE_PATH"
-mkdir -p "$MACOS_PATH" "$RESOURCES_PATH"
+mkdir -p "$MACOS_PATH" "$RESOURCES_PATH" "$SETTINGS_MACOS_PATH" "$SETTINGS_RESOURCES_PATH"
 
 cp "$BIN_PATH" "$MACOS_PATH/runx"
 chmod 755 "$MACOS_PATH/runx"
+cp "$BIN_PATH" "$SETTINGS_MACOS_PATH/runx-settings"
+chmod 755 "$SETTINGS_MACOS_PATH/runx-settings"
 build_app_icon "$RESOURCES_PATH"
 build_tray_icon "$RESOURCES_PATH"
+cp "$RESOURCES_PATH/Runx.icns" "$SETTINGS_RESOURCES_PATH/Runx.icns"
 
 cat > "$CONTENTS_PATH/Info.plist" <<EOF
 <?xml version="1.0" encoding="UTF-8"?>
@@ -240,9 +249,69 @@ cat > "$CONTENTS_PATH/Info.plist" <<EOF
 </plist>
 EOF
 
+cat > "$SETTINGS_CONTENTS_PATH/Info.plist" <<EOF
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>CFBundleDevelopmentRegion</key>
+  <string>en</string>
+  <key>CFBundleDisplayName</key>
+  <string>${SETTINGS_APP_NAME}</string>
+  <key>CFBundleExecutable</key>
+  <string>runx-settings</string>
+  <key>CFBundleIconFile</key>
+  <string>Runx.icns</string>
+  <key>CFBundleIdentifier</key>
+  <string>${SETTINGS_APP_BUNDLE_ID}</string>
+  <key>CFBundleInfoDictionaryVersion</key>
+  <string>6.0</string>
+  <key>CFBundleName</key>
+  <string>${SETTINGS_APP_NAME}</string>
+  <key>CFBundlePackageType</key>
+  <string>APPL</string>
+  <key>CFBundleShortVersionString</key>
+  <string>${APP_VERSION}</string>
+  <key>CFBundleVersion</key>
+  <string>${APP_VERSION}</string>
+  <key>NSAppleEventsUsageDescription</key>
+  <string>Runx plugins may use Apple Events to automate other apps.</string>
+  <key>NSHighResolutionCapable</key>
+  <true/>
+</dict>
+</plist>
+EOF
+
+# Sign inside-out: nested bundle first, then the outer bundle.
+
+# 1. Inner executable (hardened runtime + timestamp)
 codesign \
   --force \
-  --deep \
+  --options runtime \
+  --timestamp \
+  --sign "$SIGN_IDENTITY" \
+  "$SETTINGS_MACOS_PATH/runx-settings" >/dev/null
+
+# 2. Inner app bundle
+codesign \
+  --force \
+  --options runtime \
+  --timestamp \
+  --sign "$SIGN_IDENTITY" \
+  --identifier "$SETTINGS_APP_BUNDLE_ID" \
+  "$SETTINGS_APP_PATH" >/dev/null
+
+# 3. Outer executable
+codesign \
+  --force \
+  --options runtime \
+  --timestamp \
+  --sign "$SIGN_IDENTITY" \
+  "$MACOS_PATH/runx" >/dev/null
+
+# 4. Outer app bundle
+codesign \
+  --force \
   --options runtime \
   --timestamp \
   --sign "$SIGN_IDENTITY" \

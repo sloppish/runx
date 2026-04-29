@@ -8,12 +8,17 @@
 //! - [`action_runner`] executes activated results off the UI thread
 
 mod action_runner;
+mod config_reload_ipc;
 mod search_controller;
 mod settings_window;
 mod window_controller;
 
-use std::sync::Arc;
-use std::time::SystemTime;
+use std::{
+    path::{Path, PathBuf},
+    process::{Command, Stdio},
+    sync::Arc,
+    time::SystemTime,
+};
 
 use crate::{
     config::{self, LoadedConfig},
@@ -24,7 +29,7 @@ use crate::{
     providers::ProviderSet,
     state::AppState,
     tray,
-    types::{Action, AppEvent, FrontendCommand},
+    types::{AppEvent, FrontendCommand},
     ui,
 };
 use action_runner::ActionRunner;
@@ -42,13 +47,30 @@ use tokio::runtime::{Builder, Runtime};
 use wry::http::Request;
 use wry::{WebView, WebViewBuilder};
 
-use self::{
-    search_controller::SearchController, settings_window::SettingsWindow,
-    window_controller::WindowController,
-};
+use self::{search_controller::SearchController, window_controller::WindowController};
 
 const INITIAL_LAYOUT_VERSION: u64 = 0;
-const RUNX_APP_NAME: &str = "Runx";
+const SETTINGS_MODE_ARG: &str = "--settings";
+const SETTINGS_EXECUTABLE_NAME: &str = "runx-settings";
+const SETTINGS_APP_BUNDLE_NAME: &str = "Runx Settings.app";
+
+/// Returns whether this process should run the standalone Settings app.
+pub(crate) fn is_settings_app_invocation() -> bool {
+    std::env::args().any(|arg| arg == SETTINGS_MODE_ARG)
+        || std::env::current_exe()
+            .ok()
+            .and_then(|path| {
+                path.file_name()
+                    .and_then(|name| name.to_str())
+                    .map(str::to_owned)
+            })
+            .is_some_and(|name| name == SETTINGS_EXECUTABLE_NAME)
+}
+
+/// Starts the standalone Settings app process.
+pub(crate) fn run_settings_app() -> Result<()> {
+    settings_window::run_standalone_app()
+}
 
 /// Owns the live launcher runtime and routes native events into the smaller controllers.
 ///
@@ -74,7 +96,6 @@ pub struct Launcher {
     proxy: EventLoopProxy<AppEvent>,
     window: Window,
     webview: WebView,
-    settings: Option<SettingsWindow>,
     state: AppState,
     tray: Option<tray::TrayState>,
 }
@@ -164,7 +185,6 @@ impl Launcher {
             proxy,
             window,
             webview,
-            settings: None,
             state: AppState::new(),
             tray: None,
         })
@@ -189,16 +209,14 @@ impl Launcher {
         Ok(())
     }
 
+    /// Listens for explicit config-reload notifications from the standalone Settings app.
+    pub fn start_config_reload_listener(&self) -> Result<()> {
+        config_reload_ipc::start_listener(&self.loaded.config_path, self.proxy.clone())
+    }
+
     /// Applies Tao `WindowEvent`s to visibility and focus state.
     pub fn handle_window_event(&mut self, window_id: WindowId, event: WindowEvent) -> Result<()> {
-        if self
-            .settings
-            .as_ref()
-            .is_some_and(|settings| settings.window_id() == window_id)
-        {
-            if matches!(event, WindowEvent::CloseRequested) {
-                self.settings = None;
-            }
+        if window_id != self.window.id() {
             return Ok(());
         }
 
@@ -220,22 +238,22 @@ impl Launcher {
     }
 
     /// Handles app-specific events emitted by the frontend, tray, and providers.
-    pub fn handle_user_event(
-        &mut self,
-        event_loop: &EventLoopWindowTarget<AppEvent>,
-        event: AppEvent,
-    ) -> Result<()> {
+    pub fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
         match event {
+            AppEvent::GlobalHotKey(global_event) => {
+                self.handle_global_hotkey_event(global_event)?;
+            }
             AppEvent::TrayToggle => self.toggle()?,
             AppEvent::TrayOpen => {
                 self.windows.capture_previous_app();
                 self.show_or_focus()?;
             }
-            AppEvent::TraySettings => self.open_settings_editor(event_loop)?,
+            AppEvent::TraySettings => self.open_settings_editor()?,
             AppEvent::TrayToggleAutostart => self.toggle_autostart()?,
             AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
-            AppEvent::Settings(command) => self.handle_settings_command(command)?,
+            AppEvent::Settings(_) => {}
+            AppEvent::ReloadConfig => self.reload_config_after_settings_save()?,
             AppEvent::Render => {
                 self.search.flush_render(
                     &mut self.state,
@@ -417,87 +435,22 @@ impl Launcher {
         Ok(())
     }
 
-    fn open_settings_editor(&mut self, event_loop: &EventLoopWindowTarget<AppEvent>) -> Result<()> {
-        if self.settings.is_none() {
-            self.settings = Some(SettingsWindow::new(event_loop, self.proxy.clone())?);
-        } else if let Some(settings) = &self.settings {
-            settings.refresh()?;
+    fn open_settings_editor(&self) -> Result<()> {
+        if let Some(path) = packaged_settings_app_path()? {
+            let path = path
+                .to_str()
+                .context("settings app bundle path is not valid UTF-8")?;
+            return macos::open_application(path);
         }
 
-        if let Some(settings) = &self.settings {
-            settings.show()?;
-        }
-        Ok(())
-    }
-
-    fn handle_settings_command(&mut self, command: crate::types::SettingsCommand) -> Result<()> {
-        match command {
-            crate::types::SettingsCommand::Ready | crate::types::SettingsCommand::Reload => {
-                self.refresh_settings_window()?;
-            }
-            crate::types::SettingsCommand::Save { draft } => {
-                if let Err(error) = settings_window::save_draft(&draft)
-                    .and_then(|_| self.reload_config_after_settings_save())
-                {
-                    self.report_settings_error(error)?;
-                    return Ok(());
-                }
-                self.refresh_settings_window()?;
-                self.set_settings_status("", false)?;
-            }
-            crate::types::SettingsCommand::SaveRaw { raw } => {
-                if let Err(error) = settings_window::save_raw(&raw)
-                    .and_then(|_| self.reload_config_after_settings_save())
-                {
-                    self.report_settings_error(error)?;
-                    return Ok(());
-                }
-                self.refresh_settings_window()?;
-                self.set_settings_status("", false)?;
-            }
-            crate::types::SettingsCommand::CopyText { text } => {
-                macos::copy_text_to_clipboard(&text)?;
-            }
-            crate::types::SettingsCommand::PasteText => {
-                if let (Some(settings), Ok(text)) = (&self.settings, macos::read_clipboard_text()) {
-                    settings.paste_text(&text)?;
-                }
-            }
-            crate::types::SettingsCommand::ClientError { message } => {
-                self.log_outcome(message.clone(), true);
-                self.set_settings_status(&message, true)?;
-            }
-            crate::types::SettingsCommand::Close => {
-                self.settings = None;
-            }
-        }
-        Ok(())
-    }
-
-    fn refresh_settings_window(&self) -> Result<()> {
-        if let Some(settings) = &self.settings {
-            settings.refresh()?;
-        }
-        Ok(())
-    }
-
-    fn report_settings_error(&self, error: anyhow::Error) -> Result<()> {
-        let message = format!("{error:#}");
-        self.log_outcome(format!("Settings save failed: {message}"), true);
-        self.set_settings_status(&message, true)
-    }
-
-    fn set_settings_status(&self, message: &str, is_error: bool) -> Result<()> {
-        if let Some(settings) = &self.settings {
-            settings.set_status(message, is_error)?;
-        }
-        Ok(())
-    }
-
-    fn reload_config_after_settings_save(&mut self) -> Result<()> {
-        self.reload_config()?;
-        self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
-        clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
+        let executable = std::env::current_exe().context("failed to resolve current executable")?;
+        Command::new(executable)
+            .arg(SETTINGS_MODE_ARG)
+            .stdin(Stdio::null())
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .spawn()
+            .context("failed to launch the settings process")?;
         Ok(())
     }
 
@@ -529,11 +482,6 @@ impl Launcher {
             return;
         }
 
-        if is_runx_settings_focus_action(&item.action) {
-            let _ = self.proxy.send_event(AppEvent::TraySettings);
-            return;
-        }
-
         self.actions.spawn(
             &self.runtime,
             self.proxy.clone(),
@@ -542,18 +490,6 @@ impl Launcher {
             context,
         );
     }
-}
-
-fn is_runx_settings_focus_action(action: &Action) -> bool {
-    matches!(
-        action,
-        Action::FocusWindow {
-            app_name,
-            window_title,
-            ..
-        } if app_name == RUNX_APP_NAME
-            && window_title == settings_window::SETTINGS_WINDOW_TITLE
-    )
 }
 
 impl Launcher {
@@ -598,6 +534,24 @@ impl Launcher {
                 self.config_reload_error = Some(error.to_string());
                 self.log_outcome(
                     format!("Config reload failed; keeping previous config: {error:#}"),
+                    true,
+                );
+            }
+        }
+
+        Ok(())
+    }
+
+    fn reload_config_after_settings_save(&mut self) -> Result<()> {
+        match self.reload_config() {
+            Ok(()) => {
+                self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
+                clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
+            }
+            Err(error) => {
+                self.config_reload_error = Some(error.to_string());
+                self.log_outcome(
+                    format!("Config reload failed after settings save: {error:#}"),
                     true,
                 );
             }
@@ -757,6 +711,29 @@ impl Launcher {
     }
 }
 
+fn packaged_settings_app_path() -> Result<Option<PathBuf>> {
+    let executable = std::env::current_exe().context("failed to resolve current executable")?;
+    Ok(settings_app_bundle_path_from_executable(&executable).filter(|path| path.is_dir()))
+}
+
+fn settings_app_bundle_path_from_executable(executable: &Path) -> Option<PathBuf> {
+    let macos_dir = executable.parent()?;
+    if macos_dir.file_name()? != "MacOS" {
+        return None;
+    }
+
+    let contents_dir = macos_dir.parent()?;
+    if contents_dir.file_name()? != "Contents" {
+        return None;
+    }
+
+    Some(
+        contents_dir
+            .join("Applications")
+            .join(SETTINGS_APP_BUNDLE_NAME),
+    )
+}
+
 fn frontend_config_script(
     window: &config::WindowConfig,
     theme: &config::UiConfig,
@@ -830,9 +807,10 @@ fn build_window(
 #[cfg(test)]
 mod tests {
     use super::{
-        clear_recovered_config_error, frontend_config_script, is_runx_settings_focus_action,
+        clear_recovered_config_error, frontend_config_script,
+        settings_app_bundle_path_from_executable,
     };
-    use crate::{config, state::AppState, types::Action};
+    use crate::{config, state::AppState};
 
     #[test]
     fn successful_reload_clears_latched_config_error_state() {
@@ -862,24 +840,16 @@ mod tests {
     }
 
     #[test]
-    fn runx_settings_focus_action_is_handled_on_main_thread() {
-        let action = Action::FocusWindow {
-            app_name: "Runx".to_owned(),
-            window_title: "Runx Settings".to_owned(),
-            window_id: 42,
-        };
+    fn derives_nested_settings_app_path_from_packaged_launcher_executable() {
+        let path = settings_app_bundle_path_from_executable(std::path::Path::new(
+            "/Applications/Runx.app/Contents/MacOS/runx",
+        ));
 
-        assert!(is_runx_settings_focus_action(&action));
-    }
-
-    #[test]
-    fn ordinary_window_focus_actions_stay_on_action_runner_path() {
-        let action = Action::FocusWindow {
-            app_name: "Finder".to_owned(),
-            window_title: "Runx Settings".to_owned(),
-            window_id: 42,
-        };
-
-        assert!(!is_runx_settings_focus_action(&action));
+        assert_eq!(
+            path.as_deref(),
+            Some(std::path::Path::new(
+                "/Applications/Runx.app/Contents/Applications/Runx Settings.app"
+            ))
+        );
     }
 }
