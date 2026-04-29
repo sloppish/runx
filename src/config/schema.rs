@@ -64,6 +64,8 @@ pub struct WindowConfig {
     pub always_on_top: bool,
     /// Choose which display Runx appears on when it opens.
     pub show_on: WindowDisplayTarget,
+    /// Multiplier applied to UI typography and spacing tokens.
+    pub scale: f64,
 }
 
 /// Provider-specific runtime behavior.
@@ -109,7 +111,7 @@ pub enum WindowDisplayTarget {
     Cursor,
 }
 
-/// Per-display overrides for window sizing and UI scale.
+/// Per-display overrides for window sizing and scale.
 #[derive(Debug, Clone, Deserialize, Default, PartialEq)]
 #[serde(default, deny_unknown_fields)]
 pub struct DisplayOverrideConfig {
@@ -133,8 +135,8 @@ pub struct DisplayOverrideConfig {
     pub min_height: Option<f64>,
     /// Override `window.max_height` for matching displays.
     pub max_height: Option<f64>,
-    /// Override `ui.scale` for matching displays.
-    pub ui_scale: Option<f64>,
+    /// Override `window.scale` for matching displays.
+    pub scale: Option<f64>,
 }
 
 /// Ranking and truncation rules for the merged result list.
@@ -228,8 +230,6 @@ pub struct UiConfig {
     pub colorscheme: String,
     /// CSS font-family stack used by the launcher UI.
     pub font_family: String,
-    /// Multiplier applied to UI typography and spacing tokens.
-    pub scale: f64,
     /// Named built-in and custom colorscheme definitions.
     pub colorschemes: HashMap<String, UiColorschemeConfig>,
     /// Canvas styling for the outer launcher panel.
@@ -607,7 +607,7 @@ impl UiConfig {
     ///
     /// This is a bootstrap fallback used before the embedded frontend reports its
     /// measured preferred height from the live CSS/DOM layout.
-    pub fn estimated_window_height(&self, visible_rows: usize) -> f64 {
+    pub fn estimated_window_height(&self, visible_rows: usize, scale: f64) -> f64 {
         const LINE_HEIGHT: f64 = 1.2;
         const BODY_PADDING: f64 = 18.0;
         const SHELL_PADDING: f64 = 18.0;
@@ -616,7 +616,6 @@ impl UiConfig {
         const COMPACT_COPY_MIN_HEIGHT: f64 = 24.0;
         const BORDER_WIDTH: f64 = 1.0;
 
-        let scale = self.scale;
         let scaled = |value: f64| value * scale;
         let line_box = |font_size: u16| f64::from(font_size) * scale * LINE_HEIGHT;
 
@@ -679,10 +678,10 @@ impl Config {
         display: Option<&DisplayProfile>,
     ) -> (WindowConfig, UiConfig) {
         let mut window = self.window.clone();
-        let mut ui = self.ui.clone();
+        let ui = self.ui.clone();
 
         if let Some(display_override) = self.display_override_for(display) {
-            display_override.apply(&mut window, &mut ui);
+            display_override.apply(&mut window);
         }
 
         (window, ui)
@@ -725,6 +724,7 @@ impl Default for WindowConfig {
             hide_when_inactive: true,
             always_on_top: true,
             show_on: WindowDisplayTarget::Cursor,
+            scale: 1.0,
         }
     }
 }
@@ -743,12 +743,12 @@ impl DisplayOverrideConfig {
             max_width: None,
             min_height: None,
             max_height: None,
-            ui_scale: None,
+            scale: None,
         }
     }
 
     /// Builds a capture entry for a specific display from the current base sizing settings.
-    pub fn capture(display: &DisplayProfile, window: &WindowConfig, ui: &UiConfig) -> Self {
+    pub fn capture(display: &DisplayProfile, window: &WindowConfig) -> Self {
         Self {
             width_fraction: Some(window.width_fraction),
             visible_rows: Some(window.visible_rows),
@@ -756,7 +756,7 @@ impl DisplayOverrideConfig {
             max_width: window.max_width,
             min_height: window.min_height,
             max_height: window.max_height,
-            ui_scale: Some(ui.scale),
+            scale: Some(window.scale),
             ..Self::for_display(display)
         }
     }
@@ -768,7 +768,7 @@ impl DisplayOverrideConfig {
             || self.max_width.is_some()
             || self.min_height.is_some()
             || self.max_height.is_some()
-            || self.ui_scale.is_some()
+            || self.scale.is_some()
     }
 
     pub fn label(&self) -> String {
@@ -803,7 +803,7 @@ impl DisplayOverrideConfig {
             && self.serial == other.serial
     }
 
-    fn apply(&self, window: &mut WindowConfig, ui: &mut UiConfig) {
+    fn apply(&self, window: &mut WindowConfig) {
         if let Some(value) = self.width_fraction {
             window.width_fraction = value;
         }
@@ -822,8 +822,8 @@ impl DisplayOverrideConfig {
         if let Some(value) = self.max_height {
             window.max_height = Some(value);
         }
-        if let Some(value) = self.ui_scale {
-            ui.scale = value;
+        if let Some(value) = self.scale {
+            window.scale = value;
         }
     }
 
@@ -877,7 +877,7 @@ impl WindowConfig {
     }
 
     fn fallback_height(&self, ui: &UiConfig) -> f64 {
-        self.clamp_height(ui.estimated_window_height(self.visible_rows))
+        self.clamp_height(ui.estimated_window_height(self.visible_rows, self.scale))
     }
 }
 
@@ -941,7 +941,6 @@ impl Default for UiConfig {
             colorscheme: "system".to_owned(),
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
-            scale: 1.0,
             colorschemes: HashMap::new(),
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),

@@ -197,6 +197,7 @@ pub struct WindowSettingsDraft {
     pub hide_when_inactive: bool,
     pub always_on_top: bool,
     pub show_on: String,
+    pub scale: f64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -211,7 +212,7 @@ pub struct DisplayOverrideSettingsDraft {
     pub max_width: Option<f64>,
     pub min_height: Option<f64>,
     pub max_height: Option<f64>,
-    pub ui_scale: Option<f64>,
+    pub scale: Option<f64>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
@@ -269,7 +270,6 @@ pub struct UiSettingsDraft {
     pub cycle_selection: bool,
     pub colorscheme: String,
     pub font_family: String,
-    pub scale: f64,
     pub canvas: UiCanvasSettingsDraft,
     pub entries: UiEntriesSettingsDraft,
     pub shortcuts: UiShortcutsSettingsDraft,

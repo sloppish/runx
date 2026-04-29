@@ -1030,7 +1030,6 @@ fn field_filter(path: &str) -> Option<&'static [&'static str]> {
             "cycle_selection",
             "colorscheme",
             "font_family",
-            "scale",
         ]),
         _ => None,
     }

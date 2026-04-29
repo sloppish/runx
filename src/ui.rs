@@ -307,7 +307,7 @@ fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors
 }
 
 /// Returns the full HTML document served into the embedded webview.
-pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64) -> String {
+pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64, scale: f64) -> String {
     let cycle_selection_value = if theme.cycle_selection {
         "true"
     } else {
@@ -327,7 +327,7 @@ pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64) -> Strin
         )
         .replace("__RUNX_VISIBLE_ROWS_VALUE__", &visible_rows.to_string())
         .replace("__RUNX_LAYOUT_VERSION_VALUE__", &layout_version.to_string())
-        .replace("__RUNX_STYLE__", &theme_css(theme))
+        .replace("__RUNX_STYLE__", &theme_css(theme, scale))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
 }
 
@@ -349,9 +349,8 @@ pub fn shortcut_json(shortcut: &Option<crate::config::UiShortcutConfig>) -> Stri
 }
 
 /// Returns the theme-expanded CSS used by the embedded webview.
-pub fn theme_css(theme: &UiConfig) -> String {
+pub fn theme_css(theme: &UiConfig, scale: f64) -> String {
     let (light, dark, document_color_scheme) = resolve_theme_colors(theme);
-    let scale = theme.scale;
     let header_display = if theme.show_header { "flex" } else { "none" };
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
     let ui_scale = format_float(scale);
@@ -606,7 +605,7 @@ mod tests {
             show_header: false,
             ..UiConfig::default()
         };
-        theme.scale = 1.25;
+        let scale = 1.25;
         theme.canvas.show = false;
         theme.canvas.radius = 20;
         theme.canvas.background_opacity = 0.91;
@@ -619,7 +618,7 @@ mod tests {
         theme.layout.input_radius = 22;
         theme.layout.badge_size = 52;
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, scale);
 
         assert!(css.contains("--header-display: none;"));
         assert!(css.contains("--ui-scale: 1.25;"));
@@ -652,7 +651,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, 1.0);
 
         assert!(!css.contains("linear-gradient(180deg, #111111, #222222)"));
         assert!(css.contains("--canvas-bg: linear-gradient(180deg, #fbf1c7, #f2e5bc);"));
@@ -676,7 +675,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, 1.0);
 
         assert!(css.contains("--document-color-scheme: dark;"));
         assert!(css.contains("--accent: #fabd2f;"));
@@ -701,7 +700,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, 1.0);
 
         assert!(css.contains("--accent: #ffcc00;"));
         assert!(css.contains("--item-hover: color-mix(in srgb, #ffcc00 14%, transparent);"));
@@ -743,7 +742,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, 1.0);
 
         assert!(css.contains("--accent: #ffcc00;"));
         assert!(css.contains("--item-hover: #101010;"));
@@ -777,7 +776,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, 1.0);
 
         assert!(css.contains("--canvas-bg: #0000ff;"));
     }
@@ -786,7 +785,7 @@ mod tests {
     fn system_colorscheme_keeps_light_dark_pairing() {
         let theme = UiConfig::default();
 
-        let css = theme_css(&theme);
+        let css = theme_css(&theme, 1.0);
 
         assert!(css.contains("--document-color-scheme: light dark;"));
         assert!(!css.contains("--accent: __LIGHT_ACCENT__"));
@@ -800,7 +799,7 @@ mod tests {
         let mut theme = UiConfig::default();
         theme.canvas.show = false;
 
-        let document = html(&theme, 5, 0);
+        let document = html(&theme, 5, 0, 1.0);
 
         assert!(document.contains(r#"<main class="shell canvas-hidden">"#));
     }
@@ -812,14 +811,14 @@ mod tests {
             ..UiConfig::default()
         };
 
-        let document = html(&theme, 5, 0);
+        let document = html(&theme, 5, 0, 1.0);
 
         assert!(document.contains("window.__RUNX_CYCLE_SELECTION__ = true;"));
     }
 
     #[test]
     fn html_exposes_window_action_shortcuts() {
-        let document = html(&UiConfig::default(), 5, 7);
+        let document = html(&UiConfig::default(), 5, 7, 1.0);
 
         assert!(document.contains(
             r#"window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {"key":"Enter","code":null,"alt":false,"ctrl":false,"meta":false,"shift":false};"#

@@ -145,6 +145,7 @@ impl Launcher {
             &config.ui,
             config.window.visible_rows,
             INITIAL_LAYOUT_VERSION,
+            config.window.scale,
         );
         let ipc_proxy = proxy.clone();
         let protocol_icons = icons.clone();
@@ -737,7 +738,7 @@ fn frontend_config_script(
     theme: &config::UiConfig,
     layout_version: u64,
 ) -> Result<String> {
-    let css = ui::theme_css(theme);
+    let css = ui::theme_css(theme, window.scale);
     let shell_class = ui::shell_class(theme);
     let cycle_selection = if theme.cycle_selection {
         "true"

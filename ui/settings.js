@@ -630,7 +630,7 @@
       ["max_width", "Max width", false],
       ["min_height", "Min height", false],
       ["max_height", "Max height", false],
-      ["ui_scale", "UI scale", false],
+      ["scale", "Scale", false],
     ]) {
       const [labelNode, input] = labeledInput(label, "number");
       input.dataset.overrideField = key;
@@ -776,7 +776,7 @@
         max_width: optionalNumber(get("max_width")),
         min_height: optionalNumber(get("min_height")),
         max_height: optionalNumber(get("max_height")),
-        ui_scale: optionalNumber(get("ui_scale")),
+        scale: optionalNumber(get("scale")),
       };
     });
   }
@@ -1029,6 +1029,7 @@
         hide_when_inactive: bool("window.hide_when_inactive"),
         always_on_top: bool("window.always_on_top"),
         show_on: text("window.show_on"),
+        scale: float("window.scale"),
       },
       display_overrides: collectDisplayOverrides(),
       providers: {
@@ -1062,7 +1063,6 @@
         cycle_selection: bool("ui.cycle_selection"),
         colorscheme: text("ui.colorscheme"),
         font_family: field("ui.font_family").value.trim(),
-        scale: float("ui.scale"),
         canvas: {
           show: bool("ui.canvas.show"),
           radius: int("ui.canvas.radius"),

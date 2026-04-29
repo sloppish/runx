@@ -216,7 +216,7 @@ mod tests {
         #[test]
         fn row_driven_height_respects_max_height() {
             let config: Config = toml::from_str(
-                "[window]\nvisible_rows = 10\nmax_height = 640\n[ui]\nscale = 1.25\n",
+                "[window]\nvisible_rows = 10\nmax_height = 640\nscale = 1.25\n",
             )
             .expect("row-driven height config should parse");
             assert_eq!(config.window.resolve_width(2560.0), 1024.0);
@@ -226,7 +226,7 @@ mod tests {
         #[test]
         fn accepts_display_overrides() {
             let config: Config = toml::from_str(
-                "[[display_overrides]]\nbuilt_in = true\nvendor = 610\nmodel = 41171\nwidth_fraction = 0.46\nvisible_rows = 6\nui_scale = 1.08\n",
+                "[[display_overrides]]\nbuilt_in = true\nvendor = 610\nmodel = 41171\nwidth_fraction = 0.46\nvisible_rows = 6\nscale = 1.08\n",
             )
             .expect("display override should parse");
 
@@ -237,13 +237,13 @@ mod tests {
             assert_eq!(display_override.model, Some(41171));
             assert_eq!(display_override.width_fraction, Some(0.46));
             assert_eq!(display_override.visible_rows, Some(6));
-            assert_eq!(display_override.ui_scale, Some(1.08));
+            assert_eq!(display_override.scale, Some(1.08));
         }
 
         #[test]
         fn resolves_best_matching_display_override() {
             let config: Config = toml::from_str(
-                "[[display_overrides]]\nbuilt_in = false\nwidth_fraction = 0.52\nvisible_rows = 7\nui_scale = 1.04\n\n[[display_overrides]]\nserial = 4242\nwidth_fraction = 0.38\nvisible_rows = 5\nui_scale = 1.16\n",
+                "[[display_overrides]]\nbuilt_in = false\nwidth_fraction = 0.52\nvisible_rows = 7\nscale = 1.04\n\n[[display_overrides]]\nserial = 4242\nwidth_fraction = 0.38\nvisible_rows = 5\nscale = 1.16\n",
             )
             .expect("display overrides should parse");
             let display = DisplayProfile {
@@ -256,11 +256,11 @@ mod tests {
                 primary: false,
             };
 
-            let (window, ui) = config.resolved_window_and_ui(Some(&display));
+            let (window, _ui) = config.resolved_window_and_ui(Some(&display));
 
             assert_eq!(window.width_fraction, 0.38);
             assert_eq!(window.visible_rows, 5);
-            assert_eq!(ui.scale, 1.16);
+            assert_eq!(window.scale, 1.16);
         }
 
         #[test]
@@ -546,7 +546,7 @@ mod tests {
             assert!(config.ui.show_header);
             assert!(!config.ui.cycle_selection);
             assert_eq!(config.ui.colorscheme, "system");
-            assert_eq!(config.ui.scale, 1.0);
+            assert_eq!(config.window.scale, 1.0);
             assert!(config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 24);
             assert_eq!(config.ui.canvas.background_opacity, 0.97);
@@ -600,14 +600,14 @@ mod tests {
         #[test]
         fn accepts_custom_ui_font_sizes() {
             let config: Config = toml::from_str(
-                "[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\nscale = 1.2\n[ui.canvas]\nshow = false\nradius = 18\nbackground_opacity = 0.9\nchrome_opacity = 0.75\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
+                "[window]\nscale = 1.2\n[ui]\nshow_header = false\ncycle_selection = true\ncolorscheme = \"builtin_dark\"\n[ui.canvas]\nshow = false\nradius = 18\nbackground_opacity = 0.9\nchrome_opacity = 0.75\n[ui.entries]\nopacity = 0.64\n[ui.font_sizes]\ninput = 34\ntitle = 18\nsubtitle = 13\nbadge = 12\naccelerator = 13\nconfig_error_title = 28\nconfig_error_body = 17\nlabel = 11\n",
             )
             .expect("custom ui font sizes should parse");
 
             assert!(!config.ui.show_header);
             assert!(config.ui.cycle_selection);
             assert_eq!(config.ui.colorscheme, "builtin_dark");
-            assert_eq!(config.ui.scale, 1.2);
+            assert_eq!(config.window.scale, 1.2);
             assert!(!config.ui.canvas.show);
             assert_eq!(config.ui.canvas.radius, 18);
             assert_eq!(config.ui.canvas.background_opacity, 0.9);
@@ -929,7 +929,7 @@ mod tests {
 
         #[test]
         fn ui_scale_validation_errors_include_source_context() {
-            let raw = "[ui]\nscale = 0.0\n";
+            let raw = "[window]\nscale = 0.0\n";
             let spans: RawConfigSpans =
                 toml::from_str(raw).expect("raw spans config should parse structurally");
             let rendered =
@@ -938,7 +938,7 @@ mod tests {
                     .to_string();
 
             assert!(rendered.contains("scale = 0.0"));
-            assert!(rendered.contains("[ui].scale must be greater than 0.0"));
+            assert!(rendered.contains("[window].scale must be greater than 0.0"));
         }
 
         #[test]

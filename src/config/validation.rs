@@ -32,7 +32,6 @@ struct RawUiSpans {
     cycle_selection: bool,
     colorscheme: Option<Spanned<String>>,
     font_family: String,
-    scale: Option<Spanned<f64>>,
     colorschemes: HashMap<String, RawUiColorschemeSpans>,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
@@ -83,6 +82,7 @@ struct RawWindowSpans {
     hide_when_inactive: bool,
     always_on_top: bool,
     show_on: WindowDisplayTarget,
+    scale: Option<Spanned<f64>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -98,7 +98,7 @@ struct RawDisplayOverrideSpans {
     max_width: Option<Spanned<f64>>,
     min_height: Option<Spanned<f64>>,
     max_height: Option<Spanned<f64>>,
-    ui_scale: Option<Spanned<f64>>,
+    scale: Option<Spanned<f64>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -182,7 +182,7 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
             &format!("[[display_overrides]] entry {}", index + 1),
         )?;
     }
-    validate_positive_scale(config.ui.scale, "[ui].scale must be greater than 0.0")?;
+    validate_positive_scale(config.window.scale, "[window].scale must be greater than 0.0")?;
     validate_opacity(
         config.ui.canvas.background_opacity,
         "[ui.canvas].background_opacity must be between 0.0 and 1.0",
@@ -531,10 +531,10 @@ pub(super) fn validate_config_with_spans(
             )));
         }
 
-        if let Some(scale) = &display_override.ui_scale
+        if let Some(scale) = &display_override.scale
             && let Err(error) = validate_positive_scale(
                 *scale.get_ref(),
-                &format!("{context}.ui_scale must be greater than 0.0"),
+                &format!("{context}.scale must be greater than 0.0"),
             )
         {
             return Err(anyhow!(render_config_validation_error(
@@ -555,9 +555,9 @@ pub(super) fn validate_config_with_spans(
         )?;
     }
 
-    if let Some(scale) = &spans.ui.scale
+    if let Some(scale) = &spans.window.scale
         && let Err(error) =
-            validate_positive_scale(*scale.get_ref(), "[ui].scale must be greater than 0.0")
+            validate_positive_scale(*scale.get_ref(), "[window].scale must be greater than 0.0")
     {
         return Err(anyhow!(render_config_validation_error(
             config_path,
@@ -796,7 +796,7 @@ fn validate_display_override(config: &DisplayOverrideConfig, context: &str) -> R
         || config.max_width.is_some()
         || config.min_height.is_some()
         || config.max_height.is_some()
-        || config.ui_scale.is_some();
+        || config.scale.is_some();
     if !has_override {
         bail!("{context} must override at least one setting");
     }
@@ -851,10 +851,10 @@ fn validate_display_override(config: &DisplayOverrideConfig, context: &str) -> R
             &format!("{context}.min_height must be less than or equal to {context}.max_height"),
         )?;
     }
-    if let Some(value) = config.ui_scale {
+    if let Some(value) = config.scale {
         validate_positive_scale(
             value,
-            &format!("{context}.ui_scale must be greater than 0.0"),
+            &format!("{context}.scale must be greater than 0.0"),
         )?;
     }
 

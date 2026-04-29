@@ -38,10 +38,11 @@ Launcher window behavior and geometry.
 | `hide_when_inactive` | boolean | `true` | Hide the launcher automatically when it becomes inactive. |
 | `always_on_top` | boolean | `true` | Keep the launcher above normal windows while it is visible. |
 | `show_on` | one of: `primary`, `cursor` | `"cursor"` | Choose which display Runx appears on when it opens. |
+| `scale` | number | `1` | Multiplier applied to UI typography and spacing tokens. |
 
 ## [[display_overrides]]
 
-Per-display overrides for window sizing and UI scale.
+Per-display overrides for window sizing and scale.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
@@ -55,7 +56,7 @@ Per-display overrides for window sizing and UI scale.
 | `max_width` | number | - | Override `window.max_width` for matching displays. |
 | `min_height` | number | - | Override `window.min_height` for matching displays. |
 | `max_height` | number | - | Override `window.max_height` for matching displays. |
-| `ui_scale` | number | - | Override `ui.scale` for matching displays. |
+| `scale` | number | - | Override `window.scale` for matching displays. |
 
 ## [providers]
 
@@ -158,7 +159,6 @@ Theme tokens injected into the embedded HTML/CSS UI templates.
 | `cycle_selection` | boolean | `false` | Wrap selection movement from end to start with arrows and Ctrl-N/Ctrl-P. |
 | `colorscheme` | string (`system`, `builtin_light`, `builtin_dark`, or a custom name under `[ui.colorschemes.<name>]`) | `"system"` | Selected UI colorscheme: `system`, a built-in name, or a custom scheme name. |
 | `font_family` | string | `"\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"` | CSS font-family stack used by the launcher UI. |
-| `scale` | number | `1` | Multiplier applied to UI typography and spacing tokens. |
 
 ## [ui.canvas]
 

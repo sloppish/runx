@@ -20,6 +20,7 @@ visible_rows = 5
 hide_when_inactive = true
 always_on_top = true
 show_on = "cursor"
+scale = 1.0
 
 # Optional per-display size overrides.
 # Matching prefers serial number, then vendor/model, then built-in/external.
@@ -34,7 +35,6 @@ show_on = "cursor"
 # max_width = 960
 # min_height = 420
 # max_height = 720
-# ui_scale = 1.0
 
 [providers]
 disabled = []
@@ -77,7 +77,6 @@ show_header = true
 cycle_selection = false
 colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
-scale = 1.0
 # Custom schemes live under:
 # [ui.colorschemes.gruvbox]
 # base = "builtin_dark"

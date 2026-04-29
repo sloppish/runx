@@ -390,6 +390,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
                 WindowDisplayTarget::Cursor => "cursor",
             }
             .to_owned(),
+            scale: config.window.scale,
         },
         display_overrides: config
             .display_overrides
@@ -405,7 +406,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
                 max_width: entry.max_width,
                 min_height: entry.min_height,
                 max_height: entry.max_height,
-                ui_scale: entry.ui_scale,
+                scale: entry.scale,
             })
             .collect(),
         providers: ProvidersSettingsDraft {
@@ -450,7 +451,6 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
             cycle_selection: config.ui.cycle_selection,
             colorscheme: config.ui.colorscheme.clone(),
             font_family: config.ui.font_family.clone(),
-            scale: config.ui.scale,
             canvas: UiCanvasSettingsDraft {
                 show: config.ui.canvas.show,
                 radius: config.ui.canvas.radius,
@@ -781,7 +781,7 @@ fn apply_settings_draft_to_raw(
         "font_family",
         value(draft.ui.font_family.clone()),
     )?;
-    set_item(&mut doc, &["ui"], "scale", value(draft.ui.scale))?;
+    set_item(&mut doc, &["window"], "scale", value(draft.window.scale))?;
     set_item(
         &mut doc,
         &["ui", "canvas"],
@@ -851,7 +851,7 @@ fn set_display_overrides(
         set_optional_f64(&mut table, "max_width", entry.max_width);
         set_optional_f64(&mut table, "min_height", entry.min_height);
         set_optional_f64(&mut table, "max_height", entry.max_height);
-        set_optional_f64(&mut table, "ui_scale", entry.ui_scale);
+        set_optional_f64(&mut table, "scale", entry.scale);
         tables.push(table);
     }
     doc.as_table_mut()
@@ -1289,7 +1289,7 @@ shortcut = "Option+Space"
             max_width: Some(960.0),
             min_height: None,
             max_height: None,
-            ui_scale: Some(1.1),
+            scale: Some(1.1),
         });
         draft
             .ranking
