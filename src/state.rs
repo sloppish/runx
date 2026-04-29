@@ -172,6 +172,11 @@ impl SearchSession {
         true
     }
 
+    /// Returns whether all providers for the current generation have responded.
+    pub fn is_search_complete(&self) -> bool {
+        self.pending_providers == 0
+    }
+
     /// Returns the rendered item at the given visible list index.
     pub fn rendered_item(&self, index: usize) -> Option<&SearchItem> {
         self.rendered_items.get(index)

@@ -254,7 +254,6 @@ pub struct RankingScoreRuleSettingsDraft {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct TimingSettingsDraft {
     pub search_debounce_ms: u64,
-    pub render_coalesce_ms: u64,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

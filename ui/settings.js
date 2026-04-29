@@ -1051,7 +1051,6 @@
       },
       timing: {
         search_debounce_ms: int("timing.search_debounce_ms"),
-        render_coalesce_ms: int("timing.render_coalesce_ms"),
       },
       plugins: {
         directories: lineList("plugins.directories"),

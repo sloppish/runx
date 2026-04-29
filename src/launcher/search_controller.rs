@@ -18,18 +18,14 @@ use crate::{
 
 /// Owns the transient scheduling state around searches and rerenders.
 pub(crate) struct SearchController {
-    render_scheduled: bool,
     search_debounce: Duration,
-    render_coalesce: Duration,
 }
 
 impl SearchController {
     /// Creates a controller using the configured debounce/coalescing timings.
     pub(crate) fn new(timing: &TimingConfig) -> Self {
         Self {
-            render_scheduled: false,
             search_debounce: Duration::from_millis(timing.search_debounce_ms),
-            render_coalesce: Duration::from_millis(timing.render_coalesce_ms),
         }
     }
 
@@ -72,39 +68,39 @@ impl SearchController {
         providers.spawn_search(proxy, generation, query);
     }
 
-    /// Merges one provider response into the current session and schedules rerender.
+    /// Merges one provider response into the current session and renders when all are done.
     pub(crate) fn handle_provider_items(
         &mut self,
         state: &mut AppState,
         generation: u64,
         provider: String,
         items: Vec<SearchItem>,
-        runtime: &Runtime,
         proxy: tao::event_loop::EventLoopProxy<AppEvent>,
     ) {
         if state
             .session_mut()
             .apply_provider_items(generation, provider, items)
+            && state.session().is_search_complete()
         {
-            self.request_render(runtime, proxy, self.render_coalesce);
+            let _ = proxy.send_event(AppEvent::Render);
         }
     }
 
-    /// Records one provider error for the current generation and schedules rerender.
+    /// Records one provider error for the current generation and renders when all are done.
     pub(crate) fn handle_provider_error(
         &mut self,
         state: &mut AppState,
         generation: u64,
         provider: String,
         message: String,
-        runtime: &Runtime,
         proxy: tao::event_loop::EventLoopProxy<AppEvent>,
     ) {
         if state
             .session_mut()
             .apply_provider_error(generation, &provider, message)
+            && state.session().is_search_complete()
         {
-            self.request_render(runtime, proxy, self.render_coalesce);
+            let _ = proxy.send_event(AppEvent::Render);
         }
     }
 
@@ -126,28 +122,6 @@ impl SearchController {
         Ok(())
     }
 
-    /// Marks any pending delayed render as obsolete.
-    pub(crate) fn cancel_pending_render(&mut self) {
-        self.render_scheduled = false;
-    }
-
-    fn request_render(
-        &mut self,
-        runtime: &Runtime,
-        proxy: tao::event_loop::EventLoopProxy<AppEvent>,
-        delay: Duration,
-    ) {
-        if self.render_scheduled {
-            return;
-        }
-
-        self.render_scheduled = true;
-        runtime.handle().spawn(async move {
-            tokio::time::sleep(delay).await;
-            let _ = proxy.send_event(AppEvent::Render);
-        });
-    }
-
     /// Clears the render debounce latch and renders the current session immediately.
     pub(crate) fn flush_render(
         &mut self,
@@ -155,7 +129,6 @@ impl SearchController {
         ranking: &RankingConfig,
         webview: &WebView,
     ) -> Result<()> {
-        self.render_scheduled = false;
         self.render(state, ranking, webview)
     }
 }

@@ -5,7 +5,7 @@ pub const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `show_on_empty_query` controls whether open windows are listed before you type anything.
 # `provider_score_boosts` lets you nudge merged scores per provider.
 # `score_rules` lets you boost or demote specific result text patterns.
-# `search_debounce_ms` and `render_coalesce_ms` tune search/render scheduling.
+# `search_debounce_ms` tunes search scheduling.
 
 [hotkey]
 shortcut = "Option+Space"
@@ -63,7 +63,6 @@ result_limit = 24
 
 [timing]
 search_debounce_ms = 24
-render_coalesce_ms = 8
 
 [plugins]
 directories = []

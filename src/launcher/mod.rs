@@ -287,7 +287,6 @@ impl Launcher {
                 generation,
                 provider,
                 items,
-                &self.runtime,
                 self.proxy.clone(),
             ),
             AppEvent::ProviderError {
@@ -299,7 +298,6 @@ impl Launcher {
                 generation,
                 provider,
                 message,
-                &self.runtime,
                 self.proxy.clone(),
             ),
             AppEvent::ActionOutcome { message, is_error } => {
@@ -369,7 +367,7 @@ impl Launcher {
     fn hide_without_focus_restore(&mut self) -> Result<()> {
         self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
-        self.search.cancel_pending_render();
+
         self.windows.hide_window(&self.window);
         self.search
             .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;

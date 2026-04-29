@@ -115,12 +115,11 @@ One additive ranking rule matched against a result row.
 
 ## [timing]
 
-Debounce and coalescing timings for the search/render pipeline.
+Debounce timings for the search pipeline.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `search_debounce_ms` | integer | `24` | Delay before a changed query starts a new search generation. |
-| `render_coalesce_ms` | integer | `8` | Small render delay used to coalesce provider updates. |
 
 ## [plugins]
 

@@ -198,14 +198,12 @@ pub enum RankingScoreRuleMatchKind {
     Contains,
 }
 
-/// Debounce and coalescing timings for the search/render pipeline.
+/// Debounce timings for the search pipeline.
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct TimingConfig {
     /// Delay before a changed query starts a new search generation.
     pub search_debounce_ms: u64,
-    /// Small render delay used to coalesce provider updates.
-    pub render_coalesce_ms: u64,
 }
 
 /// Plugin discovery and subprocess lookup configuration.
@@ -913,7 +911,6 @@ impl Default for TimingConfig {
     fn default() -> Self {
         Self {
             search_debounce_ms: 24,
-            render_coalesce_ms: 8,
         }
     }
 }

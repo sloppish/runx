@@ -478,16 +478,14 @@ mod tests {
         fn defaults_to_current_search_and_render_timings() {
             let config: Config = toml::from_str("").expect("empty config should parse");
             assert_eq!(config.timing.search_debounce_ms, 24);
-            assert_eq!(config.timing.render_coalesce_ms, 8);
         }
 
         #[test]
         fn accepts_custom_timing_values() {
             let config: Config =
-                toml::from_str("[timing]\nsearch_debounce_ms = 32\nrender_coalesce_ms = 12\n")
+                toml::from_str("[timing]\nsearch_debounce_ms = 32\n")
                     .expect("custom timing values should parse");
             assert_eq!(config.timing.search_debounce_ms, 32);
-            assert_eq!(config.timing.render_coalesce_ms, 12);
         }
     }
 
