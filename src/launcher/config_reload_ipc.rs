@@ -1,7 +1,7 @@
 //! Tiny local IPC used by the standalone Settings app to tell the launcher to reload config.
 
 use std::{
-    fs, io,
+    env, fs, io,
     os::unix::fs::FileTypeExt,
     os::unix::net::UnixDatagram,
     path::{Path, PathBuf},
@@ -13,11 +13,10 @@ use tao::event_loop::EventLoopProxy;
 
 use crate::types::AppEvent;
 
-const SOCKET_FILE_NAME: &str = "reload.sock";
 const RELOAD_MESSAGE: &[u8] = b"reload";
 
-pub(crate) fn start_listener(config_path: &Path, proxy: EventLoopProxy<AppEvent>) -> Result<()> {
-    let socket_path = socket_path(config_path)?;
+pub(crate) fn start_listener(proxy: EventLoopProxy<AppEvent>) -> Result<()> {
+    let socket_path = socket_path()?;
     remove_stale_socket(&socket_path)?;
     let socket = UnixDatagram::bind(&socket_path)
         .with_context(|| format!("failed to bind {}", socket_path.display()))?;
@@ -41,8 +40,8 @@ pub(crate) fn start_listener(config_path: &Path, proxy: EventLoopProxy<AppEvent>
     Ok(())
 }
 
-pub(crate) fn notify_reload(config_path: &Path) -> Result<()> {
-    let socket_path = socket_path(config_path)?;
+pub(crate) fn notify_reload() -> Result<()> {
+    let socket_path = socket_path()?;
     let socket = UnixDatagram::unbound().context("failed to create config reload IPC socket")?;
     socket
         .send_to(RELOAD_MESSAGE, &socket_path)
@@ -50,14 +49,11 @@ pub(crate) fn notify_reload(config_path: &Path) -> Result<()> {
     Ok(())
 }
 
-fn socket_path(config_path: &Path) -> Result<PathBuf> {
-    let Some(config_dir) = config_path.parent() else {
-        bail!(
-            "config path has no parent directory: {}",
-            config_path.display()
-        );
-    };
-    Ok(config_dir.join(SOCKET_FILE_NAME))
+fn socket_path() -> Result<PathBuf> {
+    let dir = env::temp_dir().join("runx");
+    fs::create_dir_all(&dir)
+        .with_context(|| format!("failed to create {}", dir.display()))?;
+    Ok(dir.join("reload.sock"))
 }
 
 fn remove_stale_socket(path: &Path) -> Result<()> {
@@ -75,10 +71,10 @@ mod tests {
     use super::socket_path;
 
     #[test]
-    fn places_reload_socket_next_to_config() {
-        let path = socket_path(std::path::Path::new("/tmp/runx/config.toml"))
-            .expect("path should be derived");
+    fn places_reload_socket_in_temp_dir() {
+        let path = socket_path().expect("path should be derived");
 
-        assert_eq!(path, std::path::Path::new("/tmp/runx/reload.sock"));
+        assert_eq!(path.file_name().unwrap(), "reload.sock");
+        assert_eq!(path.parent().unwrap().file_name().unwrap(), "runx");
     }
 }

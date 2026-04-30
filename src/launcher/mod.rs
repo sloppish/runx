@@ -212,7 +212,7 @@ impl Launcher {
 
     /// Listens for explicit config-reload notifications from the standalone Settings app.
     pub fn start_config_reload_listener(&self) -> Result<()> {
-        config_reload_ipc::start_listener(&self.loaded.config_path, self.proxy.clone())
+        config_reload_ipc::start_listener(self.proxy.clone())
     }
 
     /// Applies Tao `WindowEvent`s to visibility and focus state.

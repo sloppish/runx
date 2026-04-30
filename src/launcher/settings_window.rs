@@ -201,10 +201,7 @@ fn handle_standalone_settings_command(
 }
 
 fn notify_launcher_reload() {
-    let Ok(path) = ensure_user_config() else {
-        return;
-    };
-    let _ = config_reload_ipc::notify_reload(&path);
+    let _ = config_reload_ipc::notify_reload();
 }
 
 #[derive(Debug, Serialize)]
