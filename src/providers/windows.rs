@@ -88,31 +88,8 @@ impl WindowsProvider {
             None => return Ok(Vec::new()),
         };
 
-        let query = query.trim();
-        let empty_query = query.is_empty();
-        let mut items = Vec::new();
-
-        for window in windows.iter() {
-            let score = if empty_query {
-                empty_query_score(window)
-            } else {
-                let combined = format!("{} {}", window.title, window.owner);
-                fuzzy_score(&combined, query) + (fuzzy_score(&window.title, query) / 2)
-            };
-
-            if score <= 0 {
-                continue;
-            }
-
-            items.push((score, window.clone()));
-        }
-
-        items.sort_by_key(|item| std::cmp::Reverse(item.0));
-        if empty_query && !items.is_empty() {
-            items.remove(0);
-        }
-        items.truncate(limit);
-        Ok(items
+        let ranked = rank_windows(&windows, query, limit);
+        Ok(ranked
             .into_iter()
             .map(|(score, window)| SearchItem {
                 id: format!("window:{}:{}", window.pid, window.window_id),
@@ -354,6 +331,35 @@ fn get_number(dict: &CFDictionary<CFString, CFType>, key: CFStringRef) -> Option
         .and_then(|value| value.to_i64())
 }
 
+fn rank_windows(windows: &[WindowRecord], query: &str, limit: usize) -> Vec<(i64, WindowRecord)> {
+    let query = query.trim();
+    let empty_query = query.is_empty();
+    let mut items = Vec::new();
+
+    for window in windows.iter() {
+        if window.z_index == 0 {
+            continue;
+        }
+
+        let score = if empty_query {
+            empty_query_score(window)
+        } else {
+            let combined = format!("{} {}", window.title, window.owner);
+            fuzzy_score(&combined, query) + (fuzzy_score(&window.title, query) / 2)
+        };
+
+        if score <= 0 {
+            continue;
+        }
+
+        items.push((score, window.clone()));
+    }
+
+    items.sort_by_key(|item| std::cmp::Reverse(item.0));
+    items.truncate(limit);
+    items
+}
+
 fn empty_query_score(window: &WindowRecord) -> i64 {
     10_000 - (window.z_index as i64 * 15)
 }
@@ -364,7 +370,7 @@ mod tests {
 
     use super::{
         AccessibilityWindowRecord, WindowRecord, apply_accessibility_titles, empty_query_score,
-        merge_window_orders,
+        merge_window_orders, rank_windows,
     };
 
     fn window(window_id: u32, z_index: usize) -> WindowRecord {
@@ -641,5 +647,72 @@ mod tests {
         );
 
         assert_eq!(windows[0].title, "Runx Settings");
+    }
+
+    fn named_window(title: &str, owner: &str, window_id: u32, z_index: usize) -> WindowRecord {
+        WindowRecord {
+            title: title.to_owned(),
+            owner: owner.to_owned(),
+            pid: 1,
+            window_id,
+            z_index,
+        }
+    }
+
+    #[test]
+    fn empty_query_excludes_topmost_window() {
+        let windows = vec![
+            named_window("Front", "App", 1, 0),
+            named_window("Middle", "App", 2, 1),
+            named_window("Back", "App", 3, 2),
+        ];
+
+        let results = rank_windows(&windows, "", 10);
+        let titles: Vec<&str> = results.iter().map(|(_, w)| w.title.as_str()).collect();
+
+        assert!(!titles.contains(&"Front"));
+        assert!(titles.contains(&"Middle"));
+        assert!(titles.contains(&"Back"));
+    }
+
+    #[test]
+    fn non_empty_query_excludes_topmost_window_not_best_match() {
+        let windows = vec![
+            named_window("Terminal", "Terminal", 1, 0),
+            named_window("Terminal — ssh", "Terminal", 2, 1),
+            named_window("Finder", "Finder", 3, 2),
+        ];
+
+        let results = rank_windows(&windows, "Terminal", 10);
+        let titles: Vec<&str> = results.iter().map(|(_, w)| w.title.as_str()).collect();
+
+        assert!(!titles.contains(&"Terminal"));
+        assert!(titles.contains(&"Terminal — ssh"));
+    }
+
+    #[test]
+    fn non_topmost_matching_window_is_kept() {
+        let windows = vec![
+            named_window("Finder", "Finder", 1, 0),
+            named_window("Safari", "Safari", 2, 1),
+        ];
+
+        let results = rank_windows(&windows, "Safari", 10);
+        let titles: Vec<&str> = results.iter().map(|(_, w)| w.title.as_str()).collect();
+
+        assert!(titles.contains(&"Safari"));
+    }
+
+    #[test]
+    fn only_topmost_matching_window_returns_empty() {
+        let windows = vec![
+            named_window("Safari", "Safari", 1, 0),
+            named_window("Finder", "Finder", 2, 1),
+        ];
+
+        let results = rank_windows(&windows, "Safari", 10);
+        let titles: Vec<&str> = results.iter().map(|(_, w)| w.title.as_str()).collect();
+
+        assert!(titles.is_empty());
     }
 }
