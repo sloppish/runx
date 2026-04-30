@@ -836,9 +836,25 @@
     const grid = document.createElement("div");
     grid.className = "grid five";
 
-    const [providersLabel, providersInput] = labeledInput("Providers", "text");
-    providersInput.dataset.ruleField = "providers";
-    providersInput.value = (rule.providers || []).join(", ");
+    const providersGroup = document.createElement("div");
+    providersGroup.className = "checkbox-group";
+    providersGroup.dataset.ruleField = "providers";
+    const providersGroupLabel = document.createElement("span");
+    providersGroupLabel.textContent = "Providers";
+    providersGroup.append(providersGroupLabel);
+    const selected = new Set(rule.providers || []);
+    for (const known of state.known_providers || []) {
+      const cb = document.createElement("input");
+      cb.type = "checkbox";
+      cb.value = known;
+      cb.checked = selected.has(known);
+      const lbl = document.createElement("label");
+      lbl.className = "checkbox-label";
+      const txt = document.createElement("span");
+      txt.textContent = known;
+      lbl.append(cb, txt);
+      providersGroup.append(lbl);
+    }
 
     const fieldLabel = document.createElement("label");
     const fieldText = document.createElement("span");
@@ -871,7 +887,7 @@
     boostInput.step = "1";
     boostInput.value = rule.boost ?? 0;
 
-    grid.append(providersLabel, fieldLabel, matchLabel, patternLabel, boostLabel);
+    grid.append(providersGroup, fieldLabel, matchLabel, patternLabel, boostLabel);
     wrapper.append(grid);
     scoreRulesEl.append(wrapper);
   }
@@ -880,10 +896,7 @@
     return Array.from(scoreRulesEl.querySelectorAll(".collection-item")).map((item) => {
       const get = (key) => item.querySelector(`[data-rule-field="${key}"]`);
       return {
-        providers: get("providers").value
-          .split(",")
-          .map((value) => value.trim())
-          .filter(Boolean),
+        providers: Array.from(get("providers").querySelectorAll("input:checked")).map((cb) => cb.value),
         field: get("field").value,
         match_kind: get("match_kind").value,
         pattern: get("pattern").value.trim(),
