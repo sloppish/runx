@@ -37,5 +37,5 @@ Runx targets macOS 11 Big Sur and newer.
 
 ## Docs
 
-- [Plugin API](./PLUGIN_API.md): Lua plugin API and action payloads
-- [Configuration](./CONFIGURATION.md): generated config reference
+- [Plugin API](./docs/PLUGIN_API.md): Lua plugin API and action payloads
+- [Configuration](./docs/CONFIGURATION.md): generated config reference

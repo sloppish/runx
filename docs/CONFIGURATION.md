@@ -3,18 +3,6 @@
 
 Runx reads `~/Library/Application Support/runx/config.toml`. The file is created on first launch, validated on load, and reloaded when you open Runx after the file changes.
 
-This reference is generated from `src/config/`, so the documented keys, defaults, and allowed values stay tied to the real code.
-
-Most users only touch a few sections:
-
-- `[hotkey]` for the launcher shortcut
-- `[window]` for placement and basic launcher behavior
-- `[providers]` to disable built-in providers
-- `[providers.windows]` and `[providers.apps]` for provider-specific behavior
-- `[ranking]` for provider order and scoring behavior
-- `[ui]` and `[ui.colorschemes.<name>]` for appearance
-- `[plugin.<id>]` only when a plugin needs configuration
-
 ## [hotkey]
 
 User-facing global hotkey configuration.

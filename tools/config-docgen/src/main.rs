@@ -120,7 +120,7 @@ fn main() -> Result<()> {
         root.join("src/config/defaults.rs"),
         root.join("src/config/schema.rs"),
     ];
-    let output = root.join("CONFIGURATION.md");
+    let output = root.join("docs/CONFIGURATION.md");
 
     let mut source = String::new();
     for path in &config_sources {
@@ -154,7 +154,7 @@ fn main() -> Result<()> {
     if env::args().nth(1).as_deref() == Some("--check") {
         let current = fs::read_to_string(&output).unwrap_or_default();
         if current != rendered {
-            bail!("CONFIGURATION.md is out of date; run scripts/generate-config-docs.sh");
+            bail!("docs/CONFIGURATION.md is out of date; run scripts/generate-config-docs.sh");
         }
         return Ok(());
     }
@@ -769,17 +769,6 @@ fn render_document(
     out.push_str(
         "Runx reads `~/Library/Application Support/runx/config.toml`. The file is created on first launch, validated on load, and reloaded when you open Runx after the file changes.\n\n",
     );
-    out.push_str(
-        "This reference is generated from `src/config/`, so the documented keys, defaults, and allowed values stay tied to the real code.\n\n",
-    );
-    out.push_str("Most users only touch a few sections:\n\n");
-    out.push_str("- `[hotkey]` for the launcher shortcut\n");
-    out.push_str("- `[window]` for placement and basic launcher behavior\n");
-    out.push_str("- `[providers]` to disable built-in providers\n");
-    out.push_str("- `[providers.windows]` and `[providers.apps]` for provider-specific behavior\n");
-    out.push_str("- `[ranking]` for provider order and scoring behavior\n");
-    out.push_str("- `[ui]` and `[ui.colorschemes.<name>]` for appearance\n");
-    out.push_str("- `[plugin.<id>]` only when a plugin needs configuration\n\n");
 
     for section in SECTION_ORDER {
         match section.kind {

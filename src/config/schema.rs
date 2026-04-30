@@ -50,13 +50,13 @@ pub struct WindowConfig {
     pub width_fraction: f64,
     /// Target number of result rows kept visible before optional height clamps.
     pub visible_rows: usize,
-    /// Optional minimum launcher width in logical pixels.
+    /// Minimum launcher width in logical pixels.
     pub min_width: Option<f64>,
-    /// Optional maximum launcher width in logical pixels.
+    /// Maximum launcher width in logical pixels.
     pub max_width: Option<f64>,
-    /// Optional minimum launcher height in logical pixels.
+    /// Minimum launcher height in logical pixels.
     pub min_height: Option<f64>,
-    /// Optional maximum launcher height in logical pixels.
+    /// Maximum launcher height in logical pixels.
     pub max_height: Option<f64>,
     /// Hide the launcher automatically when it becomes inactive.
     pub hide_when_inactive: bool,
