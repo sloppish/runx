@@ -8,6 +8,7 @@
   const formEl = document.getElementById("settings-form");
   const rawEl = document.getElementById("raw-toml");
   const providerListEl = document.getElementById("provider-list");
+  const providerOrderEl = document.getElementById("provider-order-list");
   const displayOverridesEl = document.getElementById("display-overrides");
   const providerBoostsEl = document.getElementById("provider-score-boosts");
   const scoreRulesEl = document.getElementById("score-rules");
@@ -531,6 +532,47 @@
     }
   }
 
+  function renderProviderOrder(order) {
+    providerOrderEl.replaceChildren();
+    for (const name of order) {
+      const row = document.createElement("div");
+      row.className = "order-item";
+      row.dataset.provider = name;
+      const label = document.createElement("span");
+      label.textContent = name;
+      const up = document.createElement("button");
+      up.type = "button";
+      up.className = "order-btn";
+      up.textContent = "↑";
+      up.addEventListener("click", () => {
+        const prev = row.previousElementSibling;
+        if (prev) {
+          providerOrderEl.insertBefore(row, prev);
+          updateDirtyState();
+        }
+      });
+      const down = document.createElement("button");
+      down.type = "button";
+      down.className = "order-btn";
+      down.textContent = "↓";
+      down.addEventListener("click", () => {
+        const next = row.nextElementSibling;
+        if (next) {
+          providerOrderEl.insertBefore(next, row);
+          updateDirtyState();
+        }
+      });
+      row.append(label, up, down);
+      providerOrderEl.append(row);
+    }
+  }
+
+  function collectProviderOrder() {
+    return Array.from(providerOrderEl.querySelectorAll(".order-item")).map(
+      (el) => el.dataset.provider
+    );
+  }
+
   function syncColorschemeOptions() {
     const select = field("ui.colorscheme");
     const previous = select.value || state.draft?.ui?.colorscheme || "system";
@@ -1005,12 +1047,14 @@
       if (hasDraft) {
         renderDraft(payload.draft);
         renderDisplayOverrides(payload.draft.display_overrides);
+        renderProviderOrder(payload.draft.ranking.provider_order);
         renderProviderBoosts(payload.draft.ranking.provider_score_boosts);
         renderScoreRules(payload.draft.ranking.score_rules);
         renderCustomColorschemes(payload.draft.ui.colorschemes);
         setStatus("");
       } else {
         renderDisplayOverrides([]);
+        renderProviderOrder([]);
         renderProviderBoosts({});
         renderScoreRules([]);
         renderCustomColorschemes([]);
@@ -1058,7 +1102,7 @@
       },
       ranking: {
         tie_threshold: int("ranking.tie_threshold"),
-        provider_order: list("ranking.provider_order"),
+        provider_order: collectProviderOrder(),
         provider_score_boosts: collectProviderBoosts(),
         score_rules: collectScoreRules(),
         result_limit: int("ranking.result_limit"),

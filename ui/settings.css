@@ -293,6 +293,51 @@ select {
   padding: 0 9px;
 }
 
+.provider-order-group > span {
+  display: block;
+  font-size: 12px;
+  color: var(--text-secondary);
+  margin-bottom: 4px;
+}
+
+.order-list {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+}
+
+.order-item {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 4px 9px;
+  border: 1px solid var(--border);
+  border-radius: 7px;
+  background: var(--surface);
+  font-size: 13px;
+}
+
+.order-item span {
+  flex: 1;
+}
+
+.order-btn {
+  width: 24px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border);
+  border-radius: 5px;
+  background: var(--surface);
+  color: var(--text);
+  cursor: pointer;
+  font-size: 12px;
+  line-height: 1;
+}
+
+.order-btn:hover {
+  background: var(--border);
+}
+
 .checkbox-group > span {
   display: block;
   font-size: 12px;

@@ -49,7 +49,7 @@ prefix_name_boost = 100
 
 [ranking]
 tie_threshold = 120
-provider_order = ["windows", "apps", "settings", "plugins"]
+provider_order = ["windows", "apps", "settings"]
 result_limit = 24
 # Example:
 # [ranking.provider_score_boosts]

@@ -19,10 +19,10 @@ Launcher window behavior and geometry.
 | --- | --- | --- | --- |
 | `width_fraction` | number | `0.4` | Fraction of the chosen display's logical width used before optional width clamps. |
 | `visible_rows` | integer | `5` | Target number of result rows kept visible before optional height clamps. |
-| `min_width` | number | - | Optional minimum launcher width in logical pixels. |
-| `max_width` | number | - | Optional maximum launcher width in logical pixels. |
-| `min_height` | number | - | Optional minimum launcher height in logical pixels. |
-| `max_height` | number | - | Optional maximum launcher height in logical pixels. |
+| `min_width` | number | - | Minimum launcher width in logical pixels. |
+| `max_width` | number | - | Maximum launcher width in logical pixels. |
+| `min_height` | number | - | Minimum launcher height in logical pixels. |
+| `max_height` | number | - | Maximum launcher height in logical pixels. |
 | `hide_when_inactive` | boolean | `true` | Hide the launcher automatically when it becomes inactive. |
 | `always_on_top` | boolean | `true` | Keep the launcher above normal windows while it is visible. |
 | `show_on` | one of: `primary`, `cursor` | `"cursor"` | Choose which display Runx appears on when it opens. |
@@ -79,7 +79,7 @@ Ranking and truncation rules for the merged result list.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `tie_threshold` | integer | `120` | Maximum raw-score gap that still counts as a tie between providers. |
-| `provider_order` | array of provider names (`windows`, `apps`, `settings`, `plugins`) | `["windows", "apps", "settings", "plugins"]` | Tie-break priority when multiple providers return similarly scored items. |
+| `provider_order` | array of provider names (`windows`, `apps`, `settings`, `plugins`) | `["windows", "apps", "settings"]` | Tie-break priority when multiple providers return similarly scored items. |
 | `result_limit` | integer | `24` | Maximum number of rows shown in the launcher. |
 
 ## [ranking.provider_score_boosts]
