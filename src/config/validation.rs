@@ -182,7 +182,10 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
             &format!("[[display_overrides]] entry {}", index + 1),
         )?;
     }
-    validate_positive_scale(config.window.scale, "[window].scale must be greater than 0.0")?;
+    validate_positive_scale(
+        config.window.scale,
+        "[window].scale must be greater than 0.0",
+    )?;
     validate_opacity(
         config.ui.canvas.background_opacity,
         "[ui.canvas].background_opacity must be between 0.0 and 1.0",
@@ -852,10 +855,7 @@ fn validate_display_override(config: &DisplayOverrideConfig, context: &str) -> R
         )?;
     }
     if let Some(value) = config.scale {
-        validate_positive_scale(
-            value,
-            &format!("{context}.scale must be greater than 0.0"),
-        )?;
+        validate_positive_scale(value, &format!("{context}.scale must be greater than 0.0"))?;
     }
 
     Ok(())

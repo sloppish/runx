@@ -12,6 +12,7 @@ pub(super) struct PluginItemWire {
     subtitle: Option<String>,
     score: Option<i64>,
     badge: Option<String>,
+    icon: Option<String>,
     style: Option<String>,
     action: PluginActionPayload,
 }
@@ -23,6 +24,7 @@ pub(super) struct PluginItem {
     pub(super) subtitle: String,
     pub(super) score: i64,
     pub(super) badge: String,
+    pub(super) icon: Option<String>,
     pub(super) compact: bool,
     pub(super) action: PluginActionPayload,
 }
@@ -85,12 +87,20 @@ pub(super) fn validate_plugin_item(
         .unwrap_or(if compact { "" } else { plugin.name.as_str() })
         .to_owned();
 
+    let icon = item
+        .icon
+        .as_deref()
+        .map(str::trim)
+        .filter(|value| !value.is_empty())
+        .map(str::to_owned);
+
     Ok(PluginItem {
         id,
         title: title.to_owned(),
         subtitle,
         score: item.score.unwrap_or(0),
         badge,
+        icon,
         compact,
         action: item.action,
     })

@@ -215,10 +215,9 @@ mod tests {
 
         #[test]
         fn row_driven_height_respects_max_height() {
-            let config: Config = toml::from_str(
-                "[window]\nvisible_rows = 10\nmax_height = 640\nscale = 1.25\n",
-            )
-            .expect("row-driven height config should parse");
+            let config: Config =
+                toml::from_str("[window]\nvisible_rows = 10\nmax_height = 640\nscale = 1.25\n")
+                    .expect("row-driven height config should parse");
             assert_eq!(config.window.resolve_width(2560.0), 1024.0);
             assert_eq!(config.window.fallback_size(&config.ui).1, 640.0);
         }
@@ -482,9 +481,8 @@ mod tests {
 
         #[test]
         fn accepts_custom_timing_values() {
-            let config: Config =
-                toml::from_str("[timing]\nsearch_debounce_ms = 32\n")
-                    .expect("custom timing values should parse");
+            let config: Config = toml::from_str("[timing]\nsearch_debounce_ms = 32\n")
+                .expect("custom timing values should parse");
             assert_eq!(config.timing.search_debounce_ms, 32);
         }
     }

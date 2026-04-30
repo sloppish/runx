@@ -51,8 +51,7 @@ pub(crate) fn notify_reload() -> Result<()> {
 
 fn socket_path() -> Result<PathBuf> {
     let dir = env::temp_dir().join("runx");
-    fs::create_dir_all(&dir)
-        .with_context(|| format!("failed to create {}", dir.display()))?;
+    fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
     Ok(dir.join("reload.sock"))
 }
 

@@ -191,12 +191,15 @@ Optional keys:
 | `subtitle` | string | empty for compact items, plugin name for full items |
 | `score` | integer | `0` |
 | `badge` | string | empty for compact items, plugin badge for full items |
+| `icon` | string (URL) | none |
 | `style` | `compact` or `full` | `compact` |
 
 Notes:
 
 - `title`, `id`, and `badge` must not be empty after trimming
 - `style` must be exactly `compact` or `full`
+- `icon` replaces the badge with an image; only rendered for `full`-style items
+- `icon` accepts any URL the webview can load: `https://`, `file:///`, or `data:` URIs
 - item validation is strict; invalid plugin items fail the search/action path instead of being silently ignored
 
 ### Compact vs full
