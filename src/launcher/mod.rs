@@ -194,7 +194,7 @@ impl Launcher {
     /// Shows the launcher if hidden, or hides it if already visible.
     pub fn toggle(&mut self) -> Result<()> {
         if self.state.is_visible() {
-            self.hide()?;
+            self.hide_without_focus_restore()?;
         } else {
             self.windows.capture_previous_app();
             self.show()?;
@@ -222,7 +222,7 @@ impl Launcher {
         }
 
         match event {
-            WindowEvent::CloseRequested => self.hide()?,
+            WindowEvent::CloseRequested => self.hide_without_focus_restore()?,
             WindowEvent::Focused(true) => {
                 self.windows.note_window_focused(&mut self.state);
             }
@@ -361,10 +361,6 @@ impl Launcher {
         self.show()
     }
 
-    fn hide(&mut self) -> Result<()> {
-        self.hide_without_focus_restore()
-    }
-
     fn hide_without_focus_restore(&mut self) -> Result<()> {
         self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
@@ -415,7 +411,7 @@ impl Launcher {
                         .context("failed to paste clipboard text into input")?;
                 }
             }
-            FrontendCommand::Hide => self.hide()?,
+            FrontendCommand::Hide => self.hide_without_focus_restore()?,
         }
         Ok(())
     }
