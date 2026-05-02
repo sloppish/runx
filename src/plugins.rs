@@ -16,7 +16,7 @@ use std::{
 };
 
 use anyhow::{Context, Result, anyhow};
-use mlua::{Function, Lua, LuaSerdeExt, Table};
+use mlua::{Function, LuaSerdeExt, Table};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
 
@@ -202,8 +202,8 @@ impl PluginHost {
 fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
     let source = fs::read_to_string(path)
         .with_context(|| format!("failed to read plugin {}", path.display()))?;
-    let (lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths)?;
-    let metadata = extract_metadata(&lua, &table)?;
+    let (_lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths)?;
+    let metadata = extract_metadata(&table)?;
 
     let fallback_id = path
         .parent()
@@ -221,8 +221,7 @@ fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
     })
 }
 
-fn extract_metadata(lua: &Lua, table: &Table) -> Result<PluginMetadata> {
-    let _ = lua;
+fn extract_metadata(table: &Table) -> Result<PluginMetadata> {
     Ok(PluginMetadata {
         id: table.get("id")?,
         name: table.get("name")?,
