@@ -10,9 +10,8 @@ use tokio::runtime::Runtime;
 use crate::{
     actions::execute_action,
     debug_log,
-    macos::ensure_accessibility_trusted,
     plugins::{PluginExecutionContext, PluginHost},
-    types::{Action, AppEvent, SearchItem},
+    types::{AppEvent, SearchItem},
 };
 
 /// Executes selected actions and reports outcomes back into the event loop.
@@ -25,15 +24,6 @@ impl ActionRunner {
     /// Creates a runner that shares the loaded plugin registry.
     pub(crate) fn new(plugins: Arc<PluginHost>) -> Self {
         Self { plugins }
-    }
-
-    /// Checks native permission requirements before an action is launched.
-    pub(crate) fn preflight(&self, action: &Action) -> Result<(), String> {
-        if action.likely_needs_accessibility() && !ensure_accessibility_trusted(true) {
-            return Err("Runx needs Accessibility permission to control other apps. Enable Runx in System Settings > Privacy & Security > Accessibility, then retry.".to_owned());
-        }
-
-        Ok(())
     }
 
     /// Runs the selected item on a blocking worker and emits an `ActionOutcome`.

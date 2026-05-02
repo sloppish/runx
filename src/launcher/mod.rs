@@ -467,12 +467,6 @@ impl Launcher {
             self.windows.previous_app()
         ));
 
-        if let Err(message) = self.actions.preflight(&item.action) {
-            debug_log::append("activate blocked: accessibility preflight returned false");
-            self.set_error(message);
-            return;
-        }
-
         let context = PluginExecutionContext {
             previous_app: self.windows.previous_app(),
         };

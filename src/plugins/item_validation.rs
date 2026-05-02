@@ -1,4 +1,4 @@
-use anyhow::{Result, anyhow, bail};
+use anyhow::{Result, bail};
 use serde::Deserialize;
 
 use crate::types::PluginActionPayload;
@@ -14,7 +14,7 @@ pub(super) struct PluginItemWire {
     badge: Option<String>,
     icon: Option<String>,
     style: Option<String>,
-    action: PluginActionPayload,
+    payload: PluginActionPayload,
 }
 
 #[derive(Debug)]
@@ -26,7 +26,7 @@ pub(super) struct PluginItem {
     pub(super) badge: String,
     pub(super) icon: Option<String>,
     pub(super) compact: bool,
-    pub(super) action: PluginActionPayload,
+    pub(super) payload: PluginActionPayload,
 }
 
 pub(super) fn validate_plugin_item(
@@ -34,10 +34,6 @@ pub(super) fn validate_plugin_item(
     index: usize,
     item: PluginItemWire,
 ) -> Result<PluginItem> {
-    item.action
-        .validate()
-        .map_err(|error| anyhow!("plugin item {} action is invalid: {error}", index + 1))?;
-
     let title = item.title.trim();
     if title.is_empty() {
         bail!("plugin item {} must have a non-empty title", index + 1);
@@ -102,7 +98,7 @@ pub(super) fn validate_plugin_item(
         badge,
         icon,
         compact,
-        action: item.action,
+        payload: item.payload,
     })
 }
 
@@ -129,7 +125,7 @@ mod tests {
     fn validate_plugin_item_rejects_empty_title() {
         let item = serde_json::from_value::<PluginItemWire>(json!({
             "title": "   ",
-            "action": { "kind": "copy" }
+            "payload": { "kind": "copy" }
         }))
         .expect("valid wire item");
 
@@ -141,25 +137,10 @@ mod tests {
     }
 
     #[test]
-    fn validate_plugin_item_rejects_invalid_action() {
-        let item = serde_json::from_value::<PluginItemWire>(json!({
-            "title": "Copy secret",
-            "action": { "kind": "  " }
-        }))
-        .expect("valid wire item");
-
-        let error = validate_plugin_item(&test_plugin(), 0, item)
-            .expect_err("invalid action should fail")
-            .to_string();
-
-        assert!(error.contains("action is invalid"));
-    }
-
-    #[test]
     fn validate_plugin_item_falls_back_to_plugin_defaults() {
         let item = serde_json::from_value::<PluginItemWire>(json!({
             "title": "Copy secret",
-            "action": { "kind": "copy_secret" }
+            "payload": { "kind": "copy_secret" }
         }))
         .expect("valid wire item");
 
@@ -176,7 +157,7 @@ mod tests {
         let item = serde_json::from_value::<PluginItemWire>(json!({
             "title": "Copy secret",
             "style": "full",
-            "action": { "kind": "copy_secret" }
+            "payload": { "kind": "copy_secret" }
         }))
         .expect("valid wire item");
 
@@ -191,7 +172,7 @@ mod tests {
         let item = serde_json::from_value::<PluginItemWire>(json!({
             "title": "Copy secret",
             "style": "wide",
-            "action": { "kind": "copy_secret" }
+            "payload": { "kind": "copy_secret" }
         }))
         .expect("valid wire item");
 

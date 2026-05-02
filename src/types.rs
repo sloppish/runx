@@ -7,7 +7,7 @@ use std::collections::HashMap;
 
 use global_hotkey::GlobalHotKeyEvent;
 use serde::{Deserialize, Serialize};
-use serde_json::{Map as JsonMap, Value as JsonValue};
+use serde_json::Value as JsonValue;
 
 /// Canonical internal representation of one search result candidate.
 #[derive(Debug, Clone)]
@@ -23,56 +23,10 @@ pub struct SearchItem {
     pub action: Action,
 }
 
-/// Validated plugin action payload passed from Lua back into Rust.
-///
-/// The payload contract stays intentionally small: a required `kind` plus
-/// arbitrary extra JSON-like fields preserved for the plugin's `run(action)`
-/// handler.
+/// Opaque plugin payload carried from search results to the `run` handler.
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct PluginActionPayload {
-    pub kind: String,
-    #[serde(flatten)]
-    pub fields: JsonMap<String, JsonValue>,
-}
-
-impl PluginActionPayload {
-    /// Converts the payload back into a JSON object for passing into Lua.
-    pub fn as_json(&self) -> JsonValue {
-        let mut object = self.fields.clone();
-        object.insert("kind".to_owned(), JsonValue::String(self.kind.clone()));
-        JsonValue::Object(object)
-    }
-
-    /// Validates the minimal contract Runx expects from plugin action payloads.
-    pub fn validate(&self) -> Result<(), String> {
-        if self.kind.trim().is_empty() {
-            return Err("action.kind must not be empty".to_owned());
-        }
-
-        if self.kind.trim() != self.kind {
-            return Err("action.kind must not contain leading or trailing whitespace".to_owned());
-        }
-
-        if self.fields.contains_key("kind") {
-            return Err("action fields must not contain the reserved key `kind`".to_owned());
-        }
-
-        if self.fields.keys().any(|key| key.trim().is_empty()) {
-            return Err("action field names must not be empty".to_owned());
-        }
-
-        Ok(())
-    }
-
-    /// Heuristic used to preflight Accessibility for typing-like actions.
-    pub fn likely_needs_accessibility(&self) -> bool {
-        let kind = self.kind.as_str();
-        kind == "type"
-            || kind.starts_with("type_")
-            || kind.ends_with("_type")
-            || kind.contains("keystroke")
-    }
-}
+#[serde(transparent)]
+pub struct PluginActionPayload(pub JsonValue);
 
 /// Actions that Runx can execute after a search result is activated.
 #[derive(Debug, Clone)]
@@ -94,18 +48,6 @@ pub enum Action {
         plugin_id: String,
         payload: PluginActionPayload,
     },
-}
-
-impl Action {
-    /// Returns whether executing this action is likely to require Accessibility.
-    pub fn likely_needs_accessibility(&self) -> bool {
-        match self {
-            Self::Noop => false,
-            Self::FocusWindow { .. } => false,
-            Self::Plugin { payload, .. } => payload.likely_needs_accessibility(),
-            Self::OpenApplication { .. } | Self::OpenSettings { .. } => false,
-        }
-    }
 }
 
 /// User events sent through Tao's custom event channel.
@@ -353,20 +295,10 @@ pub struct ViewItem {
 
 #[cfg(test)]
 mod tests {
-    use super::{Action, PluginActionPayload};
+    use super::PluginActionPayload;
 
     #[test]
-    fn plugin_action_payload_requires_kind() {
-        let error = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
-            "entry": "mail/example"
-        }))
-        .expect_err("payload without kind should fail");
-
-        assert!(error.to_string().contains("kind"));
-    }
-
-    #[test]
-    fn plugin_action_payload_preserves_extra_fields() {
+    fn plugin_action_payload_preserves_fields() {
         let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
             "kind": "copy_password",
             "entry": "mail/example",
@@ -374,73 +306,9 @@ mod tests {
         }))
         .expect("valid payload");
 
-        assert_eq!(payload.kind, "copy_password");
-        assert_eq!(
-            payload.fields.get("entry"),
-            Some(&serde_json::json!("mail/example"))
-        );
-        assert_eq!(payload.fields.get("count"), Some(&serde_json::json!(2)));
-    }
-
-    #[test]
-    fn plugin_action_payload_detects_typing_actions() {
-        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
-            "kind": "type_otp",
-            "entry": "mail/example"
-        }))
-        .expect("valid payload");
-
-        assert!(payload.likely_needs_accessibility());
-    }
-
-    #[test]
-    fn plugin_action_payload_rejects_empty_kind() {
-        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
-            "kind": "   "
-        }))
-        .expect("deserializes before validation");
-
-        let error = payload.validate().expect_err("empty kind should fail");
-        assert!(error.contains("must not be empty"));
-    }
-
-    #[test]
-    fn plugin_action_payload_rejects_whitespace_padded_kind() {
-        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
-            "kind": " copy_password "
-        }))
-        .expect("deserializes before validation");
-
-        let error = payload
-            .validate()
-            .expect_err("whitespace-padded kind should fail");
-        assert!(error.contains("leading or trailing whitespace"));
-    }
-
-    #[test]
-    fn plugin_action_payload_validation_accepts_normal_kind() {
-        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
-            "kind": "copy_password",
-            "entry": "mail/example"
-        }))
-        .expect("valid payload");
-
-        payload.validate().expect("validation should pass");
-    }
-
-    #[test]
-    fn action_detects_plugin_typing_preflight() {
-        let payload = serde_json::from_value::<PluginActionPayload>(serde_json::json!({
-            "kind": "generate_type",
-            "args": "mail/example 20"
-        }))
-        .expect("valid payload");
-
-        let action = Action::Plugin {
-            plugin_id: "pass".to_owned(),
-            payload,
-        };
-
-        assert!(action.likely_needs_accessibility());
+        let obj = payload.0.as_object().expect("should be an object");
+        assert_eq!(obj.get("kind"), Some(&serde_json::json!("copy_password")));
+        assert_eq!(obj.get("entry"), Some(&serde_json::json!("mail/example")));
+        assert_eq!(obj.get("count"), Some(&serde_json::json!(2)));
     }
 }

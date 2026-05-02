@@ -256,7 +256,7 @@ fn run_search(
             raw_score: item.score,
             action: Action::Plugin {
                 plugin_id: plugin.id.clone(),
-                payload: item.action,
+                payload: item.payload,
             },
         })
         .collect())
@@ -294,7 +294,7 @@ fn run_search_handler(
             raw_score: item.score,
             action: Action::Plugin {
                 plugin_id: plugin.id.clone(),
-                payload: item.action,
+                payload: item.payload,
             },
         })
         .collect())
@@ -314,10 +314,11 @@ fn run_action(
         &plugin_config,
         search_paths,
     )?;
-    let run: Function = table
-        .get::<Option<Function>>("run")?
-        .ok_or_else(|| anyhow!("plugin `{}` does not export a `run` function", plugin.id))?;
-    let value = lua.to_value(&payload.as_json())?;
+    let run: Function = match table.get::<Option<Function>>("run")? {
+        Some(function) => function,
+        None => return Ok(None),
+    };
+    let value = lua.to_value(&payload.0)?;
     let result = run.call::<mlua::Value>(value)?;
 
     if matches!(result, mlua::Value::Nil) {
@@ -360,7 +361,7 @@ mod tests {
                       {
                         title = raw,
                         subtitle = table.concat(argv, "|"),
-                        action = { kind = "noop" },
+                        payload = { kind = "noop" },
                       },
                     }
                   end,
@@ -398,7 +399,7 @@ mod tests {
                       {
                         title = "Echo",
                         style = "full",
-                        action = { kind = "noop" },
+                        payload = { kind = "noop" },
                       },
                     }
                   end,
@@ -427,7 +428,7 @@ mod tests {
                     return {
                       {
                         title = type(runx.clipboard_text),
-                        action = { kind = "noop" },
+                        payload = { kind = "noop" },
                       },
                     }
                   end,

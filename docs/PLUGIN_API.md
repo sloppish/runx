@@ -33,14 +33,14 @@ return {
       {
         title = "Say hello",
         subtitle = "A simple plugin example",
-        action = { kind = "greet" },
+        payload = { kind = "greet" },
       },
     }
   end,
 
-  -- Action execution handler
-  run = function(action)
-    if action.kind == "greet" then
+  -- Execution handler
+  run = function(payload)
+    if payload.kind == "greet" then
       return "Hello from Runx!"
     end
   end,
@@ -55,10 +55,8 @@ return {
 | `name` | no | string | Filename stem | Display name. Defaults to the filename. |
 | `badge` | no | string | `"PLG"` | Default badge shown on full-style items. |
 | `search` | no | function | - | Generic search entrypoint for normal queries. |
-| `run` | yes* | function | - | Called when a plugin item is activated. |
+| `run` | no | function | - | Called when a plugin item is activated. |
 | `search_*` | no | function | - | Named routed handlers used via config. |
-
-\* `run` is required if your search results return an `action`.
 
 ## Search Modes
 
@@ -98,7 +96,7 @@ Handlers must return an array of item tables.
 | Key | Required | Type | Default | Meaning |
 | --- | --- | --- | --- | --- |
 | `title` | **yes** | string | - | The main visible label. |
-| `action` | **yes** | table | - | Data passed to `run(action)`. |
+| `payload` | **yes** | table | - | Opaque data passed to `run(payload)` on activation. |
 | `subtitle` | no | string | `""` compact / plugin name full | Secondary text (shown in `full` style). |
 | `score` | no | integer | `0` | Ranking priority (higher is better). |
 | `badge` | no | string | `""` compact / plugin badge full | Small text tag on the right. |
@@ -111,24 +109,18 @@ Handlers must return an array of item tables.
 - **`compact` (Default):** A slim, single-line row. Subtitles and badges are hidden unless the UI theme explicitly enables them for compact rows.
 - **`full`:** A taller, two-line row. Shows the `subtitle` below the `title` and the `badge` (or `icon`) on the right.
 
-## Action Payloads
+## Payload
 
-The `action` table is stored when your search handler returns it, then passed back to your `run(action)` handler when the user activates the item.
-
-**Contract:**
-- Must contain a `kind` string (the "ID" of the action).
-- `kind` cannot be empty and cannot have leading/trailing whitespace.
-- Field names must be non-empty strings.
-- Can contain any other JSON-serializable keys (except `kind`).
+The `payload` table is any JSON-serializable Lua table. It is stored when your search handler returns it and passed back to `run(payload)` when the user activates the item. Runx treats it as opaque data — structure it however you like.
 
 ```lua
-action = {
+payload = {
   kind = "copy_password",
   account = "github.com",
 }
 ```
 
-## `run(action)` and Feedback
+## `run(payload)` and Feedback
 
 The `run` function executes the requested action. You can return feedback to be shown in the Runx UI:
 
@@ -239,7 +231,7 @@ return {
     local bookmarks = {
       { title = "GitHub", url = "https://github.com" },
       { title = "Rust Documentation", url = "https://doc.rust-lang.org" },
-      { title = "Lua Reference", url = "https://www.lua.org/manual/5.4/" },
+      { title = "Lua Reference", url = "https://www.lua.org/manual/5.5/" },
     }
 
     local results = {}
@@ -251,7 +243,7 @@ return {
           subtitle = bm.url,
           score = score,
           style = "full",
-          action = { kind = "open", url = bm.url },
+          payload = { kind = "open", url = bm.url },
         }
       end
     end
@@ -259,8 +251,8 @@ return {
     return results
   end,
 
-  run = function(action)
-    runx.exec_status("open", { action.url })
+  run = function(payload)
+    runx.exec_status("open", { payload.url })
     return ""
   end,
 }
