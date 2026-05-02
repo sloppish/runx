@@ -517,25 +517,16 @@ impl Launcher {
         if current_modified == self.last_config_modified {
             return Ok(());
         }
-
-        match self.reload_config() {
-            Ok(()) => {
-                self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
-                clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
-            }
-            Err(error) => {
-                self.config_reload_error = Some(error.to_string());
-                self.log_outcome(
-                    format!("Config reload failed; keeping previous config: {error:#}"),
-                    true,
-                );
-            }
-        }
-
+        self.try_reload_config("Config reload failed; keeping previous config");
         Ok(())
     }
 
     fn reload_config_after_settings_save(&mut self) -> Result<()> {
+        self.try_reload_config("Config reload failed after settings save");
+        Ok(())
+    }
+
+    fn try_reload_config(&mut self, error_context: &str) {
         match self.reload_config() {
             Ok(()) => {
                 self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
@@ -543,14 +534,9 @@ impl Launcher {
             }
             Err(error) => {
                 self.config_reload_error = Some(error.to_string());
-                self.log_outcome(
-                    format!("Config reload failed after settings save: {error:#}"),
-                    true,
-                );
+                self.log_outcome(format!("{error_context}: {error:#}"), true);
             }
         }
-
-        Ok(())
     }
 
     fn reload_config(&mut self) -> Result<()> {
