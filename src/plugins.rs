@@ -230,6 +230,32 @@ fn extract_metadata(lua: &Lua, table: &Table) -> Result<PluginMetadata> {
     })
 }
 
+fn items_from_wire(plugin: &LuaPlugin, raw_items: Vec<PluginItemWire>) -> Result<Vec<SearchItem>> {
+    raw_items
+        .into_iter()
+        .enumerate()
+        .map(|(index, item)| validate_plugin_item(plugin, index, item))
+        .collect::<Result<Vec<_>>>()?
+        .into_iter()
+        .map(|item| {
+            Ok(SearchItem {
+                id: item.id,
+                provider: "plugins".to_owned(),
+                badge: item.badge,
+                icon: item.icon,
+                title: item.title,
+                subtitle: item.subtitle,
+                compact: item.compact,
+                raw_score: item.score,
+                action: Action::Plugin {
+                    plugin_id: plugin.id.clone(),
+                    payload: item.payload,
+                },
+            })
+        })
+        .collect()
+}
+
 fn run_search(
     plugin: &LuaPlugin,
     query: &str,
@@ -243,28 +269,7 @@ fn run_search(
     };
     let result = search.call::<mlua::Value>(query.to_owned())?;
     let raw_items: Vec<PluginItemWire> = lua.from_value(result)?;
-
-    Ok(raw_items
-        .into_iter()
-        .enumerate()
-        .map(|(index, item)| validate_plugin_item(plugin, index, item))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .map(|item| SearchItem {
-            id: item.id,
-            provider: "plugins".to_owned(),
-            badge: item.badge,
-            icon: item.icon,
-            title: item.title,
-            subtitle: item.subtitle,
-            compact: item.compact,
-            raw_score: item.score,
-            action: Action::Plugin {
-                plugin_id: plugin.id.clone(),
-                payload: item.payload,
-            },
-        })
-        .collect())
+    items_from_wire(plugin, raw_items)
 }
 
 fn run_search_handler(
@@ -281,28 +286,7 @@ fn run_search_handler(
     let argv = lua.create_sequence_from(parse_shell_args(args)?)?;
     let result = search.call::<mlua::Value>((args.to_owned(), argv))?;
     let raw_items: Vec<PluginItemWire> = lua.from_value(result)?;
-
-    Ok(raw_items
-        .into_iter()
-        .enumerate()
-        .map(|(index, item)| validate_plugin_item(plugin, index, item))
-        .collect::<Result<Vec<_>>>()?
-        .into_iter()
-        .map(|item| SearchItem {
-            id: item.id,
-            provider: "plugins".to_owned(),
-            badge: item.badge,
-            icon: item.icon,
-            title: item.title,
-            subtitle: item.subtitle,
-            compact: item.compact,
-            raw_score: item.score,
-            action: Action::Plugin {
-                plugin_id: plugin.id.clone(),
-                payload: item.payload,
-            },
-        })
-        .collect())
+    items_from_wire(plugin, raw_items)
 }
 
 fn run_action(
