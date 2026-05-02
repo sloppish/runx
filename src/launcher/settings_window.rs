@@ -943,130 +943,50 @@ fn set_ui_colorschemes(
 }
 
 fn set_ui_font_sizes(doc: &mut Document, font_sizes: &UiFontSizesSettingsDraft) -> Result<()> {
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "label",
-        value(i64::from(font_sizes.label)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "input",
-        value(i64::from(font_sizes.input)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "title",
-        value(i64::from(font_sizes.title)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "subtitle",
-        value(i64::from(font_sizes.subtitle)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "badge",
-        value(i64::from(font_sizes.badge)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "accelerator",
-        value(i64::from(font_sizes.accelerator)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "config_error_title",
-        value(i64::from(font_sizes.config_error_title)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "font_sizes"],
-        "config_error_body",
-        value(i64::from(font_sizes.config_error_body)),
-    )?;
+    macro_rules! set_u16 {
+        ($field:ident) => {
+            set_item(
+                doc,
+                &["ui", "font_sizes"],
+                stringify!($field),
+                value(i64::from(font_sizes.$field)),
+            )?;
+        };
+    }
+    set_u16!(label);
+    set_u16!(input);
+    set_u16!(title);
+    set_u16!(subtitle);
+    set_u16!(badge);
+    set_u16!(accelerator);
+    set_u16!(config_error_title);
+    set_u16!(config_error_body);
     Ok(())
 }
 
 fn set_ui_layout(doc: &mut Document, layout: &UiLayoutSettingsDraft) -> Result<()> {
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "section_gap",
-        value(i64::from(layout.section_gap)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "input_padding_y",
-        value(i64::from(layout.input_padding_y)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "input_padding_x",
-        value(i64::from(layout.input_padding_x)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "input_radius",
-        value(i64::from(layout.input_radius)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "list_gap",
-        value(i64::from(layout.list_gap)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "entry_padding_y",
-        value(i64::from(layout.entry_padding_y)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "entry_padding_x",
-        value(i64::from(layout.entry_padding_x)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "entry_gap",
-        value(i64::from(layout.entry_gap)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "row_radius",
-        value(i64::from(layout.row_radius)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "badge_size",
-        value(i64::from(layout.badge_size)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "badge_radius",
-        value(i64::from(layout.badge_radius)),
-    )?;
-    set_item(
-        doc,
-        &["ui", "layout"],
-        "icon_size",
-        value(i64::from(layout.icon_size)),
-    )?;
+    macro_rules! set_u16 {
+        ($field:ident) => {
+            set_item(
+                doc,
+                &["ui", "layout"],
+                stringify!($field),
+                value(i64::from(layout.$field)),
+            )?;
+        };
+    }
+    set_u16!(section_gap);
+    set_u16!(input_padding_y);
+    set_u16!(input_padding_x);
+    set_u16!(input_radius);
+    set_u16!(list_gap);
+    set_u16!(entry_padding_y);
+    set_u16!(entry_padding_x);
+    set_u16!(entry_gap);
+    set_u16!(row_radius);
+    set_u16!(badge_size);
+    set_u16!(badge_radius);
+    set_u16!(icon_size);
     Ok(())
 }
 
