@@ -12,7 +12,7 @@ global-hotkey = "0.7"
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 memchr = "2.7"
 miette = { version = "7.6", features = ["fancy"] }
-mlua = { version = "0.11.6", features = ["lua54", "send", "serde", "vendored"] }
+mlua = { version = "0.11.6", features = ["lua55", "send", "serde", "vendored"] }
 plist = "1.7"
 png = "0.17"
 serde = { version = "1.0", features = ["derive"] }
