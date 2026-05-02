@@ -256,174 +256,121 @@ pub struct UiColorschemeConfig {
 }
 
 /// Full per-scheme UI color-token overrides.
-#[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
-#[serde(default, deny_unknown_fields)]
-pub struct UiColorOverridesConfig {
-    /// Primary highlight color. In custom schemes, this also derives hover, selected-row, badge, and chip highlight surfaces unless those advanced tokens are set.
-    pub accent: Option<String>,
-    /// Panel surface color used by the built-in palette.
-    pub panel: Option<String>,
-    /// Primary foreground text color.
-    pub text: Option<String>,
-    /// Secondary or de-emphasized foreground text color.
-    pub muted: Option<String>,
-    /// Background fill for the outer launcher canvas.
-    pub canvas_bg: Option<String>,
-    /// Shadow for the outer launcher canvas.
-    pub canvas_shadow: Option<String>,
-    /// Border color for the outer launcher canvas.
-    pub canvas_border: Option<String>,
-    /// Stronger label color used for prominent small text.
-    pub label_strong: Option<String>,
-    /// Background of the search input field.
-    pub input_bg: Option<String>,
-    /// Border color of the search input field.
-    pub input_border: Option<String>,
-    /// Shadow of the search input field.
-    pub input_shadow: Option<String>,
-    /// Placeholder text color in the search input.
-    pub placeholder: Option<String>,
-    /// Scrollbar thumb color inside the results list.
-    pub scrollbar: Option<String>,
-    /// Default result-row background.
-    pub item_bg: Option<String>,
-    /// Result-row background on hover.
-    pub item_hover: Option<String>,
-    /// Background of the currently selected result row.
-    pub item_selected_bg: Option<String>,
-    /// Shadow of the currently selected result row.
-    pub item_selected_shadow: Option<String>,
-    /// Background of text badges.
-    pub badge_bg: Option<String>,
-    /// Border color of text badges.
-    pub badge_border: Option<String>,
-    /// Foreground text color of text badges.
-    pub badge_text: Option<String>,
-    /// Background behind icon badges.
-    pub badge_icon_bg: Option<String>,
-    /// Foreground color of accelerator chips.
-    pub chip_text: Option<String>,
-    /// Background color of accelerator chips.
-    pub chip_bg: Option<String>,
-    /// Border color of accelerator chips.
-    pub chip_border: Option<String>,
-    /// Background of the dedicated config-error panel.
-    pub config_error_bg: Option<String>,
-    /// Border color of the config-error panel.
-    pub config_error_border: Option<String>,
-    /// Shadow of the config-error panel.
-    pub config_error_shadow: Option<String>,
-    /// Title color used in the config-error view.
-    pub config_error_title: Option<String>,
-    /// Body text color used in the config-error view.
-    pub config_error_copy: Option<String>,
-    /// Input background when the outer canvas is disabled.
-    pub canvas_hidden_input_bg: Option<String>,
-    /// Input border when the outer canvas is disabled.
-    pub canvas_hidden_input_border: Option<String>,
-    /// Input shadow when the outer canvas is disabled.
-    pub canvas_hidden_input_shadow: Option<String>,
-    /// Result-row background when the outer canvas is disabled.
-    pub canvas_hidden_item_bg: Option<String>,
-    /// Result-row hover background when the outer canvas is disabled.
-    pub canvas_hidden_item_hover: Option<String>,
-    /// Selected result-row background when the outer canvas is disabled.
-    pub canvas_hidden_item_selected_bg: Option<String>,
-    /// Config-error panel background when the outer canvas is disabled.
-    pub canvas_hidden_config_error_bg: Option<String>,
+/// Invokes `$callback!($field)` for every UI color token field name.
+#[macro_export]
+macro_rules! for_each_color_token {
+    ($callback:ident) => {
+        $callback!(accent);
+        $callback!(panel);
+        $callback!(text);
+        $callback!(muted);
+        $callback!(canvas_bg);
+        $callback!(canvas_shadow);
+        $callback!(canvas_border);
+        $callback!(label_strong);
+        $callback!(input_bg);
+        $callback!(input_border);
+        $callback!(input_shadow);
+        $callback!(placeholder);
+        $callback!(scrollbar);
+        $callback!(item_bg);
+        $callback!(item_hover);
+        $callback!(item_selected_bg);
+        $callback!(item_selected_shadow);
+        $callback!(badge_bg);
+        $callback!(badge_border);
+        $callback!(badge_text);
+        $callback!(badge_icon_bg);
+        $callback!(chip_text);
+        $callback!(chip_bg);
+        $callback!(chip_border);
+        $callback!(config_error_bg);
+        $callback!(config_error_border);
+        $callback!(config_error_shadow);
+        $callback!(config_error_title);
+        $callback!(config_error_copy);
+        $callback!(canvas_hidden_input_bg);
+        $callback!(canvas_hidden_input_border);
+        $callback!(canvas_hidden_input_shadow);
+        $callback!(canvas_hidden_item_bg);
+        $callback!(canvas_hidden_item_hover);
+        $callback!(canvas_hidden_item_selected_bg);
+        $callback!(canvas_hidden_config_error_bg);
+    };
 }
 
-/// Configurable UI color token names for `[ui.colorschemes.<name>]`.
-pub const UI_COLOR_TOKEN_NAMES: [&str; 36] = [
-    "accent",
-    "panel",
-    "text",
-    "muted",
-    "canvas_bg",
-    "canvas_shadow",
-    "canvas_border",
-    "label_strong",
-    "input_bg",
-    "input_border",
-    "input_shadow",
-    "placeholder",
-    "scrollbar",
-    "item_bg",
-    "item_hover",
-    "item_selected_bg",
-    "item_selected_shadow",
-    "badge_bg",
-    "badge_border",
-    "badge_text",
-    "badge_icon_bg",
-    "chip_text",
-    "chip_bg",
-    "chip_border",
-    "config_error_bg",
-    "config_error_border",
-    "config_error_shadow",
-    "config_error_title",
-    "config_error_copy",
-    "canvas_hidden_input_bg",
-    "canvas_hidden_input_border",
-    "canvas_hidden_input_shadow",
-    "canvas_hidden_item_bg",
-    "canvas_hidden_item_hover",
-    "canvas_hidden_item_selected_bg",
-    "canvas_hidden_config_error_bg",
-];
-
-impl UiColorOverridesConfig {
-    pub(super) fn missing_required_fields(&self) -> Vec<&'static str> {
-        let mut missing = Vec::new();
-
-        macro_rules! require {
-            ($field:ident) => {
-                if self.$field.is_none() {
-                    missing.push(stringify!($field));
-                }
-            };
+macro_rules! define_color_tokens {
+    ($($field:ident),+ $(,)?) => {
+        #[derive(Debug, Clone, Deserialize, Default, PartialEq, Eq)]
+        #[serde(default, deny_unknown_fields)]
+        pub struct UiColorOverridesConfig {
+            $(pub $field: Option<String>,)+
         }
 
-        require!(accent);
-        require!(panel);
-        require!(text);
-        require!(muted);
-        require!(canvas_bg);
-        require!(canvas_shadow);
-        require!(canvas_border);
-        require!(label_strong);
-        require!(input_bg);
-        require!(input_border);
-        require!(input_shadow);
-        require!(placeholder);
-        require!(scrollbar);
-        require!(item_bg);
-        require!(item_hover);
-        require!(item_selected_bg);
-        require!(item_selected_shadow);
-        require!(badge_bg);
-        require!(badge_border);
-        require!(badge_text);
-        require!(badge_icon_bg);
-        require!(chip_text);
-        require!(chip_bg);
-        require!(chip_border);
-        require!(config_error_bg);
-        require!(config_error_border);
-        require!(config_error_shadow);
-        require!(config_error_title);
-        require!(config_error_copy);
-        require!(canvas_hidden_input_bg);
-        require!(canvas_hidden_input_border);
-        require!(canvas_hidden_input_shadow);
-        require!(canvas_hidden_item_bg);
-        require!(canvas_hidden_item_hover);
-        require!(canvas_hidden_item_selected_bg);
-        require!(canvas_hidden_config_error_bg);
+        /// Configurable UI color token names for `[ui.colorschemes.<name>]`.
+        pub const UI_COLOR_TOKEN_NAMES: [&str; define_color_tokens!(@count $($field)+)] = [
+            $(stringify!($field),)+
+        ];
 
-        missing
-    }
+        impl UiColorOverridesConfig {
+            pub(super) fn missing_required_fields(&self) -> Vec<&'static str> {
+                let mut missing = Vec::new();
+                $(if self.$field.is_none() { missing.push(stringify!($field)); })+
+                missing
+            }
+
+            pub fn to_token_map(&self) -> std::collections::HashMap<String, String> {
+                let mut tokens = std::collections::HashMap::new();
+                $(if let Some(value) = &self.$field {
+                    tokens.insert(stringify!($field).to_owned(), value.clone());
+                })+
+                tokens
+            }
+        }
+    };
+    (@count $($t:tt)+) => {
+        0 $(+ define_color_tokens!(@one $t))+
+    };
+    (@one $t:tt) => { 1 };
+}
+
+define_color_tokens! {
+    accent,
+    panel,
+    text,
+    muted,
+    canvas_bg,
+    canvas_shadow,
+    canvas_border,
+    label_strong,
+    input_bg,
+    input_border,
+    input_shadow,
+    placeholder,
+    scrollbar,
+    item_bg,
+    item_hover,
+    item_selected_bg,
+    item_selected_shadow,
+    badge_bg,
+    badge_border,
+    badge_text,
+    badge_icon_bg,
+    chip_text,
+    chip_bg,
+    chip_border,
+    config_error_bg,
+    config_error_border,
+    config_error_shadow,
+    config_error_title,
+    config_error_copy,
+    canvas_hidden_input_bg,
+    canvas_hidden_input_border,
+    canvas_hidden_input_shadow,
+    canvas_hidden_item_bg,
+    canvas_hidden_item_hover,
+    canvas_hidden_item_selected_bg,
+    canvas_hidden_config_error_bg,
 }
 
 /// Canvas tokens injected into the embedded UI theme.

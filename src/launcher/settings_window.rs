@@ -555,53 +555,7 @@ fn shortcut_to_text(shortcut: &Option<UiShortcutConfig>) -> String {
 fn colorscheme_tokens_from_overrides(
     overrides: &UiColorOverridesConfig,
 ) -> HashMap<String, String> {
-    let mut tokens = HashMap::new();
-    macro_rules! push_token {
-        ($field:ident) => {
-            if let Some(value) = &overrides.$field {
-                tokens.insert(stringify!($field).to_owned(), value.clone());
-            }
-        };
-    }
-
-    push_token!(accent);
-    push_token!(panel);
-    push_token!(text);
-    push_token!(muted);
-    push_token!(canvas_bg);
-    push_token!(canvas_shadow);
-    push_token!(canvas_border);
-    push_token!(label_strong);
-    push_token!(input_bg);
-    push_token!(input_border);
-    push_token!(input_shadow);
-    push_token!(placeholder);
-    push_token!(scrollbar);
-    push_token!(item_bg);
-    push_token!(item_hover);
-    push_token!(item_selected_bg);
-    push_token!(item_selected_shadow);
-    push_token!(badge_bg);
-    push_token!(badge_border);
-    push_token!(badge_text);
-    push_token!(badge_icon_bg);
-    push_token!(chip_text);
-    push_token!(chip_bg);
-    push_token!(chip_border);
-    push_token!(config_error_bg);
-    push_token!(config_error_border);
-    push_token!(config_error_shadow);
-    push_token!(config_error_title);
-    push_token!(config_error_copy);
-    push_token!(canvas_hidden_input_bg);
-    push_token!(canvas_hidden_input_border);
-    push_token!(canvas_hidden_input_shadow);
-    push_token!(canvas_hidden_item_bg);
-    push_token!(canvas_hidden_item_hover);
-    push_token!(canvas_hidden_item_selected_bg);
-    push_token!(canvas_hidden_config_error_bg);
-
-    tokens
+    overrides.to_token_map()
 }
 
 fn plugin_toml_from_raw(raw: &str) -> Result<String> {

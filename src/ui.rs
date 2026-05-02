@@ -176,42 +176,7 @@ impl ResolvedUiColors {
 
         let accent_override = overrides.accent.clone();
 
-        apply!(accent);
-        apply!(panel);
-        apply!(text);
-        apply!(muted);
-        apply!(canvas_bg);
-        apply!(canvas_shadow);
-        apply!(canvas_border);
-        apply!(label_strong);
-        apply!(input_bg);
-        apply!(input_border);
-        apply!(input_shadow);
-        apply!(placeholder);
-        apply!(scrollbar);
-        apply!(item_bg);
-        apply!(item_hover);
-        apply!(item_selected_bg);
-        apply!(item_selected_shadow);
-        apply!(badge_bg);
-        apply!(badge_border);
-        apply!(badge_text);
-        apply!(badge_icon_bg);
-        apply!(chip_text);
-        apply!(chip_bg);
-        apply!(chip_border);
-        apply!(config_error_bg);
-        apply!(config_error_border);
-        apply!(config_error_shadow);
-        apply!(config_error_title);
-        apply!(config_error_copy);
-        apply!(canvas_hidden_input_bg);
-        apply!(canvas_hidden_input_border);
-        apply!(canvas_hidden_input_shadow);
-        apply!(canvas_hidden_item_bg);
-        apply!(canvas_hidden_item_hover);
-        apply!(canvas_hidden_item_selected_bg);
-        apply!(canvas_hidden_config_error_bg);
+        crate::for_each_color_token!(apply);
 
         if let Some(accent) = accent_override {
             self.apply_accent_derivatives(&accent, overrides);
