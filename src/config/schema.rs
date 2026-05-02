@@ -328,6 +328,7 @@ macro_rules! define_color_tokens {
             }
         }
     };
+    // Counts token repetitions: expands to `0 + 1 + 1 + ...`
     (@count $($t:tt)+) => {
         0 $(+ define_color_tokens!(@one $t))+
     };
