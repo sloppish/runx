@@ -607,18 +607,7 @@
     }
   }
 
-  function addDisplayOverride(entry = {}, preferredDisplayKey = null, reveal = false) {
-    if (Object.keys(entry).length === 0 && (state.displays || []).length > 0) {
-      const display = state.displays[0];
-      preferredDisplayKey = display.key;
-      entry = displayEntry(display);
-    }
-
-    const wrapper = card("Display override", (node) => node.remove());
-    const selectedDisplay = preferredDisplayKey
-      ? (state.displays || []).find((display) => display.key === preferredDisplayKey)
-      : displayForOverride(entry);
-
+  function buildDisplayTargetBlock(selectedDisplay) {
     const target = document.createElement("div");
     target.className = "display-target";
     const targetLabel = document.createElement("label");
@@ -635,7 +624,10 @@
     targetSelect.value = selectedDisplay?.key || "manual";
     targetLabel.append(targetText, targetSelect);
     target.append(targetLabel, targetSummary);
+    return { target, targetSelect, targetSummary };
+  }
 
+  function buildIdentityBlock(entry) {
     const identity = document.createElement("div");
     identity.className = "manual-identity grid four";
 
@@ -661,7 +653,10 @@
       input.value = entry[key] ?? "";
       identity.append(labelNode);
     }
+    return { identity, builtIn };
+  }
 
+  function buildDimensionsGrid(entry) {
     const grid = document.createElement("div");
     grid.className = "grid four";
 
@@ -681,6 +676,24 @@
       input.value = entry[key] ?? "";
       grid.append(labelNode);
     }
+    return grid;
+  }
+
+  function addDisplayOverride(entry = {}, preferredDisplayKey = null, reveal = false) {
+    if (Object.keys(entry).length === 0 && (state.displays || []).length > 0) {
+      const display = state.displays[0];
+      preferredDisplayKey = display.key;
+      entry = displayEntry(display);
+    }
+
+    const wrapper = card("Display override", (node) => node.remove());
+    const selectedDisplay = preferredDisplayKey
+      ? (state.displays || []).find((display) => display.key === preferredDisplayKey)
+      : displayForOverride(entry);
+
+    const { target, targetSelect, targetSummary } = buildDisplayTargetBlock(selectedDisplay);
+    const { identity, builtIn } = buildIdentityBlock(entry);
+    const grid = buildDimensionsGrid(entry);
 
     function syncDisplayIdentity() {
       const display = selectedDisplayFromSelect(targetSelect);
