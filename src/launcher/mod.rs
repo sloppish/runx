@@ -602,29 +602,24 @@ impl Launcher {
             self.ensure_launcher_key_focus()?;
         }
 
+        macro_rules! diff_field {
+            ($updated:ident, $prev:expr, $new:expr, $($field:ident => $label:expr),+ $(,)?) => {
+                $(if $prev.$field != $new.$field { $updated.push($label); })+
+            };
+        }
         let mut updated = Vec::new();
-        if previous_config.hotkey != self.loaded.config.hotkey {
-            updated.push("hotkey");
-        }
-        if previous_config.window != self.loaded.config.window {
-            updated.push("window");
-        }
-        if previous_config.display_overrides != self.loaded.config.display_overrides {
-            updated.push("display_overrides");
-        }
-        if previous_config.ranking != self.loaded.config.ranking {
-            updated.push("ranking");
-        }
-        if previous_config.timing != self.loaded.config.timing {
-            updated.push("timing");
-        }
+        diff_field!(updated, previous_config, self.loaded.config,
+            hotkey => "hotkey",
+            window => "window",
+            display_overrides => "display_overrides",
+            ranking => "ranking",
+            timing => "timing",
+            ui => "theme",
+        );
         if previous_config.plugins != self.loaded.config.plugins
             || previous_config.plugin != self.loaded.config.plugin
         {
             updated.push("plugins");
-        }
-        if previous_config.ui != self.loaded.config.ui {
-            updated.push("theme");
         }
 
         if !updated.is_empty() {
