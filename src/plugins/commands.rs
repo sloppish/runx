@@ -104,6 +104,7 @@ pub(super) fn exec_capture(
     program: &str,
     args: &[String],
     first_line_only: bool,
+    trim: bool,
     search_paths: &[PathBuf],
 ) -> Result<String> {
     let output = command_for_plugin(program, search_paths)
@@ -122,14 +123,17 @@ pub(super) fn exec_capture(
 
     let stdout = String::from_utf8(output.stdout).context("command output was not UTF-8")?;
     let text = if first_line_only {
-        stdout.lines().next().unwrap_or_default().trim().to_owned()
-    } else {
+        let line = stdout.lines().next().unwrap_or_default();
+        if trim {
+            line.trim().to_owned()
+        } else {
+            line.to_owned()
+        }
+    } else if trim {
         stdout.trim().to_owned()
+    } else {
+        stdout
     };
-
-    if text.is_empty() {
-        bail!("`{program}` returned an empty result");
-    }
 
     Ok(text)
 }

@@ -105,11 +105,18 @@ fn install_runtime(
     runtime.set(
         "exec_capture",
         lua.create_function(
-            move |_, (program, args, first_line_only): (String, Vec<String>, Option<bool>)| {
+            move |_,
+                  (program, args, first_line_only, trim): (
+                String,
+                Vec<String>,
+                Option<bool>,
+                Option<bool>,
+            )| {
                 exec_capture(
                     &program,
                     &args,
                     first_line_only.unwrap_or(false),
+                    trim.unwrap_or(true),
                     &exec_capture_paths,
                 )
                 .map_err(mlua::Error::external)
@@ -138,7 +145,7 @@ fn install_runtime(
     runtime.set(
         "exec_json",
         lua.create_function(move |lua, (program, args): (String, Vec<String>)| {
-            let output = exec_capture(&program, &args, false, &exec_json_paths)
+            let output = exec_capture(&program, &args, false, true, &exec_json_paths)
                 .map_err(mlua::Error::external)?;
             let json = serde_json::from_str::<JsonValue>(&output).map_err(mlua::Error::external)?;
             lua.to_value(&json)

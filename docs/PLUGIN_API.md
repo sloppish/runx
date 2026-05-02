@@ -1,10 +1,8 @@
 # Plugin API
 
-Runx plugins are small Lua files that return a table. They can contribute search results, implement command-routed actions, and run local commands through a narrow `runx.*` runtime API.
+Runx plugins are small [Lua 5.5](https://www.lua.org/manual/5.5/) files that return a table. They can contribute search results, implement command-routed actions, and perform system tasks through the `runx.*` runtime API.
 
-You do not need a manifest, a build step, or a plugin framework. A plugin is just Lua plus optional `[plugin.<id>]` config.
-
-This page is the reference for writing plugins. For user-facing plugin configuration, see [CONFIGURATION.md](./CONFIGURATION.md).
+You do not need a manifest, a build step, or a plugin framework. A plugin is just a Lua script plus optional `[plugin.<id>]` configuration in your `config.toml`.
 
 ## Where Plugins Live
 
@@ -14,334 +12,262 @@ By default, Runx scans:
 
 You can add more plugin directories through `[plugins].directories` in `config.toml`.
 
-Runx loads every `.lua` file in those directories. One file is one plugin.
-
-Runx evaluates the plugin file in a fresh Lua state on each search or action call. Do not rely on mutable global state surviving between invocations.
+- **One file is one plugin:** Runx loads every `.lua` file in those directories.
+- **Fresh state:** Runx evaluates the plugin file in a fresh Lua state on every search or action. Do not rely on global variables surviving between calls. Garbage collection is disabled since the entire state is discarded after each call.
 
 ## Minimal Plugin
 
+A plugin must return a table containing its identity and at least one search or action handler.
+
 ```lua
 return {
-  id = "hello",
-  name = "Hello",
-  badge = "HI",
+  id = "hello",       -- Unique identifier
+  name = "Hello",     -- Display name for the UI
+  badge = "HI",       -- Default badge for full-style items
 
+  -- Generic search handler
   search = function(query)
-    if query ~= "hello" then
-      return {}
-    end
+    if query ~= "hello" then return {} end
 
     return {
       {
         title = "Say hello",
-        subtitle = "Example plugin action",
-        action = {
-          kind = "hello",
-        },
+        subtitle = "A simple plugin example",
+        action = { kind = "greet" },
       },
     }
   end,
 
+  -- Action execution handler
   run = function(action)
-    if action.kind == "hello" then
-      return "Hello from Runx"
+    if action.kind == "greet" then
+      return "Hello from Runx!"
     end
-
-    error("unknown action: " .. tostring(action.kind))
   end,
 }
 ```
 
-## Complete Routed Example
+## Plugin Table Reference
 
-This is the smallest realistic command-routed plugin shape: one Lua file plus one config block.
+| Key | Required | Type | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `id` | no | string | Filename stem | Stable identifier used to match `[plugin.<id>]` config and command routes. |
+| `name` | no | string | Filename stem | Display name. Defaults to the filename. |
+| `badge` | no | string | `"PLG"` | Default badge shown on full-style items. |
+| `search` | no | function | - | Generic search entrypoint for normal queries. |
+| `run` | yes* | function | - | Called when a plugin item is activated. |
+| `search_*` | no | function | - | Named routed handlers used via config. |
 
-```lua
-return {
-  id = "hello",
-  name = "Hello",
-  badge = "HI",
-
-  search_hello = function(raw, argv)
-    if raw == "" then
-      return {
-        {
-          title = "hello <name>",
-          subtitle = "Type a name after the command",
-          style = "full",
-          action = { kind = "noop" },
-        },
-      }
-    end
-
-    return {
-      {
-        title = "Say hello to " .. raw,
-        subtitle = table.concat(argv, ", "),
-        style = "full",
-        action = {
-          kind = "hello",
-          target = raw,
-        },
-      },
-    }
-  end,
-
-  run = function(action)
-    if action.kind == "noop" then
-      return "Try `hello world`."
-    end
-
-    if action.kind == "hello" then
-      return "Hello, " .. action.target
-    end
-
-    error("unknown action: " .. tostring(action.kind))
-  end,
-}
-```
-
-```toml
-[plugin.hello.commands]
-hello = "search_hello"
-```
-
-Typing `hello world` now routes to `search_hello(raw, argv)`.
-
-## Plugin Table
-
-Runx reads these top-level fields from the returned Lua table:
-
-| Key | Required | Meaning |
-| --- | --- | --- |
-| `id` | no | Stable plugin id. Defaults to the file stem. |
-| `name` | no | Display name. Defaults to the file stem. |
-| `badge` | no | Default badge for full-style items. Defaults to `PLG`. |
-| `search` | no | Generic search entrypoint for normal queries. |
-| `run` | needed for actionable results | Action handler called when a plugin item is activated. |
-| `search_*` | optional | Named routed handlers used through `[plugin.<id>.commands]`. |
+\* `run` is required if your search results return an `action`.
 
 ## Search Modes
 
-Runx supports two plugin search modes.
+### 1. Generic Search
 
-### Generic search
-
-If a plugin exports `search(query)`, Runx may call it during normal provider fan-out.
-
-Signature:
+If a plugin exports `search(query)`, Runx calls it during normal search. Use this for plugins that should always contribute results (like a calculator that activates on numbers).
 
 ```lua
 search = function(query) -> { items... }
 ```
 
-Use this for plugins that behave like a normal search source.
+### 2. Routed Commands (Recommended)
 
-Return `{}` when there are no results.
+Routed commands allow you to trigger a plugin with a specific prefix (e.g., `calc 1+1`). This is faster and prevents your plugin from interfering with general search results.
 
-### Routed commands
-
-If you configure `[plugin.<id>.commands]`, Runx routes matching query prefixes to named Lua handlers.
-
-Example config:
-
+**Config (`config.toml`):**
 ```toml
-[plugin.calc.commands]
-"=" = "search_calc"
-
-[plugin.emoji.commands]
-emoji = "search_emoji"
-copy-emoji = "search_copy_emoji"
+[plugin.myplugin.commands]
+"calc" = "search_calc"
 ```
 
-Handler signature:
-
+**Lua:**
 ```lua
-search_calc = function(raw, argv) -> { items... }
+-- raw: everything after "calc " (e.g., "1 + 1")
+-- argv: shell-parsed arguments (e.g., {"1", "+", "1"})
+search_calc = function(raw, argv)
+  -- return items...
+end
 ```
 
-- `raw` is the unparsed remainder after the command prefix
-- `argv` is a shell-like parsed argument array
-- handlers should return `{}` when there are no results
-
-Route matching rules:
-
-- `command` matches exactly
-- or `command` followed by a space and more input
-
-Important:
-
-- once a plugin has any configured command routes, Runx stops calling its generic `search(query)` function
-- routed plugins are routed-only
+**Important:** Once a plugin has configured command routes, its generic `search(query)` function is **ignored**.
 
 ## Search Result Items
 
-Each handler returns an array of items. Every item must include:
+Handlers must return an array of item tables.
 
-| Key | Required | Meaning |
-| --- | --- | --- |
-| `title` | yes | Non-empty visible title. |
-| `action` | yes | Payload passed back to `run(action)`. |
+| Key | Required | Type | Default | Meaning |
+| --- | --- | --- | --- | --- |
+| `title` | **yes** | string | - | The main visible label. |
+| `action` | **yes** | table | - | Data passed to `run(action)`. |
+| `subtitle` | no | string | `""` compact / plugin name full | Secondary text (shown in `full` style). |
+| `score` | no | integer | `0` | Ranking priority (higher is better). |
+| `badge` | no | string | `""` compact / plugin badge full | Small text tag on the right. |
+| `icon` | no | string | - | URL or `data:` URI (replaces badge). |
+| `style` | no | string | `compact` | `compact` (single line) or `full` (two lines). |
+| `id` | no | string | `plugin:<plugin_id>:<title>` | Stable ID for selection memory. |
 
-Optional keys:
+### Visual Styles
 
-| Key | Type | Default |
-| --- | --- | --- |
-| `id` | string | `plugin:<plugin-id>:<title>` |
-| `subtitle` | string | empty for compact items, plugin name for full items |
-| `score` | integer | `0` |
-| `badge` | string | empty for compact items, plugin badge for full items |
-| `icon` | string (URL) | none |
-| `style` | `compact` or `full` | `compact` |
-
-Notes:
-
-- `title`, `id`, and `badge` must not be empty after trimming
-- `style` must be exactly `compact` or `full`
-- `icon` replaces the badge with an image; only rendered for `full`-style items
-- `icon` accepts any URL the webview can load: `https://`, `file:///`, or `data:` URIs
-- item validation is strict; invalid plugin items fail the search/action path instead of being silently ignored
-
-### Compact vs full
-
-`compact` is the default row style. Use `full` when the item needs a subtitle and a visible badge.
-
-Example:
-
-```lua
-{
-  id = "calc:" .. expression,
-  title = result,
-  subtitle = expression,
-  style = "full",
-  badge = "CALC",
-  score = 1000,
-  action = {
-    kind = "copy_result",
-    result = result,
-  },
-}
-```
+- **`compact` (Default):** A slim, single-line row. Subtitles and badges are hidden unless the UI theme explicitly enables them for compact rows.
+- **`full`:** A taller, two-line row. Shows the `subtitle` below the `title` and the `badge` (or `icon`) on the right.
 
 ## Action Payloads
 
-`action` is a small JSON-like table passed back into Rust and then into `run(action)`.
+The `action` table is stored when your search handler returns it, then passed back to your `run(action)` handler when the user activates the item.
 
-Required field:
-
-| Key | Meaning |
-| --- | --- |
-| `kind` | Required action discriminator. |
-
-Rules:
-
-- `kind` must be non-empty
-- `kind` must not have leading or trailing whitespace
-- extra keys are allowed
-- extra keys must not use the reserved key `kind`
-- field names must not be empty
-
-Example:
+**Contract:**
+- Must contain a `kind` string (the "ID" of the action).
+- `kind` cannot be empty and cannot have leading/trailing whitespace.
+- Field names must be non-empty strings.
+- Can contain any other JSON-serializable keys (except `kind`).
 
 ```lua
 action = {
   kind = "copy_password",
-  entry = "mail/example.com",
+  account = "github.com",
 }
 ```
 
-## `run(action)`
+## `run(action)` and Feedback
 
-When the user activates a plugin result, Runx calls:
+The `run` function executes the requested action. You can return feedback to be shown in the Runx UI:
 
-```lua
-run = function(action) ... end
-```
-
-`action` contains the validated payload you returned from the item.
-
-Return behavior:
-
-| Return value | Result |
+| Return Value | UI Feedback |
 | --- | --- |
-| `nil` | Runx shows `Ran <plugin name>` |
-| non-empty string | Runx shows that string |
-| `{ message = "..." }` | Runx shows that message |
-| empty string or `{ message = nil }` | no message |
+| `nil` | Shows "Ran <Plugin Name>" |
+| `string` | Shows the returned string. |
+| `{ message = "..." }` | Shows the specified message. |
+| `""` or `{ message = nil }` | No feedback shown. |
 
-Example:
+## Runtime Helpers (`runx.*`)
+
+Runx provides a built-in `runx` table with utility functions. Parameters marked with `?` are optional.
+
+### System & Environment
+
+#### `runx.api_version`: integer
+
+Current API version (currently `1`).
+
+#### `runx.plugin_path`: string
+
+Absolute path to the current `.lua` file.
+
+#### `runx.plugin_dir`: string
+
+Directory containing the current plugin.
+
+#### `runx.plugin_config`: table
+
+Your plugin's `[plugin.<id>]` config (excludes `commands`).
+
+#### `runx.home_dir() -> string`
+
+Returns the user's home directory path.
+
+#### `runx.getenv(name: string) -> string?`
+
+Returns an environment variable or `nil`.
+
+### Files & Execution
+
+Subprocess helpers search the system `PATH` plus any extra directories listed in `[plugins].search_paths` in your `config.toml`.
+
+#### `runx.read_text(path: string) -> string`
+
+Reads a UTF-8 file and returns its contents.
+
+#### `runx.walk_files(root: string) -> string[]`
+
+Lists all files recursively under `root`. Returns paths relative to `root`.
+
+#### `runx.parse_args(raw: string) -> string[]`
+
+Parses a string into an argv array using shell quoting rules.
+
+#### `runx.exec_capture(cmd: string, args: string[], first_line?: boolean, trim?: boolean) -> string`
+
+Runs a command and returns stdout.
+
+- `first_line` (default `false`) — return only the first line of output.
+- `trim` (default `true`) — strip leading/trailing whitespace.
+- Errors if the command exits with a non-zero status.
+
+#### `runx.exec_status(cmd: string, args: string[], silence_stderr?: boolean) -> true`
+
+Runs a command; returns `true` on success, errors on failure.
+
+- `silence_stderr` (default `false`) — discard stderr output.
+
+#### `runx.exec_json(cmd: string, args: string[]) -> table`
+
+Runs a command, parses stdout as JSON, and returns it as a Lua table. Errors if the command fails or output is not valid JSON.
+
+### Clipboard & Interaction
+
+#### `runx.copy_text(text: string)`
+
+Copies text to the system clipboard.
+
+#### `runx.clipboard_text() -> string`
+
+Returns the current clipboard text.
+
+#### `runx.type_text(text: string)`
+
+Types text into the previously active app (requires Accessibility).
+
+### Utilities
+
+#### `runx.fuzzy_score(target: string, query: string) -> integer`
+
+Returns the same fuzzy match score Runx uses internally.
+
+## Example: Fuzzy-Filtered Bookmarks
+
+A complete plugin that uses `runx.fuzzy_score` to filter and rank results:
 
 ```lua
-run = function(action)
-  if action.kind == "copy_result" then
-    runx.copy_text(action.result)
-    return "Copied result"
-  end
+return {
+  id = "bookmarks",
+  name = "Bookmarks",
+  badge = "BM",
 
-  error("unknown action: " .. tostring(action.kind))
-end
+  search = function(query)
+    if query == "" then return {} end
+
+    local bookmarks = {
+      { title = "GitHub", url = "https://github.com" },
+      { title = "Rust Documentation", url = "https://doc.rust-lang.org" },
+      { title = "Lua Reference", url = "https://www.lua.org/manual/5.4/" },
+    }
+
+    local results = {}
+    for _, bm in ipairs(bookmarks) do
+      local score = runx.fuzzy_score(bm.title, query)
+      if score > 0 then
+        results[#results + 1] = {
+          title = bm.title,
+          subtitle = bm.url,
+          score = score,
+          style = "full",
+          action = { kind = "open", url = bm.url },
+        }
+      end
+    end
+
+    return results
+  end,
+
+  run = function(action)
+    runx.exec_status("open", { action.url })
+    return ""
+  end,
+}
 ```
 
-## Runtime Helpers
+## Debugging & Errors
 
-Runx exposes a `runx` table inside the Lua VM.
-
-| Helper | Signature | Meaning |
-| --- | --- | --- |
-| `runx.api_version` | number | Current plugin API version. |
-| `runx.fuzzy_score` | `(candidate, query)` | Same fuzzy scorer Runx uses internally. |
-| `runx.getenv` | `(name)` | Read an environment variable, or `nil`. |
-| `runx.parse_args` | `(raw)` | Parse a shell-like string into an argv array. |
-| `runx.walk_files` | `(root)` | Recursively list files under `root`. |
-| `runx.read_text` | `(path)` | Read a UTF-8 text file. |
-| `runx.exec_capture` | `(program, args, first_line_only?)` | Run a subprocess and capture stdout. |
-| `runx.exec_status` | `(program, args, silence_stderr?)` | Run a subprocess and require success. |
-| `runx.exec_json` | `(program, args)` | Run a subprocess, parse stdout as JSON, and return Lua data. |
-| `runx.copy_text` | `(text)` | Copy text to the clipboard. |
-| `runx.type_text` | `(text)` | Type text into the previously active app. |
-| `runx.home_dir` | `()` | Return the current user’s home directory. |
-| `runx.plugin_path` | string | Absolute path to the current plugin file. |
-| `runx.plugin_dir` | string | Directory containing the current plugin file. |
-| `runx.plugin_config` | table | Config from `[plugin.<id>]`, excluding the reserved `commands` table. |
-
-Notes:
-
-- plugin subprocess helpers inherit the normal `PATH` plus `[plugins].search_paths`
-- `runx.exec_json` expects stdout to be valid JSON
-- `runx.type_text` depends on the usual macOS Accessibility flow
-
-## Configuring Plugins
-
-Plugin-specific settings live under `[plugin.<id>]`.
-
-Example:
-
-```toml
-[plugin.pass]
-pass_rank_bin = "/Users/you/bin/pass-rank"
-
-[plugin.pass.commands]
-pass = "search_type_password"
-copy-pass = "search_copy_password"
-otp = "search_type_otp"
-copy-otp = "search_copy_otp"
-```
-
-Inside Lua, the plugin sees:
-
-```lua
-local config = runx.plugin_config or {}
-local path = config.pass_rank_bin
-```
-
-The reserved `[plugin.<id>.commands]` subtable is used only by Runx for routing and is not included in `runx.plugin_config`.
-
-## Patterns From The Example Plugins
-
-The bundled examples show the intended size and style:
-
-- [examples/calc.lua](./examples/calc.lua): routed calculator, returns one full-style item and copies the result
-- [examples/emoji.lua](./examples/emoji.lua): routed emoji search with `copy_text` and `type_text`
-- [examples/pass.lua](./examples/pass.lua): command-routed password store integration with structured action kinds
-
-They are good starting points if you want to copy a real plugin shape instead of starting from a blank file.
+- **Validation Errors:** If your search handler returns an invalid item (e.g., missing `title` or invalid `kind`), Runx will show a descriptive error in the UI.
+- **Lua Errors:** If your code throws an error (via `error()` or a syntax mistake), Runx captures the message and displays it as a notification.
+- **Logging:** Use `print()` to send output to the Runx process `stdout`. If you run Runx from a terminal, you'll see these logs.
