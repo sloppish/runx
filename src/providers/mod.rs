@@ -95,6 +95,26 @@ impl ProviderSet {
 
     /// Returns how many provider responses a session should wait for.
     pub fn provider_count_for_query(&self, query: &str) -> usize {
+        self.enabled_providers(query).count()
+    }
+
+    /// Starts a new search request across all providers.
+    pub fn spawn_search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
+        let workers: [(&str, &ProviderWorker); 4] = [
+            ("windows", &self.windows),
+            ("apps", &self.apps),
+            ("settings", &self.settings),
+            ("plugins", &self.plugins),
+        ];
+        let enabled = self.enabled_providers(&query);
+        for name in enabled {
+            if let Some((_, worker)) = workers.iter().find(|(n, _)| *n == name) {
+                worker.search(proxy.clone(), generation, query.clone());
+            }
+        }
+    }
+
+    fn enabled_providers(&self, query: &str) -> impl Iterator<Item = &'static str> {
         let enabled = enabled_providers_for_query(
             query,
             &self.disabled_providers,
@@ -103,33 +123,7 @@ impl ProviderSet {
         );
         ["windows", "apps", "settings", "plugins"]
             .into_iter()
-            .filter(|provider| enabled.contains(provider))
-            .count()
-    }
-
-    /// Starts a new search request across all providers.
-    pub fn spawn_search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
-        let enabled = enabled_providers_for_query(
-            &query,
-            &self.disabled_providers,
-            self.windows_show_on_empty_query,
-            self.plugins_host.is_routed_query(&query),
-        );
-
-        if enabled.contains("windows") {
-            self.windows
-                .search(proxy.clone(), generation, query.clone());
-        }
-        if enabled.contains("apps") {
-            self.apps.search(proxy.clone(), generation, query.clone());
-        }
-        if enabled.contains("settings") {
-            self.settings
-                .search(proxy.clone(), generation, query.clone());
-        }
-        if enabled.contains("plugins") {
-            self.plugins.search(proxy, generation, query);
-        }
+            .filter(move |provider| enabled.contains(provider))
     }
 }
 
