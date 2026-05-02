@@ -3,7 +3,7 @@ use std::{
     ffi::OsString,
     fs,
     path::{Path, PathBuf},
-    process::{Command, Stdio},
+    process::{Command, ExitStatus, Stdio},
 };
 
 use anyhow::{Context, Result, bail};
@@ -114,11 +114,7 @@ pub(super) fn exec_capture(
         .with_context(|| format!("failed to run `{program}`"))?;
 
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-        if stderr.is_empty() {
-            bail!("`{program}` exited with status {}", output.status);
-        }
-        bail!("{stderr}");
+        bail_command_failure(program, &output.stderr, output.status)?;
     }
 
     let stdout = String::from_utf8(output.stdout).context("command output was not UTF-8")?;
@@ -160,11 +156,16 @@ pub(super) fn exec_status(
         return Ok(());
     }
 
-    let stderr = String::from_utf8_lossy(&output.stderr).trim().to_owned();
-    if stderr.is_empty() {
-        bail!("`{program}` exited with status {}", output.status);
+    bail_command_failure(program, &output.stderr, output.status)?;
+    Ok(())
+}
+
+fn bail_command_failure(program: &str, stderr: &[u8], status: ExitStatus) -> Result<()> {
+    let message = String::from_utf8_lossy(stderr).trim().to_owned();
+    if message.is_empty() {
+        bail!("`{program}` exited with status {status}");
     }
-    bail!("{stderr}");
+    bail!("{message}");
 }
 
 fn command_for_plugin(program: &str, search_paths: &[PathBuf]) -> Command {
