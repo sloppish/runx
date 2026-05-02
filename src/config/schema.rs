@@ -698,10 +698,6 @@ impl Config {
 
     /// Returns the index of the best matching display override for a specific display, if any.
     pub fn display_override_index_for(&self, display: Option<&DisplayProfile>) -> Option<usize> {
-        self.best_display_override_index(display)
-    }
-
-    fn best_display_override_index(&self, display: Option<&DisplayProfile>) -> Option<usize> {
         let display = display?;
         self.display_overrides
             .iter()
