@@ -85,35 +85,33 @@ impl IconMemoryCache {
         if self.capacity == 0 {
             return false;
         }
-
-        while !self.entries.contains_key(&key) && self.entries.len() >= self.capacity {
-            let Some(evicted_key) = self.pop_oldest_evictable() else {
-                return false;
-            };
-            self.entries.remove(&evicted_key);
+        if !self.ensure_capacity_for(&key) {
+            return false;
         }
-
         self.entries.insert(key.clone(), IconState::Pending);
         self.touch(&key);
         true
     }
 
     fn insert(&mut self, key: String, state: IconState) {
-        if !self.entries.contains_key(&key) {
-            if self.capacity == 0 {
-                return;
-            }
-
-            while self.entries.len() >= self.capacity {
-                let Some(evicted_key) = self.pop_oldest_evictable() else {
-                    return;
-                };
-                self.entries.remove(&evicted_key);
-            }
+        if self.capacity == 0 && !self.entries.contains_key(&key) {
+            return;
         }
-
+        if !self.ensure_capacity_for(&key) {
+            return;
+        }
         self.entries.insert(key.clone(), state);
         self.touch(&key);
+    }
+
+    fn ensure_capacity_for(&mut self, key: &str) -> bool {
+        while !self.entries.contains_key(key) && self.entries.len() >= self.capacity {
+            let Some(evicted_key) = self.pop_oldest_evictable() else {
+                return false;
+            };
+            self.entries.remove(&evicted_key);
+        }
+        true
     }
 
     fn pop_oldest_evictable(&mut self) -> Option<String> {
