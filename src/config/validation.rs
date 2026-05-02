@@ -165,32 +165,13 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
         config.window.visible_rows,
         "[window].visible_rows must be greater than 0",
     )?;
-    if let Some(value) = config.window.min_width {
-        validate_positive_dimension(value, "[window].min_width must be greater than 0.0")?;
-    }
-    if let Some(value) = config.window.max_width {
-        validate_positive_dimension(value, "[window].max_width must be greater than 0.0")?;
-    }
-    if let Some(value) = config.window.min_height {
-        validate_positive_dimension(value, "[window].min_height must be greater than 0.0")?;
-    }
-    if let Some(value) = config.window.max_height {
-        validate_positive_dimension(value, "[window].max_height must be greater than 0.0")?;
-    }
-    if let (Some(min), Some(max)) = (config.window.min_width, config.window.max_width) {
-        validate_dimension_range(
-            min,
-            max,
-            "[window].min_width must be less than or equal to [window].max_width",
-        )?;
-    }
-    if let (Some(min), Some(max)) = (config.window.min_height, config.window.max_height) {
-        validate_dimension_range(
-            min,
-            max,
-            "[window].min_height must be less than or equal to [window].max_height",
-        )?;
-    }
+    validate_dimension_clamps(
+        config.window.min_width,
+        config.window.max_width,
+        config.window.min_height,
+        config.window.max_height,
+        "[window]",
+    )?;
     for (index, display_override) in config.display_overrides.iter().enumerate() {
         validate_display_override(
             display_override,
@@ -504,6 +485,48 @@ fn validate_dimension_range(min: f64, max: f64, context: &str) -> Result<()> {
     }
 }
 
+fn validate_dimension_clamps(
+    min_width: Option<f64>,
+    max_width: Option<f64>,
+    min_height: Option<f64>,
+    max_height: Option<f64>,
+    context: &str,
+) -> Result<()> {
+    if let Some(value) = min_width {
+        validate_positive_dimension(value, &format!("{context}.min_width must be greater than 0.0"))?;
+    }
+    if let Some(value) = max_width {
+        validate_positive_dimension(value, &format!("{context}.max_width must be greater than 0.0"))?;
+    }
+    if let Some(value) = min_height {
+        validate_positive_dimension(
+            value,
+            &format!("{context}.min_height must be greater than 0.0"),
+        )?;
+    }
+    if let Some(value) = max_height {
+        validate_positive_dimension(
+            value,
+            &format!("{context}.max_height must be greater than 0.0"),
+        )?;
+    }
+    if let (Some(min), Some(max)) = (min_width, max_width) {
+        validate_dimension_range(
+            min,
+            max,
+            &format!("{context}.min_width must be less than or equal to {context}.max_width"),
+        )?;
+    }
+    if let (Some(min), Some(max)) = (min_height, max_height) {
+        validate_dimension_range(
+            min,
+            max,
+            &format!("{context}.min_height must be less than or equal to {context}.max_height"),
+        )?;
+    }
+    Ok(())
+}
+
 fn validate_positive_scale(value: f64, context: &str) -> Result<()> {
     if value.is_finite() && value > 0.0 {
         Ok(())
@@ -618,44 +641,13 @@ fn validate_display_override(config: &DisplayOverrideConfig, context: &str) -> R
             &format!("{context}.visible_rows must be greater than 0"),
         )?;
     }
-    if let Some(value) = config.min_width {
-        validate_positive_dimension(
-            value,
-            &format!("{context}.min_width must be greater than 0.0"),
-        )?;
-    }
-    if let Some(value) = config.max_width {
-        validate_positive_dimension(
-            value,
-            &format!("{context}.max_width must be greater than 0.0"),
-        )?;
-    }
-    if let Some(value) = config.min_height {
-        validate_positive_dimension(
-            value,
-            &format!("{context}.min_height must be greater than 0.0"),
-        )?;
-    }
-    if let Some(value) = config.max_height {
-        validate_positive_dimension(
-            value,
-            &format!("{context}.max_height must be greater than 0.0"),
-        )?;
-    }
-    if let (Some(min), Some(max)) = (config.min_width, config.max_width) {
-        validate_dimension_range(
-            min,
-            max,
-            &format!("{context}.min_width must be less than or equal to {context}.max_width"),
-        )?;
-    }
-    if let (Some(min), Some(max)) = (config.min_height, config.max_height) {
-        validate_dimension_range(
-            min,
-            max,
-            &format!("{context}.min_height must be less than or equal to {context}.max_height"),
-        )?;
-    }
+    validate_dimension_clamps(
+        config.min_width,
+        config.max_width,
+        config.min_height,
+        config.max_height,
+        context,
+    )?;
     if let Some(value) = config.scale {
         validate_positive_scale(value, &format!("{context}.scale must be greater than 0.0"))?;
     }
