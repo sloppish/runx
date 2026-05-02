@@ -49,6 +49,20 @@ struct ResolvedUiColors {
 }
 
 impl ResolvedUiColors {
+    fn css_replacements(&self, prefix: &str) -> Vec<(String, &str)> {
+        let mut pairs = Vec::new();
+        macro_rules! collect {
+            ($field:ident) => {
+                pairs.push((
+                    format!("__{}_{}__", prefix, stringify!($field).to_ascii_uppercase()),
+                    self.$field.as_str(),
+                ));
+            };
+        }
+        crate::for_each_color_token!(collect);
+        pairs
+    }
+
     fn builtin_light() -> Self {
         Self {
             accent: "#b57614".to_owned(),
@@ -348,154 +362,9 @@ pub fn theme_css(theme: &UiConfig, scale: f64) -> String {
     let badge_radius = scaled_px(theme.layout.badge_radius, scale);
     let icon_size = scaled_px(theme.layout.icon_size, scale);
 
-    let replacements = [
-        ("__LIGHT_ACCENT__", light.accent.as_str()),
-        ("__LIGHT_PANEL__", light.panel.as_str()),
-        ("__LIGHT_TEXT__", light.text.as_str()),
-        ("__LIGHT_MUTED__", light.muted.as_str()),
-        ("__LIGHT_CANVAS_BG__", light.canvas_bg.as_str()),
-        ("__LIGHT_CANVAS_SHADOW__", light.canvas_shadow.as_str()),
-        ("__LIGHT_CANVAS_BORDER__", light.canvas_border.as_str()),
-        ("__LIGHT_LABEL_STRONG__", light.label_strong.as_str()),
-        ("__LIGHT_INPUT_BG__", light.input_bg.as_str()),
-        ("__LIGHT_INPUT_BORDER__", light.input_border.as_str()),
-        ("__LIGHT_INPUT_SHADOW__", light.input_shadow.as_str()),
-        ("__LIGHT_PLACEHOLDER__", light.placeholder.as_str()),
-        ("__LIGHT_SCROLLBAR__", light.scrollbar.as_str()),
-        ("__LIGHT_ITEM_BG__", light.item_bg.as_str()),
-        ("__LIGHT_ITEM_HOVER__", light.item_hover.as_str()),
-        (
-            "__LIGHT_ITEM_SELECTED_BG__",
-            light.item_selected_bg.as_str(),
-        ),
-        (
-            "__LIGHT_ITEM_SELECTED_SHADOW__",
-            light.item_selected_shadow.as_str(),
-        ),
-        ("__LIGHT_BADGE_BG__", light.badge_bg.as_str()),
-        ("__LIGHT_BADGE_BORDER__", light.badge_border.as_str()),
-        ("__LIGHT_BADGE_TEXT__", light.badge_text.as_str()),
-        ("__LIGHT_BADGE_ICON_BG__", light.badge_icon_bg.as_str()),
-        ("__LIGHT_CHIP_TEXT__", light.chip_text.as_str()),
-        ("__LIGHT_CHIP_BG__", light.chip_bg.as_str()),
-        ("__LIGHT_CHIP_BORDER__", light.chip_border.as_str()),
-        ("__LIGHT_CONFIG_ERROR_BG__", light.config_error_bg.as_str()),
-        (
-            "__LIGHT_CONFIG_ERROR_BORDER__",
-            light.config_error_border.as_str(),
-        ),
-        (
-            "__LIGHT_CONFIG_ERROR_SHADOW__",
-            light.config_error_shadow.as_str(),
-        ),
-        (
-            "__LIGHT_CONFIG_ERROR_TITLE__",
-            light.config_error_title.as_str(),
-        ),
-        (
-            "__LIGHT_CONFIG_ERROR_COPY__",
-            light.config_error_copy.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_INPUT_BG__",
-            light.canvas_hidden_input_bg.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_INPUT_BORDER__",
-            light.canvas_hidden_input_border.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_INPUT_SHADOW__",
-            light.canvas_hidden_input_shadow.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_ITEM_BG__",
-            light.canvas_hidden_item_bg.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_ITEM_HOVER__",
-            light.canvas_hidden_item_hover.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_ITEM_SELECTED_BG__",
-            light.canvas_hidden_item_selected_bg.as_str(),
-        ),
-        (
-            "__LIGHT_CANVAS_HIDDEN_CONFIG_ERROR_BG__",
-            light.canvas_hidden_config_error_bg.as_str(),
-        ),
-        ("__DARK_ACCENT__", dark.accent.as_str()),
-        ("__DARK_PANEL__", dark.panel.as_str()),
-        ("__DARK_TEXT__", dark.text.as_str()),
-        ("__DARK_MUTED__", dark.muted.as_str()),
-        ("__DARK_CANVAS_BG__", dark.canvas_bg.as_str()),
-        ("__DARK_CANVAS_SHADOW__", dark.canvas_shadow.as_str()),
-        ("__DARK_CANVAS_BORDER__", dark.canvas_border.as_str()),
-        ("__DARK_LABEL_STRONG__", dark.label_strong.as_str()),
-        ("__DARK_INPUT_BG__", dark.input_bg.as_str()),
-        ("__DARK_INPUT_BORDER__", dark.input_border.as_str()),
-        ("__DARK_INPUT_SHADOW__", dark.input_shadow.as_str()),
-        ("__DARK_PLACEHOLDER__", dark.placeholder.as_str()),
-        ("__DARK_SCROLLBAR__", dark.scrollbar.as_str()),
-        ("__DARK_ITEM_BG__", dark.item_bg.as_str()),
-        ("__DARK_ITEM_HOVER__", dark.item_hover.as_str()),
-        ("__DARK_ITEM_SELECTED_BG__", dark.item_selected_bg.as_str()),
-        (
-            "__DARK_ITEM_SELECTED_SHADOW__",
-            dark.item_selected_shadow.as_str(),
-        ),
-        ("__DARK_BADGE_BG__", dark.badge_bg.as_str()),
-        ("__DARK_BADGE_BORDER__", dark.badge_border.as_str()),
-        ("__DARK_BADGE_TEXT__", dark.badge_text.as_str()),
-        ("__DARK_BADGE_ICON_BG__", dark.badge_icon_bg.as_str()),
-        ("__DARK_CHIP_TEXT__", dark.chip_text.as_str()),
-        ("__DARK_CHIP_BG__", dark.chip_bg.as_str()),
-        ("__DARK_CHIP_BORDER__", dark.chip_border.as_str()),
-        ("__DARK_CONFIG_ERROR_BG__", dark.config_error_bg.as_str()),
-        (
-            "__DARK_CONFIG_ERROR_BORDER__",
-            dark.config_error_border.as_str(),
-        ),
-        (
-            "__DARK_CONFIG_ERROR_SHADOW__",
-            dark.config_error_shadow.as_str(),
-        ),
-        (
-            "__DARK_CONFIG_ERROR_TITLE__",
-            dark.config_error_title.as_str(),
-        ),
-        (
-            "__DARK_CONFIG_ERROR_COPY__",
-            dark.config_error_copy.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_INPUT_BG__",
-            dark.canvas_hidden_input_bg.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_INPUT_BORDER__",
-            dark.canvas_hidden_input_border.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_INPUT_SHADOW__",
-            dark.canvas_hidden_input_shadow.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_ITEM_BG__",
-            dark.canvas_hidden_item_bg.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_ITEM_HOVER__",
-            dark.canvas_hidden_item_hover.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_ITEM_SELECTED_BG__",
-            dark.canvas_hidden_item_selected_bg.as_str(),
-        ),
-        (
-            "__DARK_CANVAS_HIDDEN_CONFIG_ERROR_BG__",
-            dark.canvas_hidden_config_error_bg.as_str(),
-        ),
+    let light_tokens = light.css_replacements("LIGHT");
+    let dark_tokens = dark.css_replacements("DARK");
+    let static_replacements: &[(&str, &str)] = &[
         ("__FONT_FAMILY__", theme.font_family.as_str()),
         ("__UI_SCALE__", ui_scale.as_str()),
         ("__DOCUMENT_COLOR_SCHEME__", document_color_scheme),
@@ -537,7 +406,13 @@ pub fn theme_css(theme: &UiConfig, scale: f64) -> String {
     ];
 
     let mut css = STYLE_TEMPLATE.to_owned();
-    for (token, value) in replacements {
+    for (token, value) in &light_tokens {
+        css = css.replace(token, value);
+    }
+    for (token, value) in &dark_tokens {
+        css = css.replace(token, value);
+    }
+    for (token, value) in static_replacements {
         css = css.replace(token, value);
     }
     css
