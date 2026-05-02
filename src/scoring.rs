@@ -7,7 +7,7 @@ mod arinae;
 
 use std::{collections::HashSet, sync::OnceLock};
 
-use self::arinae::{ArinaeMatcher, FuzzyMatcher};
+use self::arinae::ArinaeMatcher;
 use crate::{
     config::{RankingConfig, RankingScoreRule, RankingScoreRuleField, RankingScoreRuleMatchKind},
     types::SearchItem,

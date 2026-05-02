@@ -63,14 +63,6 @@ pub enum CaseMatching {
     Smart,
 }
 
-/// Minimal fuzzy matcher trait retained from skim's fuzzy-matcher surface.
-pub trait FuzzyMatcher: Send + Sync {
-    fn fuzzy_indices(&self, choice: &str, pattern: &str) -> Option<(ScoreType, MatchIndices)>;
-
-    fn fuzzy_match(&self, choice: &str, pattern: &str) -> Option<ScoreType> {
-        self.fuzzy_indices(choice, pattern).map(|(score, _)| score)
-    }
-}
 
 fn precompute_bonuses<C: Atom>(cho: &[C], buf: &mut Vec<Score>) {
     // Reset length (O(1), no deallocation) then fill with fresh values.
@@ -243,17 +235,8 @@ impl ArinaeMatcher {
     }
 }
 
-// ---------------------------------------------------------------------------
-// FuzzyMatcher trait implementation
-// ---------------------------------------------------------------------------
-
-impl FuzzyMatcher for ArinaeMatcher {
-    fn fuzzy_match(&self, choice: &str, pattern: &str) -> Option<ScoreType> {
-        let result = self.run(choice, pattern, false);
-        result.map(|x| x.0)
-    }
-
-    fn fuzzy_indices(&self, choice: &str, pattern: &str) -> Option<(ScoreType, MatchIndices)> {
-        self.run(choice, pattern, true)
+impl ArinaeMatcher {
+    pub fn fuzzy_match(&self, choice: &str, pattern: &str) -> Option<ScoreType> {
+        self.run(choice, pattern, false).map(|(score, _)| score)
     }
 }
