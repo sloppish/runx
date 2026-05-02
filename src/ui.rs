@@ -348,6 +348,10 @@ pub fn shortcut_json(shortcut: &Option<crate::config::UiShortcutConfig>) -> Stri
     }
 }
 
+pub fn shortcut_value(shortcut: &Option<crate::config::UiShortcutConfig>) -> serde_json::Value {
+    serde_json::to_value(shortcut).unwrap_or(serde_json::Value::Null)
+}
+
 /// Returns the theme-expanded CSS used by the embedded webview.
 pub fn theme_css(theme: &UiConfig, scale: f64) -> String {
     let (light, dark, document_color_scheme) = resolve_theme_colors(theme);

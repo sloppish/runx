@@ -709,24 +709,27 @@ fn frontend_config_script(
     theme: &config::UiConfig,
     layout_version: u64,
 ) -> Result<String> {
-    let css = ui::theme_css(theme, window.scale);
-    let shell_class = ui::shell_class(theme);
-    let cycle_selection = if theme.cycle_selection {
-        "true"
-    } else {
-        "false"
-    };
-    let focus_window_shortcut = ui::shortcut_json(&theme.shortcuts.focus_window);
-    let activate_all_windows_shortcut = ui::shortcut_json(&theme.shortcuts.activate_all_windows);
+    let config = serde_json::json!({
+        "css": ui::theme_css(theme, window.scale),
+        "shellClass": ui::shell_class(theme),
+        "cycleSelection": theme.cycle_selection,
+        "focusWindowShortcut": ui::shortcut_value(&theme.shortcuts.focus_window),
+        "activateAllWindowsShortcut": ui::shortcut_value(&theme.shortcuts.activate_all_windows),
+        "visibleRows": window.visible_rows,
+        "layoutVersion": layout_version,
+    });
     Ok(format!(
-        "(() => {{ const node = document.getElementById('runx-theme'); if (node) node.textContent = {}; const shell = document.querySelector('main'); if (shell) shell.className = {}; window.__RUNX_CYCLE_SELECTION__ = {}; window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {}; window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = {}; window.__RUNX_VISIBLE_ROWS__ = {}; window.__RUNX_LAYOUT_VERSION__ = {}; if (window.__RUNX_REQUEST_PREFERRED_HEIGHT) window.__RUNX_REQUEST_PREFERRED_HEIGHT(); }})()",
-        serde_json::to_string(&css)?,
-        serde_json::to_string(shell_class)?,
-        cycle_selection,
-        focus_window_shortcut,
-        activate_all_windows_shortcut,
-        window.visible_rows,
-        layout_version
+        "(() => {{ const c = {}; \
+         const node = document.getElementById('runx-theme'); if (node) node.textContent = c.css; \
+         const shell = document.querySelector('main'); if (shell) shell.className = c.shellClass; \
+         window.__RUNX_CYCLE_SELECTION__ = c.cycleSelection; \
+         window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = c.focusWindowShortcut; \
+         window.__RUNX_ACTIVATE_ALL_WINDOWS_SHORTCUT__ = c.activateAllWindowsShortcut; \
+         window.__RUNX_VISIBLE_ROWS__ = c.visibleRows; \
+         window.__RUNX_LAYOUT_VERSION__ = c.layoutVersion; \
+         if (window.__RUNX_REQUEST_PREFERRED_HEIGHT) window.__RUNX_REQUEST_PREFERRED_HEIGHT(); \
+         }})()",
+        serde_json::to_string(&config)?
     ))
 }
 
@@ -805,8 +808,8 @@ mod tests {
 
         let script = frontend_config_script(&window, &theme, 3).expect("script should render");
 
-        assert!(script.contains(r#"shell.className = "shell canvas-hidden""#));
-        assert!(script.contains("window.__RUNX_LAYOUT_VERSION__ = 3"));
+        assert!(script.contains(r#""shellClass":"shell canvas-hidden""#));
+        assert!(script.contains(r#""layoutVersion":3"#));
     }
 
     #[test]
