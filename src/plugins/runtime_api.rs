@@ -42,6 +42,7 @@ pub(super) fn load_table_with_context(
     search_paths: &[PathBuf],
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
+    lua.gc_stop();
     install_runtime(&lua, path, context, plugin_config, search_paths)?;
     let table: Table = lua
         .load(source)
