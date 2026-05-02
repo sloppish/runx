@@ -116,7 +116,7 @@ mod tests {
             id: "test".to_owned(),
             name: "Test Plugin".to_owned(),
             badge: "TST".to_owned(),
-            path: PathBuf::from("test.lua"),
+            path: PathBuf::from("test/init.lua"),
             source: String::new(),
         }
     }

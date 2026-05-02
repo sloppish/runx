@@ -12,8 +12,9 @@ By default, Runx scans:
 
 You can add more plugin directories through `[plugins].directories` in `config.toml`.
 
-- **One file is one plugin:** Runx loads every `.lua` file in those directories.
-- **Fresh state:** Runx evaluates the plugin file in a fresh Lua state on every search or action. Do not rely on global variables surviving between calls. Garbage collection is disabled since the entire state is discarded after each call.
+- **One directory is one plugin:** Each plugin is a subdirectory containing `init.lua` as its entry point (e.g. `plugins/calc/init.lua`).
+- **`require` support:** Plugins can load sibling files via `require("utils")` which resolves to `utils.lua` or `utils/init.lua` in the same directory.
+- **Fresh state:** Runx evaluates the plugin in a fresh Lua state on every search or action. Do not rely on global variables surviving between calls. Garbage collection is disabled since the entire state is discarded after each call.
 
 ## Minimal Plugin
 

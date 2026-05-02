@@ -80,11 +80,15 @@ impl PluginHost {
             };
             for entry in entries.flatten() {
                 let path = entry.path();
-                if path.extension().and_then(|value| value.to_str()) != Some("lua") {
+                if !path.is_dir() {
+                    continue;
+                }
+                let init = path.join("init.lua");
+                if !init.exists() {
                     continue;
                 }
 
-                match load_plugin(&path, search_paths) {
+                match load_plugin(&init, search_paths) {
                     Ok(plugin) => plugins.push(plugin),
                     Err(error) => eprintln!("Skipping plugin {}: {error:#}", path.display()),
                 }
@@ -202,8 +206,9 @@ fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
     let metadata = extract_metadata(&lua, &table)?;
 
     let fallback_id = path
-        .file_stem()
-        .and_then(|value| value.to_str())
+        .parent()
+        .and_then(|dir| dir.file_name())
+        .and_then(|name| name.to_str())
         .unwrap_or("plugin")
         .to_owned();
 
@@ -353,7 +358,7 @@ mod tests {
             id: "args".to_owned(),
             name: "Args Plugin".to_owned(),
             badge: "ARG".to_owned(),
-            path: PathBuf::from("args.lua"),
+            path: PathBuf::from("args/init.lua"),
             source: r#"
                 return {
                   search_echo = function(raw, argv)
@@ -391,7 +396,7 @@ mod tests {
             id: "args".to_owned(),
             name: "Args Plugin".to_owned(),
             badge: "ARG".to_owned(),
-            path: PathBuf::from("args.lua"),
+            path: PathBuf::from("args/init.lua"),
             source: r#"
                 return {
                   search_echo = function()
@@ -421,7 +426,7 @@ mod tests {
             id: "clipboard".to_owned(),
             name: "Clipboard Plugin".to_owned(),
             badge: "CLP".to_owned(),
-            path: PathBuf::from("clipboard.lua"),
+            path: PathBuf::from("clipboard/init.lua"),
             source: r#"
                 return {
                   search = function()

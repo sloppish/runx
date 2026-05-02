@@ -65,6 +65,12 @@ fn install_runtime(
     let plugin_dir = plugin_path
         .parent()
         .map_or_else(|| PathBuf::from("."), Path::to_path_buf);
+
+    let dir = plugin_dir.display();
+    lua.globals()
+        .get::<Table>("package")?
+        .set("path", format!("{dir}/?.lua;{dir}/?/init.lua"))?;
+
     runtime.set("api_version", PLUGIN_API_VERSION)?;
 
     runtime.set(
