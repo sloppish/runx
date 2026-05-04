@@ -113,6 +113,7 @@ pub enum SettingsCommand {
 /// Structured subset edited by the first Settings window implementation.
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct SettingsDraft {
+    pub debug_log: bool,
     pub hotkey: HotkeySettingsDraft,
     pub window: WindowSettingsDraft,
     pub display_overrides: Vec<DisplayOverrideSettingsDraft>,

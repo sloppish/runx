@@ -1086,6 +1086,7 @@
 
   function collectDraft() {
     return {
+      debug_log: bool("debug_log"),
       hotkey: {
         shortcut: text("hotkey.shortcut"),
       },

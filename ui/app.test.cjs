@@ -149,6 +149,16 @@ test("settings frontend keeps only result limit minimum", () => {
   assert.doesNotMatch(settingsJs, /input\.min\s*=/);
 });
 
+test("settings advanced pane exposes restart-only debug log toggle", () => {
+  const html = fs.readFileSync(path.join(__dirname, "settings.html"), "utf8");
+  const settingsJs = fs.readFileSync(path.join(__dirname, "settings.js"), "utf8");
+
+  assert.match(html, /<h2>Diagnostics<\/h2>/);
+  assert.match(html, /<input[^>]*type="checkbox"[^>]*data-field="debug_log"/);
+  assert.match(html, /Write debug\.log after restart/);
+  assert.match(settingsJs, /debug_log:\s*bool\("debug_log"\)/);
+});
+
 test("backend render payload does not overwrite active typing with stale query text", () => {
   const state = ui.createState();
   state.query = "gmail";

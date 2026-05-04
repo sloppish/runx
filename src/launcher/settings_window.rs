@@ -370,6 +370,7 @@ fn settings_ipc_event(payload: &str) -> AppEvent {
 
 fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraft> {
     Ok(SettingsDraft {
+        debug_log: config.debug_log,
         hotkey: HotkeySettingsDraft {
             shortcut: config.hotkey.shortcut.clone(),
         },
@@ -581,6 +582,8 @@ fn apply_settings_draft_to_raw(
     let current_draft = validate_config_toml(config_path, raw)
         .ok()
         .and_then(|config| settings_draft_from_config(&config, raw).ok());
+
+    set_item(&mut doc, &[], "debug_log", value(draft.debug_log))?;
 
     set_item(
         &mut doc,
@@ -1088,11 +1091,23 @@ mod tests {
     use std::path::Path;
 
     use super::{apply_settings_draft_to_raw, settings_draft_from_config, settings_ipc_event};
-    use crate::config::Config;
+    use crate::config::{Config, validate_config_toml};
     use crate::types::{
         AppEvent, DisplayOverrideSettingsDraft, RankingScoreRuleSettingsDraft, SettingsCommand,
         UiColorschemeSettingsDraft,
     };
+
+    #[test]
+    fn structured_draft_loads_debug_log() {
+        let raw = "debug_log = true\n";
+        let config = validate_config_toml(Path::new("/tmp/runx-test-config.toml"), raw)
+            .expect("debug_log config should validate");
+
+        let draft = settings_draft_from_config(&config, raw)
+            .expect("debug_log config should produce a settings draft");
+
+        assert!(draft.debug_log);
+    }
 
     #[test]
     fn structured_save_preserves_unrelated_comments_and_tables() {
@@ -1103,6 +1118,7 @@ enabled = true
 "#;
         let mut draft = settings_draft_from_config(&Config::default(), raw)
             .expect("default config should produce a settings draft");
+        draft.debug_log = true;
         draft.window.visible_rows = 8;
         draft.ui.canvas.show = false;
         draft.providers.disabled = vec!["settings".to_owned()];
@@ -1113,6 +1129,7 @@ enabled = true
 
         assert!(saved.contains("# keep header"));
         assert!(saved.contains("[plugin.sample]"));
+        assert!(saved.contains("debug_log = true"));
         assert!(saved.contains("visible_rows = 8"));
         assert!(saved.contains("show = false"));
         assert!(saved.contains("disabled = [\"settings\"]"));
