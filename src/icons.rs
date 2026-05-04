@@ -15,6 +15,7 @@ use std::{
     path::{Path, PathBuf},
     sync::{Arc, Mutex, MutexGuard},
     thread,
+    time::{Duration, SystemTime},
 };
 
 use anyhow::{Context, Result};
@@ -42,6 +43,7 @@ const SYSTEM_SETTINGS_APP_CANDIDATES: [&str; 2] = [
 ];
 pub(super) const ICON_CACHE_FORMAT_VERSION: &str = "webp-v1";
 pub(super) const ICON_RENDER_SIZE: u32 = 64;
+const ICON_DISK_CACHE_TTL: Duration = Duration::from_secs(30 * 24 * 60 * 60);
 const MAX_IN_MEMORY_ICON_ENTRIES: usize = 2048;
 const MAX_ICON_RENDER_WORKERS: usize = 2;
 
@@ -154,6 +156,7 @@ impl IconCache {
         let cache_dir = base_dirs.cache_dir().join("runx/icons");
         fs::create_dir_all(&cache_dir)
             .with_context(|| format!("failed to create {}", cache_dir.display()))?;
+        cleanup_stale_disk_cache_entries(&cache_dir);
 
         Ok(Self {
             cache_dir,
@@ -371,6 +374,48 @@ impl IconCache {
     }
 }
 
+fn cleanup_stale_disk_cache_entries(cache_dir: &Path) {
+    let Some(cutoff) = SystemTime::now().checked_sub(ICON_DISK_CACHE_TTL) else {
+        return;
+    };
+    let Ok(entries) = fs::read_dir(cache_dir) else {
+        return;
+    };
+    let current_cache_suffix =
+        format!("-{}-{}px.webp", ICON_CACHE_FORMAT_VERSION, ICON_RENDER_SIZE);
+
+    for entry in entries.flatten() {
+        let Ok(file_type) = entry.file_type() else {
+            continue;
+        };
+        if !file_type.is_file() {
+            continue;
+        }
+
+        let path = entry.path();
+        let Some(file_name) = path.file_name().and_then(|name| name.to_str()) else {
+            continue;
+        };
+        if !is_current_icon_disk_cache_file(file_name, &current_cache_suffix) {
+            continue;
+        }
+
+        let Ok(metadata) = entry.metadata() else {
+            continue;
+        };
+        let Ok(modified) = metadata.modified() else {
+            continue;
+        };
+        if modified < cutoff {
+            let _ = fs::remove_file(path);
+        }
+    }
+}
+
+fn is_current_icon_disk_cache_file(file_name: &str, current_cache_suffix: &str) -> bool {
+    file_name.len() > current_cache_suffix.len() && file_name.ends_with(current_cache_suffix)
+}
+
 fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
@@ -404,18 +449,19 @@ fn system_settings_fallback_icon() -> String {
 mod tests {
     use std::{
         collections::HashMap,
-        fs,
-        path::PathBuf,
+        fs::{self, File, FileTimes},
+        path::{Path, PathBuf},
         process,
         sync::{Arc, Mutex},
-        time::{SystemTime, UNIX_EPOCH},
+        time::{Duration, SystemTime, UNIX_EPOCH},
     };
 
     use wry::http::{Request, StatusCode};
 
     use super::{
-        IconCache, IconMemoryCache, IconState, MAX_IN_MEMORY_ICON_ENTRIES,
-        bundle::cache_key_for_bundle, protocol::icon_protocol_url, worker::RenderLimiter,
+        ICON_DISK_CACHE_TTL, IconCache, IconMemoryCache, IconState, MAX_IN_MEMORY_ICON_ENTRIES,
+        bundle::cache_key_for_bundle, cleanup_stale_disk_cache_entries,
+        protocol::icon_protocol_url, worker::RenderLimiter,
     };
 
     #[test]
@@ -513,6 +559,107 @@ mod tests {
         cache.clear_process_bundle_cache();
 
         assert!(cache.process_bundles.lock().expect("cache lock").is_empty());
+    }
+
+    #[test]
+    fn cleanup_removes_matching_stale_webp_files() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let stale_cache_file = temp_dir.join("abc-webp-v1-64px.webp");
+        fs::write(&stale_cache_file, b"stale").expect("stale file should be written");
+        set_modified(
+            &stale_cache_file,
+            SystemTime::now()
+                .checked_sub(ICON_DISK_CACHE_TTL + Duration::from_secs(60))
+                .expect("stale time should be valid"),
+        );
+
+        cleanup_stale_disk_cache_entries(&temp_dir);
+
+        assert!(!stale_cache_file.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn cleanup_keeps_matching_recent_webp_files() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let recent_cache_file = temp_dir.join("abc-webp-v1-64px.webp");
+        fs::write(&recent_cache_file, b"recent").expect("recent file should be written");
+
+        cleanup_stale_disk_cache_entries(&temp_dir);
+
+        assert!(recent_cache_file.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn cleanup_keeps_non_cache_webp_and_unrelated_files() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let non_cache_webp = temp_dir.join("app-icon.webp");
+        let old_format_cache = temp_dir.join("abc-png-v1-64px.webp");
+        let unrelated_file = temp_dir.join("notes.txt");
+        for path in [&non_cache_webp, &old_format_cache, &unrelated_file] {
+            fs::write(path, b"stale").expect("file should be written");
+            set_modified(
+                path,
+                SystemTime::now()
+                    .checked_sub(ICON_DISK_CACHE_TTL + Duration::from_secs(60))
+                    .expect("stale time should be valid"),
+            );
+        }
+
+        cleanup_stale_disk_cache_entries(&temp_dir);
+
+        assert!(non_cache_webp.exists());
+        assert!(old_format_cache.exists());
+        assert!(unrelated_file.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn cleanup_keeps_directories_and_temp_render_files() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let matching_directory = temp_dir.join("abc-webp-v1-64px.webp");
+        let temp_render_file = temp_dir.join("abc-webp-v1-64px.tmp.webp");
+        fs::create_dir_all(&matching_directory).expect("matching directory should be created");
+        fs::write(&temp_render_file, b"temp").expect("temp render file should be written");
+        set_modified(
+            &temp_render_file,
+            SystemTime::now()
+                .checked_sub(ICON_DISK_CACHE_TTL + Duration::from_secs(60))
+                .expect("stale time should be valid"),
+        );
+
+        cleanup_stale_disk_cache_entries(&temp_dir);
+
+        assert!(matching_directory.exists());
+        assert!(temp_render_file.exists());
+
+        let _ = fs::remove_dir_all(&temp_dir);
+    }
+
+    #[test]
+    fn cleanup_ignores_missing_cache_dir() {
+        let temp_dir = unique_temp_dir();
+
+        cleanup_stale_disk_cache_entries(&temp_dir);
+
+        assert!(!temp_dir.exists());
+    }
+
+    fn set_modified(path: &Path, modified: SystemTime) {
+        File::options()
+            .write(true)
+            .open(path)
+            .expect("file should be opened")
+            .set_times(FileTimes::new().set_modified(modified))
+            .expect("file modified time should be set");
     }
 
     fn unique_temp_dir() -> PathBuf {
