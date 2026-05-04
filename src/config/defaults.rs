@@ -7,7 +7,7 @@ pub const DEFAULT_CONFIG: &str = r##"# Runx configuration
 # `score_rules` lets you boost or demote specific result text patterns.
 # `search_debounce_ms` tunes search scheduling.
 
-# debug_log = false
+debug_log = false
 
 [hotkey]
 shortcut = "Option+Space"

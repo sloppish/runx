@@ -19,6 +19,7 @@ use anyhow::{Context, Result, anyhow};
 use mlua::{Function, LuaSerdeExt, Table};
 use serde::Deserialize;
 use serde_json::Value as JsonValue;
+use tracing::warn;
 
 use crate::{
     macos::FrontmostApp,
@@ -90,7 +91,14 @@ impl PluginHost {
 
                 match load_plugin(&init, search_paths) {
                     Ok(plugin) => plugins.push(plugin),
-                    Err(error) => eprintln!("Skipping plugin {}: {error:#}", path.display()),
+                    Err(error) => {
+                        warn!(
+                            path = %path.display(),
+                            error = %format!("{error:#}"),
+                            "skipping plugin"
+                        );
+                        eprintln!("Skipping plugin {}: {error:#}", path.display());
+                    }
                 }
             }
         }

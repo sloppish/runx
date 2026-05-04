@@ -16,11 +16,11 @@ use wry::WebView;
 
 use crate::{
     config::{WindowConfig, WindowDisplayTarget},
-    debug_log,
     displays::{DisplayProfile, profile_from_monitor},
     macos::{self, FrontmostApp, capture_frontmost_app, cursor_display_location},
     state::AppState,
 };
+use tracing::{debug, warn};
 
 const INITIAL_BLUR_GUARD: Duration = Duration::from_millis(350);
 const RUNX_BUNDLE_ID: &str = "io.github.sloppish.runx";
@@ -39,23 +39,27 @@ impl WindowController {
     pub(crate) fn capture_previous_app(&mut self) {
         match capture_frontmost_app() {
             Ok(Some(app)) if !looks_like_runx(&app) => {
-                debug_log::append(format!(
-                    "capture_previous_app accepted name={:?} bundle_id={:?} path={:?}",
-                    app.name, app.bundle_id, app.path
-                ));
+                debug!(
+                    name = ?app.name,
+                    bundle_id = ?app.bundle_id,
+                    path = ?app.path,
+                    "capture_previous_app accepted"
+                );
                 self.previous_app = Some(app);
             }
             Ok(Some(app)) => {
-                debug_log::append(format!(
-                    "capture_previous_app ignored runx-like app name={:?} bundle_id={:?} path={:?}",
-                    app.name, app.bundle_id, app.path
-                ));
+                debug!(
+                    name = ?app.name,
+                    bundle_id = ?app.bundle_id,
+                    path = ?app.path,
+                    "capture_previous_app ignored runx-like app"
+                );
             }
             Ok(None) => {
-                debug_log::append("capture_previous_app found no frontmost app");
+                debug!("capture_previous_app found no frontmost app");
             }
             Err(error) => {
-                debug_log::append(format!("capture_previous_app error: {error:#}"));
+                warn!(error = %format!("{error:#}"), "capture_previous_app failed");
                 eprintln!("Failed to capture the frontmost app: {error:#}");
             }
         }

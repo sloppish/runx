@@ -12,6 +12,12 @@ use syn::{
 use toml::Value;
 
 const SECTION_ORDER: &[SectionSpec] = &[
+    SectionSpec::new(
+        "Top-level options",
+        SectionKind::Table,
+        "Config",
+        &[],
+    ),
     SectionSpec::new("[hotkey]", SectionKind::Table, "HotKeyConfig", &["hotkey"]),
     SectionSpec::new("[window]", SectionKind::Table, "WindowConfig", &["window"]),
     SectionSpec::new(
@@ -139,7 +145,8 @@ fn main() -> Result<()> {
         .context("failed to parse DEFAULT_CONFIG as TOML")?;
     let provider_names = extract_string_array_const(&file, "KNOWN_PROVIDER_NAMES")?;
     let builtin_schemes = extract_string_array_const(&file, "BUILTIN_COLORSCHEME_NAMES")?;
-    let color_token_names = extract_string_array_const(&file, "UI_COLOR_TOKEN_NAMES")?;
+    let color_token_names = extract_string_array_const(&file, "UI_COLOR_TOKEN_NAMES")
+        .or_else(|_| color_token_names_from_docs(&docs))?;
 
     validate_source_schema(
         &docs,
@@ -243,11 +250,79 @@ fn parse_config_items(file: &syn::File) -> Result<DocMap> {
                     DocItem::Enum(parse_enum(item_enum)),
                 );
             }
+            Item::Macro(item_macro) if item_macro.mac.path.is_ident("define_color_tokens") => {
+                items.insert(
+                    "UiColorOverridesConfig".to_string(),
+                    DocItem::Struct(parse_color_override_macro(&item_macro.mac.tokens.to_string())),
+                );
+            }
             _ => {}
         }
     }
 
     Ok(items)
+}
+
+fn parse_color_override_macro(tokens: &str) -> StructDef {
+    let fields = tokens
+        .split(',')
+        .map(str::trim)
+        .filter(|field| !field.is_empty())
+        .map(|field| FieldDef {
+            rust_name: field.to_string(),
+            toml_name: field.to_string(),
+            rust_type: "Option<String>".to_string(),
+            is_optional: true,
+            doc: color_token_doc(field).to_string(),
+        })
+        .collect();
+
+    StructDef {
+        doc: "Configurable UI color token overrides.".to_string(),
+        fields,
+    }
+}
+
+fn color_token_doc(field: &str) -> &'static str {
+    match field {
+        "accent" => "Primary highlight color. In custom schemes, this also derives hover, selected-row, badge, and chip highlight surfaces unless those advanced tokens are set.",
+        "panel" => "Panel surface color used by the built-in palette.",
+        "text" => "Primary foreground text color.",
+        "muted" => "Secondary or de-emphasized foreground text color.",
+        "canvas_bg" => "Background fill for the outer launcher canvas.",
+        "canvas_shadow" => "Shadow for the outer launcher canvas.",
+        "canvas_border" => "Border color for the outer launcher canvas.",
+        "label_strong" => "Stronger label color used for prominent small text.",
+        "input_bg" => "Background of the search input field.",
+        "input_border" => "Border color of the search input field.",
+        "input_shadow" => "Shadow of the search input field.",
+        "placeholder" => "Placeholder text color in the search input.",
+        "scrollbar" => "Scrollbar thumb color inside the results list.",
+        "item_bg" => "Default result-row background.",
+        "item_hover" => "Result-row background on hover.",
+        "item_selected_bg" => "Background of the currently selected result row.",
+        "item_selected_shadow" => "Shadow of the currently selected result row.",
+        "badge_bg" => "Background of text badges.",
+        "badge_border" => "Border color of text badges.",
+        "badge_text" => "Foreground text color of text badges.",
+        "badge_icon_bg" => "Background behind icon badges.",
+        "chip_text" => "Foreground color of accelerator chips.",
+        "chip_bg" => "Background color of accelerator chips.",
+        "chip_border" => "Border color of accelerator chips.",
+        "config_error_bg" => "Background of the dedicated config-error panel.",
+        "config_error_border" => "Border color of the config-error panel.",
+        "config_error_shadow" => "Shadow of the config-error panel.",
+        "config_error_title" => "Title color used in the config-error view.",
+        "config_error_copy" => "Body text color used in the config-error view.",
+        "canvas_hidden_input_bg" => "Input background when the outer canvas is disabled.",
+        "canvas_hidden_input_border" => "Input border when the outer canvas is disabled.",
+        "canvas_hidden_input_shadow" => "Input shadow when the outer canvas is disabled.",
+        "canvas_hidden_item_bg" => "Result-row background when the outer canvas is disabled.",
+        "canvas_hidden_item_hover" => "Result-row hover background when the outer canvas is disabled.",
+        "canvas_hidden_item_selected_bg" => "Selected result-row background when the outer canvas is disabled.",
+        "canvas_hidden_config_error_bg" => "Config-error panel background when the outer canvas is disabled.",
+        _ => "Custom color token.",
+    }
 }
 
 fn parse_struct(item: &ItemStruct) -> Result<StructDef> {
@@ -503,6 +578,20 @@ fn extract_string_array_const(file: &syn::File, name: &str) -> Result<Vec<String
         .collect()
 }
 
+fn color_token_names_from_docs(docs: &DocMap) -> Result<Vec<String>> {
+    let item = docs
+        .get("UiColorOverridesConfig")
+        .context("missing UiColorOverridesConfig docs")?;
+    let DocItem::Struct(overrides) = item else {
+        bail!("UiColorOverridesConfig is not a struct");
+    };
+    Ok(overrides
+        .fields
+        .iter()
+        .map(|field| field.toml_name.clone())
+        .collect())
+}
+
 fn validate_source_schema(
     docs: &DocMap,
     defaults: &Value,
@@ -589,10 +678,18 @@ fn validate_section_types(docs: &DocMap) -> Result<()> {
 
 fn validate_config_root_sections(docs: &DocMap) -> Result<()> {
     let root = expect_struct(docs, "Config")?;
-    let documented_roots = SECTION_ORDER
+    let mut documented_roots = SECTION_ORDER
         .iter()
         .filter_map(|section| section.default_path.first().copied())
         .collect::<HashSet<_>>();
+    for section in SECTION_ORDER
+        .iter()
+        .filter(|section| section.rust_type == "Config" && section.default_path.is_empty())
+    {
+        for field in visible_fields(section, root)? {
+            documented_roots.insert(field.toml_name.as_str());
+        }
+    }
 
     for field in &root.fields {
         if !documented_roots.contains(field.toml_name.as_str()) {
@@ -768,6 +865,9 @@ fn render_document(
     out.push_str("# Configuration\n\n");
     out.push_str(
         "Runx reads `~/Library/Application Support/runx/config.toml`. The file is created on first launch, validated on load, and reloaded when you open Runx after the file changes.\n\n",
+    );
+    out.push_str(
+        "`debug_log = true` enables diagnostic file logging after restart. Launcher startup rotates `debug.log` to `debug.log.old`, and a default launch may create an empty `debug.log` for fatal-error persistence even when diagnostic logging is disabled. `RUNX_LOG` enables file logging and accepts tracing `EnvFilter` directives such as `RUNX_LOG=runx=debug,wry=warn`; invalid values fall back to `runx=info`. `RUST_LOG` is not used. Settings app startup does not rotate or write the launcher log, and settings failures are only visible when stderr is visible.\n\n",
     );
 
     for section in SECTION_ORDER {
@@ -1020,6 +1120,7 @@ fn field_filter(path: &str) -> Option<&'static [&'static str]> {
             "colorscheme",
             "font_family",
         ]),
+        "Top-level options" => Some(&["debug_log"]),
         _ => None,
     }
 }

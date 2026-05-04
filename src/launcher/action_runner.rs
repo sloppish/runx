@@ -9,10 +9,10 @@ use tokio::runtime::Runtime;
 
 use crate::{
     actions::execute_action,
-    debug_log,
     plugins::{PluginExecutionContext, PluginHost},
     types::{AppEvent, SearchItem},
 };
+use tracing::{error, info};
 
 /// Executes selected actions and reports outcomes back into the event loop.
 #[derive(Clone)]
@@ -41,12 +41,14 @@ impl ActionRunner {
             let (message, is_error) = match result {
                 Ok(Some(message)) => (message, false),
                 Ok(None) => ("Action completed".to_owned(), false),
-                Err(error) => (error.to_string(), true),
+                Err(error) => {
+                    error!(all_windows, error = %format!("{error:#}"), "activate action failed");
+                    (error.to_string(), true)
+                }
             };
-            debug_log::append(format!(
-                "activate outcome all_windows={} is_error={} message={:?}",
-                all_windows, is_error, message
-            ));
+            if !is_error {
+                info!(all_windows, %message, "activate action completed");
+            }
             let _ = proxy.send_event(AppEvent::ActionOutcome { message, is_error });
         });
     }

@@ -8,12 +8,11 @@ use core_graphics::{
 use objc2_app_kit::{NSPasteboard, NSPasteboardTypeString};
 use objc2_foundation::NSString;
 
-use crate::debug_log;
-
 use super::{
     permissions::{ensure_accessibility_trusted, open_accessibility_settings},
     types::FrontmostApp,
 };
+use tracing::{debug, warn};
 
 const CLIPBOARD_RESTORE_DELAY: Duration = Duration::from_millis(250);
 
@@ -37,13 +36,13 @@ pub fn type_text_into_previous_app(
     text: &str,
     previous_app: Option<&FrontmostApp>,
 ) -> Result<String> {
-    debug_log::append(format!(
-        "type_text_into_previous_app start len={} previous_app={:?}",
-        text.chars().count(),
-        previous_app
-    ));
+    debug!(
+        len = text.chars().count(),
+        previous_app = ?previous_app,
+        "type_text_into_previous_app start"
+    );
     if !ensure_accessibility_trusted(true) {
-        debug_log::append("type_text_into_previous_app accessibility preflight returned false");
+        debug!("type_text_into_previous_app accessibility preflight returned false");
         open_accessibility_settings();
         bail!(
             "Runx needs Accessibility permission to type into other apps. Approve the system prompt or enable your terminal/runx in System Settings > Privacy & Security > Accessibility, then retry."
@@ -51,7 +50,7 @@ pub fn type_text_into_previous_app(
     }
 
     if requires_clipboard_paste(text) {
-        debug_log::append("type_text_into_previous_app using clipboard paste path");
+        debug!("type_text_into_previous_app using clipboard paste path");
         return paste_text_into_previous_app(text);
     }
 
@@ -78,13 +77,16 @@ fn schedule_clipboard_restore(previous_clipboard: Option<String>, inserted_text:
         match read_clipboard_text() {
             Ok(current) if current == inserted_text => {
                 if let Err(error) = write_clipboard_text(&previous_clipboard) {
-                    debug_log::append(format!("clipboard restore failed after paste: {error:#}"));
+                    warn!(error = %format!("{error:#}"), "clipboard restore failed after paste");
                 }
             }
             Ok(_) => {}
-            Err(error) => debug_log::append(format!(
-                "clipboard restore skipped after paste; could not read clipboard: {error:#}"
-            )),
+            Err(error) => {
+                warn!(
+                    error = %format!("{error:#}"),
+                    "clipboard restore skipped after paste; could not read clipboard"
+                );
+            }
         }
     });
 }

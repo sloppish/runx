@@ -13,7 +13,8 @@ use tray_icon::{
     menu::{CheckMenuItem, Menu, MenuEvent, MenuItem},
 };
 
-use crate::{assets::tray_icon_path, debug_log, macos, types::AppEvent};
+use crate::{assets::tray_icon_path, macos, types::AppEvent};
+use tracing::warn;
 
 const TRAY_ID: &str = "runx-tray";
 const MENU_OPEN_ID: &str = "tray-open";
@@ -41,9 +42,10 @@ impl TrayState {
                 Ok(Some(enabled)) => enabled,
                 Ok(None) => false,
                 Err(error) => {
-                    debug_log::append(format!(
-                        "tray install could not read launch at login status: {error:#}"
-                    ));
+                    warn!(
+                        error = %format!("{error:#}"),
+                        "tray install could not read launch at login status"
+                    );
                     false
                 }
             }

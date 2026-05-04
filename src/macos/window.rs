@@ -10,7 +10,7 @@ use core_graphics::{
 use objc2_app_kit::{NSWindow, NSWindowStyleMask};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
-use crate::debug_log;
+use tracing::{debug, warn};
 
 use super::{
     apps::{
@@ -90,10 +90,13 @@ pub fn focus_window(app_name: &str, window_title: &str, window_id: u32) -> Resul
                     return Ok(Some(format!("Focused {}", window_title)));
                 }
                 Err(error) => {
-                    debug_log::append(format!(
-                        "focus_window direct focus failed app={:?} title={:?} window_id={} error={error:#}",
-                        app_name, window_title, window_id
-                    ));
+                    debug!(
+                        app = ?app_name,
+                        title = ?window_title,
+                        window_id,
+                        error = %format!("{error:#}"),
+                        "focus_window direct focus failed"
+                    );
                 }
             }
         } else {
@@ -118,10 +121,13 @@ pub fn focus_window_and_activate_all_windows(
         let accessibility_trusted = ensure_accessibility_trusted(true);
         if accessibility_trusted {
             if let Err(error) = focus_window_for_pid(pid, window_id) {
-                debug_log::append(format!(
-                    "focus_window_and_activate_all_windows initial focus failed app={:?} title={:?} window_id={} error={error:#}",
-                    app_name, window_title, window_id
-                ));
+                debug!(
+                    app = ?app_name,
+                    title = ?window_title,
+                    window_id,
+                    error = %format!("{error:#}"),
+                    "focus_window_and_activate_all_windows initial focus failed"
+                );
             }
         } else {
             open_accessibility_settings();
@@ -138,10 +144,13 @@ pub fn focus_window_and_activate_all_windows(
                     )));
                 }
                 Err(error) => {
-                    debug_log::append(format!(
-                        "focus_window_and_activate_all_windows final focus failed app={:?} title={:?} window_id={} error={error:#}",
-                        app_name, window_title, window_id
-                    ));
+                    debug!(
+                        app = ?app_name,
+                        title = ?window_title,
+                        window_id,
+                        error = %format!("{error:#}"),
+                        "focus_window_and_activate_all_windows final focus failed"
+                    );
                 }
             }
         } else {
@@ -211,9 +220,11 @@ fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<ExactWindowFocus> 
             Ok(Some(window_id)) => window_id,
             Ok(None) => continue,
             Err(error) => {
-                debug_log::append(format!(
-                    "focus_window skipped inaccessible AX window pid={pid} error={error:#}"
-                ));
+                debug!(
+                    pid,
+                    error = %format!("{error:#}"),
+                    "focus_window skipped inaccessible AX window"
+                );
                 continue;
             }
         };
@@ -235,9 +246,12 @@ fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result
     let activated_app = match focus_cg_window(pid, window_id) {
         Ok(()) => true,
         Err(error) => {
-            debug_log::append(format!(
-                "focus_cg_window failed pid={pid} window_id={window_id} error={error:#}"
-            ));
+            warn!(
+                pid,
+                window_id,
+                error = %format!("{error:#}"),
+                "focus_cg_window failed"
+            );
             false
         }
     };

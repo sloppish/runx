@@ -22,8 +22,8 @@ use std::{
 
 use crate::{
     config::{self, LoadedConfig},
-    debug_log,
     icons::IconCache,
+    logging,
     macos::{self, configure_launcher_panel},
     plugins::{self, PluginExecutionContext},
     providers::ProviderSet,
@@ -44,6 +44,7 @@ use tao::{
     window::{Window, WindowBuilder, WindowId},
 };
 use tokio::runtime::{Builder, Runtime};
+use tracing::{debug, error, info, warn};
 use wry::http::Request;
 use wry::{WebView, WebViewBuilder};
 
@@ -106,7 +107,6 @@ impl Launcher {
         event_loop: &EventLoopWindowTarget<AppEvent>,
         proxy: EventLoopProxy<AppEvent>,
     ) -> Result<Self> {
-        debug_log::append(format!("launcher bootstrap pid={}", std::process::id()));
         let bootstrap = Self::prepare_runtime_config()?;
         let BootstrapConfig {
             loaded,
@@ -115,12 +115,11 @@ impl Launcher {
             plugin_routes,
             config_error,
         } = bootstrap;
+        logging::init_launcher_logging(loaded.config.debug_log);
+        info!(pid = std::process::id(), "launcher bootstrap");
         if let Some(error) = config_error.as_deref() {
-            debug_log::append(format!(
-                "error: Startup config invalid; using defaults: {error}"
-            ));
+            warn!(error = %error, "startup config invalid; using defaults");
         }
-        debug_log::configure(loaded.config.debug_log);
         let last_config_modified = config::config_modified_at(&loaded.config_path);
         let hotkey_manager =
             GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
@@ -452,17 +451,18 @@ impl Launcher {
 
     fn activate(&mut self, index: usize, all_windows: bool) {
         let Some(item) = self.state.session().rendered_item(index).cloned() else {
-            debug_log::append(format!("activate ignored missing index={index}"));
+            warn!(index, "activate ignored missing rendered item");
             return;
         };
-        debug_log::append(format!(
-            "activate index={index} all_windows={} title={:?} provider={} action={:?} previous_app={:?}",
+        debug!(
+            index,
             all_windows,
-            item.title,
-            item.provider,
-            item.action,
-            self.windows.previous_app()
-        ));
+            title = ?item.title,
+            provider = %item.provider,
+            action = ?item.action,
+            previous_app = ?self.windows.previous_app(),
+            "activate"
+        );
 
         let context = PluginExecutionContext {
             previous_app: self.windows.previous_app(),
@@ -665,19 +665,19 @@ impl Launcher {
     fn log_outcome(&self, message: String, is_error: bool) {
         if is_error {
             eprintln!("{message}");
-            debug_log::append(format!("error: {message}"));
+            error!(%message);
         } else {
-            debug_log::append(format!("info: {message}"));
+            info!(%message);
         }
     }
 
     fn ensure_launcher_key_focus(&self) -> Result<()> {
         self.windows.focus_window(&self.window);
         self.windows.focus_input(&self.webview)?;
-        debug_log::append(format!(
-            "launcher key focus after panel-native focus={}",
-            self.window.is_focused()
-        ));
+        debug!(
+            focused = self.window.is_focused(),
+            "launcher key focus after panel-native focus"
+        );
         Ok(())
     }
 }

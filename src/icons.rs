@@ -26,7 +26,8 @@ use wry::http::{
     header::{CACHE_CONTROL, CONTENT_TYPE},
 };
 
-use crate::{debug_log, types::AppEvent};
+use crate::types::AppEvent;
+use tracing::debug;
 
 use self::{
     bundle::{cache_key_for_bundle, find_bundle_icon_source, process_bundle_path},
@@ -305,10 +306,11 @@ impl IconCache {
 
                 let ready = render_result.is_ok();
                 if let Err(error) = render_result {
-                    debug_log::append(format!(
-                        "icon render failed bundle={} error={error:#}",
-                        bundle_path.display()
-                    ));
+                    debug!(
+                        bundle = %bundle_path.display(),
+                        error = %format!("{error:#}"),
+                        "icon render failed"
+                    );
                     let _ = fs::remove_file(&temp_webp_path);
                 }
 

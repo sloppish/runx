@@ -32,7 +32,10 @@ pub struct Config {
     pub plugin: HashMap<String, Table>,
     /// Launcher appearance and interaction settings.
     pub ui: UiConfig,
-    /// Enable file-based debug logging to debug.log.
+    /// Enable diagnostic file logging to `debug.log`.
+    ///
+    /// Changes require restarting Runx. Fatal launcher errors and panics may
+    /// still create `debug.log` even when this is false.
     pub debug_log: bool,
 }
 

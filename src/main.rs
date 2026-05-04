@@ -18,9 +18,9 @@
 
 mod actions;
 mod assets;
-mod debug_log;
 mod icons;
 mod launcher;
+mod logging;
 mod macos;
 mod plugins;
 mod providers;
@@ -45,7 +45,9 @@ pub use runx::{config, displays, ui};
 
 /// Starts the launcher process and reports any fatal startup error to stderr.
 fn main() {
+    logging::install_panic_hook();
     if let Err(error) = run() {
+        logging::fatal_error("fatal startup error", &error);
         eprintln!("{error:#}");
         std::process::exit(1);
     }

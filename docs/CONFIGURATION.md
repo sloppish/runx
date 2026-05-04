@@ -3,6 +3,16 @@
 
 Runx reads `~/Library/Application Support/runx/config.toml`. The file is created on first launch, validated on load, and reloaded when you open Runx after the file changes.
 
+`debug_log = true` enables diagnostic file logging after restart. Launcher startup rotates `debug.log` to `debug.log.old`, and a default launch may create an empty `debug.log` for fatal-error persistence even when diagnostic logging is disabled. `RUNX_LOG` enables file logging and accepts tracing `EnvFilter` directives such as `RUNX_LOG=runx=debug,wry=warn`; invalid values fall back to `runx=info`. `RUST_LOG` is not used. Settings app startup does not rotate or write the launcher log, and settings failures are only visible when stderr is visible.
+
+## Top-level options
+
+Root configuration object deserialized from `config.toml`.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `debug_log` | boolean | `false` | Enable diagnostic file logging to `debug.log`.  Changes require restarting Runx. Fatal launcher errors and panics may still create `debug.log` even when this is false. |
+
 ## [hotkey]
 
 User-facing global hotkey configuration.

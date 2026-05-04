@@ -17,6 +17,7 @@ use std::{
 };
 
 use tao::event_loop::EventLoopProxy;
+use tracing::error;
 
 use crate::{
     config::Config,
@@ -262,6 +263,11 @@ where
                 });
             }
             Err(error) => {
+                error!(
+                    provider = name,
+                    error = %format!("{error:#}"),
+                    "provider search failed"
+                );
                 let _ = request.proxy.send_event(AppEvent::ProviderError {
                     generation: request.generation,
                     provider: name.to_owned(),
