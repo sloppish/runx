@@ -1,6 +1,13 @@
 (function (root) {
   const send = (payload) => root.ipc.postMessage(JSON.stringify(payload));
   document.addEventListener("contextmenu", (event) => event.preventDefault());
+  document.addEventListener("click", (e) => {
+    const link = e.target.closest("[data-url]");
+    if (link) {
+      e.preventDefault();
+      send({ type: "open_url", url: link.dataset.url });
+    }
+  });
   const panes = Array.from(document.querySelectorAll("[data-pane-panel]"));
   const navItems = Array.from(document.querySelectorAll("[data-pane]"));
   const statusEl = document.getElementById("status");

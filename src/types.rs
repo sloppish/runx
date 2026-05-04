@@ -66,6 +66,7 @@ pub enum AppEvent {
     TrayOpen,
     TraySettings,
     TrayToggleAutostart,
+    TraySponsor,
     Quit,
     ProviderItems {
         generation: u64,
@@ -106,6 +107,7 @@ pub enum SettingsCommand {
     SaveRaw { raw: String },
     CopyText { text: String },
     PasteText,
+    OpenUrl { url: String },
     ClientError { message: String },
     Close,
 }

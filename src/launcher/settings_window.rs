@@ -190,6 +190,9 @@ fn handle_standalone_settings_command(
                 settings.paste_text(&text)?;
             }
         }
+        SettingsCommand::OpenUrl { url } => {
+            let _ = std::process::Command::new("open").arg(&url).spawn();
+        }
         SettingsCommand::ClientError { message } => {
             settings.set_status(&message, true)?;
         }

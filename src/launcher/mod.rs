@@ -251,6 +251,11 @@ impl Launcher {
             }
             AppEvent::TraySettings => self.open_settings_editor()?,
             AppEvent::TrayToggleAutostart => self.toggle_autostart()?,
+            AppEvent::TraySponsor => {
+                let _ = std::process::Command::new("open")
+                    .arg("https://oplachko.nl/sponsor")
+                    .spawn();
+            }
             AppEvent::Quit => std::process::exit(0),
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
             AppEvent::Settings(_) => {}

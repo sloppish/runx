@@ -63,10 +63,33 @@ textarea {
 }
 
 .nav {
+  display: flex;
+  flex-direction: column;
   border-right: 1px solid var(--border);
   background: var(--surface-2);
   padding: 18px 12px;
   overflow: auto;
+}
+
+.nav-footer {
+  margin-top: auto;
+  padding: 12px 8px;
+}
+
+.nav-link {
+  display: block;
+  padding: 8px 12px;
+  border-radius: 7px;
+  background: color-mix(in srgb, var(--accent) 12%, transparent);
+  color: var(--accent);
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  text-align: center;
+}
+
+.nav-link:hover {
+  background: color-mix(in srgb, var(--accent) 22%, transparent);
 }
 
 .brand {
