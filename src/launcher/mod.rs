@@ -120,6 +120,7 @@ impl Launcher {
                 "error: Startup config invalid; using defaults: {error}"
             ));
         }
+        debug_log::configure(loaded.config.debug_log);
         let last_config_modified = config::config_modified_at(&loaded.config_path);
         let hotkey_manager =
             GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;

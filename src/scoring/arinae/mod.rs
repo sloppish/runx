@@ -63,7 +63,6 @@ pub enum CaseMatching {
     Smart,
 }
 
-
 fn precompute_bonuses<C: Atom>(cho: &[C], buf: &mut Vec<Score>) {
     // Reset length (O(1), no deallocation) then fill with fresh values.
     buf.clear();

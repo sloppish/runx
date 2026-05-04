@@ -9,6 +9,11 @@ use std::{
 use directories::BaseDirs;
 
 static LOG_WRITER: OnceLock<Option<Mutex<BufWriter<File>>>> = OnceLock::new();
+static ENABLED: OnceLock<bool> = OnceLock::new();
+
+pub fn configure(enabled: bool) {
+    let _ = ENABLED.set(enabled);
+}
 
 fn open_log_file() -> Option<File> {
     let base_dirs = BaseDirs::new()?;
@@ -23,9 +28,13 @@ fn open_log_file() -> Option<File> {
 
 /// Appends a line to `~/Library/Application Support/runx/debug.log`.
 pub fn append(message: impl AsRef<str>) {
-    let Some(writer) = LOG_WRITER.get_or_init(|| {
-        open_log_file().map(|file| Mutex::new(BufWriter::new(file)))
-    }) else {
+    if ENABLED.get() == Some(&false) {
+        return;
+    }
+
+    let Some(writer) =
+        LOG_WRITER.get_or_init(|| open_log_file().map(|file| Mutex::new(BufWriter::new(file))))
+    else {
         return;
     };
 

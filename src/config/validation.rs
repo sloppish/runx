@@ -38,6 +38,7 @@ pub(super) struct RawConfigSpans {
     plugins: PluginsConfig,
     plugin: HashMap<String, Table>,
     ui: RawUiSpans,
+    debug_log: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -238,24 +239,48 @@ pub(super) fn validate_config_with_spans(
         "[ranking].provider_order",
     )?;
 
-    check_spanned!(config_path, raw, spans.window.width_fraction,
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.width_fraction,
         validate_window_dimension_fraction,
-        "[window].width_fraction must be greater than 0.0 and at most 1.0");
-    check_spanned!(config_path, raw, spans.window.visible_rows,
+        "[window].width_fraction must be greater than 0.0 and at most 1.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.visible_rows,
         validate_visible_rows,
-        "[window].visible_rows must be greater than 0");
-    check_spanned!(config_path, raw, spans.window.min_width,
+        "[window].visible_rows must be greater than 0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.min_width,
         validate_positive_dimension,
-        "[window].min_width must be greater than 0.0");
-    check_spanned!(config_path, raw, spans.window.max_width,
+        "[window].min_width must be greater than 0.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.max_width,
         validate_positive_dimension,
-        "[window].max_width must be greater than 0.0");
-    check_spanned!(config_path, raw, spans.window.min_height,
+        "[window].max_width must be greater than 0.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.min_height,
         validate_positive_dimension,
-        "[window].min_height must be greater than 0.0");
-    check_spanned!(config_path, raw, spans.window.max_height,
+        "[window].min_height must be greater than 0.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.max_height,
         validate_positive_dimension,
-        "[window].max_height must be greater than 0.0");
+        "[window].max_height must be greater than 0.0"
+    );
 
     if let (Some(min_width), Some(max_width)) = (&spans.window.min_width, &spans.window.max_width)
         && let Err(error) = validate_dimension_range(
@@ -291,15 +316,27 @@ pub(super) fn validate_config_with_spans(
     for (index, display_override) in spans.display_overrides.iter().enumerate() {
         let ctx = format!("[[display_overrides]] entry {}", index + 1);
 
-        check_spanned!(config_path, raw, display_override.serial,
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.serial,
             validate_positive_display_identifier,
-            &format!("{ctx}.serial must be greater than 0"));
-        check_spanned!(config_path, raw, display_override.vendor,
+            &format!("{ctx}.serial must be greater than 0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.vendor,
             validate_positive_display_identifier,
-            &format!("{ctx}.vendor must be greater than 0"));
-        check_spanned!(config_path, raw, display_override.model,
+            &format!("{ctx}.vendor must be greater than 0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.model,
             validate_positive_display_identifier,
-            &format!("{ctx}.model must be greater than 0"));
+            &format!("{ctx}.model must be greater than 0")
+        );
 
         if display_override.vendor.is_some() != display_override.model.is_some() {
             let span = display_override
@@ -317,24 +354,48 @@ pub(super) fn validate_config_with_spans(
             )));
         }
 
-        check_spanned!(config_path, raw, display_override.width_fraction,
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.width_fraction,
             validate_window_dimension_fraction,
-            &format!("{ctx}.width_fraction must be greater than 0.0 and at most 1.0"));
-        check_spanned!(config_path, raw, display_override.visible_rows,
+            &format!("{ctx}.width_fraction must be greater than 0.0 and at most 1.0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.visible_rows,
             validate_visible_rows,
-            &format!("{ctx}.visible_rows must be greater than 0"));
-        check_spanned!(config_path, raw, display_override.min_width,
+            &format!("{ctx}.visible_rows must be greater than 0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.min_width,
             validate_positive_dimension,
-            &format!("{ctx}.min_width must be greater than 0.0"));
-        check_spanned!(config_path, raw, display_override.max_width,
+            &format!("{ctx}.min_width must be greater than 0.0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.max_width,
             validate_positive_dimension,
-            &format!("{ctx}.max_width must be greater than 0.0"));
-        check_spanned!(config_path, raw, display_override.min_height,
+            &format!("{ctx}.max_width must be greater than 0.0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.min_height,
             validate_positive_dimension,
-            &format!("{ctx}.min_height must be greater than 0.0"));
-        check_spanned!(config_path, raw, display_override.max_height,
+            &format!("{ctx}.min_height must be greater than 0.0")
+        );
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.max_height,
             validate_positive_dimension,
-            &format!("{ctx}.max_height must be greater than 0.0"));
+            &format!("{ctx}.max_height must be greater than 0.0")
+        );
 
         if let (Some(min_width), Some(max_width)) =
             (&display_override.min_width, &display_override.max_width)
@@ -368,9 +429,13 @@ pub(super) fn validate_config_with_spans(
             )));
         }
 
-        check_spanned!(config_path, raw, display_override.scale,
+        check_spanned!(
+            config_path,
+            raw,
+            display_override.scale,
             validate_positive_scale,
-            &format!("{ctx}.scale must be greater than 0.0"));
+            &format!("{ctx}.scale must be greater than 0.0")
+        );
     }
 
     for (index, rule) in spans.ranking.score_rules.iter().enumerate() {
@@ -382,18 +447,34 @@ pub(super) fn validate_config_with_spans(
         )?;
     }
 
-    check_spanned!(config_path, raw, spans.window.scale,
+    check_spanned!(
+        config_path,
+        raw,
+        spans.window.scale,
         validate_positive_scale,
-        "[window].scale must be greater than 0.0");
-    check_spanned!(config_path, raw, spans.ui.canvas.background_opacity,
+        "[window].scale must be greater than 0.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.ui.canvas.background_opacity,
         validate_opacity,
-        "[ui.canvas].background_opacity must be between 0.0 and 1.0");
-    check_spanned!(config_path, raw, spans.ui.canvas.chrome_opacity,
+        "[ui.canvas].background_opacity must be between 0.0 and 1.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.ui.canvas.chrome_opacity,
         validate_opacity,
-        "[ui.canvas].chrome_opacity must be between 0.0 and 1.0");
-    check_spanned!(config_path, raw, spans.ui.entries.opacity,
+        "[ui.canvas].chrome_opacity must be between 0.0 and 1.0"
+    );
+    check_spanned!(
+        config_path,
+        raw,
+        spans.ui.entries.opacity,
         validate_opacity,
-        "[ui.entries].opacity must be between 0.0 and 1.0");
+        "[ui.entries].opacity must be between 0.0 and 1.0"
+    );
 
     if let Some(colorscheme) = &spans.ui.colorscheme
         && let Err(error) = validate_ui_colorscheme_name_impl(
@@ -493,10 +574,16 @@ fn validate_dimension_clamps(
     context: &str,
 ) -> Result<()> {
     if let Some(value) = min_width {
-        validate_positive_dimension(value, &format!("{context}.min_width must be greater than 0.0"))?;
+        validate_positive_dimension(
+            value,
+            &format!("{context}.min_width must be greater than 0.0"),
+        )?;
     }
     if let Some(value) = max_width {
-        validate_positive_dimension(value, &format!("{context}.max_width must be greater than 0.0"))?;
+        validate_positive_dimension(
+            value,
+            &format!("{context}.max_width must be greater than 0.0"),
+        )?;
     }
     if let Some(value) = min_height {
         validate_positive_dimension(

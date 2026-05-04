@@ -32,6 +32,8 @@ pub struct Config {
     pub plugin: HashMap<String, Table>,
     /// Launcher appearance and interaction settings.
     pub ui: UiConfig,
+    /// Enable file-based debug logging to debug.log.
+    pub debug_log: bool,
 }
 
 /// User-facing global hotkey configuration.
