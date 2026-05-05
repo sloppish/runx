@@ -158,7 +158,9 @@ fn enabled_providers_for_query(
 mod tests {
     use std::collections::HashSet;
 
-    use super::enabled_providers_for_query;
+    use anyhow::{Context, anyhow};
+
+    use super::{enabled_providers_for_query, provider_error_message};
 
     #[test]
     fn routed_plugin_queries_only_run_plugin_provider() {
@@ -209,6 +211,20 @@ mod tests {
         let enabled = enabled_providers_for_query("", &disabled_providers, true, false);
 
         assert_eq!(enabled, HashSet::new());
+    }
+
+    #[test]
+    fn provider_error_message_keeps_context_and_cause() {
+        let error = Err::<(), _>(anyhow!("underlying command exited 2"))
+            .context("plugin `pass` handler `search_type_password` search failed")
+            .expect_err("test error should be present");
+
+        let message = provider_error_message(&error);
+
+        assert_eq!(
+            message,
+            "underlying command exited 2 -- plugin `pass` handler `search_type_password` search failed"
+        );
     }
 }
 
@@ -271,8 +287,23 @@ where
                 let _ = request.proxy.send_event(AppEvent::ProviderError {
                     generation: request.generation,
                     provider: name.to_owned(),
-                    message: error.to_string(),
+                    message: provider_error_message(&error),
                 });
+            }
+        }
+    }
+}
+
+fn provider_error_message(error: &anyhow::Error) -> String {
+    let chain = error.chain().map(ToString::to_string).collect::<Vec<_>>();
+    match chain.as_slice() {
+        [] => error.to_string(),
+        [message] => message.clone(),
+        [context, rest @ ..] => {
+            if let Some(cause) = rest.last() {
+                format!("{cause} -- {context}")
+            } else {
+                context.clone()
             }
         }
     }

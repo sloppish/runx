@@ -346,9 +346,10 @@
         : item.icon
         ? `<div class="badge has-icon"><img class="icon-image" src="${escapeAttr(item.icon)}" alt="" /></div>`
         : `<div class="badge">${item.badge}</div>`;
+      const subtitleText = item.subtitle || "";
       const subtitleMarkup = item.compact
         ? ""
-        : `<div class="subtitle">${escapeHtml(item.subtitle)}</div>`;
+        : `<div class="subtitle" title="${escapeAttr(subtitleText)}">${escapeHtml(subtitleText)}</div>`;
       row.innerHTML = `
         ${badgeMarkup}
         <div class="copy">
