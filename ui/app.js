@@ -426,14 +426,14 @@
     if (isCtrlNextShortcut(event)) {
       event.preventDefault();
       moveSelection(state, 1, cycleSelectionEnabled());
-      render();
+      syncSelection();
       return;
     }
 
     if (isCtrlPreviousShortcut(event)) {
       event.preventDefault();
       moveSelection(state, -1, cycleSelectionEnabled());
-      render();
+      syncSelection();
       return;
     }
 
