@@ -72,7 +72,7 @@ impl TrayState {
             &sponsor_item,
             &quit_item,
         ])
-            .context("failed to build the tray menu")?;
+        .context("failed to build the tray menu")?;
 
         let open_id = open_item.id().clone();
         let settings_id = settings_item.id().clone();

@@ -24,7 +24,8 @@ pub use permissions::{ensure_accessibility_trusted, ensure_screen_recording_trus
 pub use types::FrontmostApp;
 pub use window::{
     accessibility_windows_for_pid, configure_launcher_panel, cursor_display_location,
-    focus_launcher_panel, focus_window, focus_window_and_activate_all_windows, show_launcher_panel,
+    display_logical_size, focus_launcher_panel, focus_window,
+    focus_window_and_activate_all_windows, position_launcher_panel, show_launcher_panel,
 };
 
 #[cfg(test)]

@@ -8,10 +8,7 @@ use std::time::{Duration, Instant};
 
 use anyhow::{Context, Result};
 use tao::platform::macos::MonitorHandleExtMacOS;
-use tao::{
-    dpi::{LogicalSize, PhysicalPosition},
-    window::Window,
-};
+use tao::{dpi::LogicalSize, window::Window};
 use wry::WebView;
 
 use crate::{
@@ -189,18 +186,41 @@ impl WindowController {
             return;
         };
 
-        let scale = monitor.scale_factor();
-        let monitor_size = monitor.size();
-        let monitor_origin = monitor.position();
-        let logical_monitor_width = monitor_size.width as f64 / scale;
-        let resolved_width = config.resolve_width(logical_monitor_width);
-        window.set_inner_size(LogicalSize::new(resolved_width, resolved_height));
-        let window_width = resolved_width * scale;
-        let window_height = resolved_height * scale;
-        let x = monitor_origin.x as f64 + (monitor_size.width as f64 - window_width) / 2.0;
-        let y = monitor_origin.y as f64 + (monitor_size.height as f64 - window_height) / 3.2;
+        #[cfg(target_os = "macos")]
+        {
+            let display_id = monitor.native_id();
+            if let Some(display_width) =
+                macos::display_logical_size(display_id).map(|(width, _)| width)
+            {
+                let resolved_width = config.resolve_width(display_width);
+                window.set_inner_size(LogicalSize::new(resolved_width, resolved_height));
+                if !macos::position_launcher_panel(
+                    window,
+                    display_id,
+                    resolved_width,
+                    resolved_height,
+                ) {
+                    warn!(display_id, "failed to position launcher on AppKit screen");
+                }
+                return;
+            }
 
-        window.set_outer_position(PhysicalPosition::new(x.round() as i32, y.round() as i32));
+            let fallback_width = config.fallback_size(ui).0;
+            window.set_inner_size(LogicalSize::new(fallback_width, resolved_height));
+            warn!(
+                display_id,
+                "failed to resolve AppKit screen for launcher placement"
+            );
+        }
+
+        #[cfg(not(target_os = "macos"))]
+        {
+            let scale = monitor.scale_factor();
+            let monitor_size = monitor.size();
+            let logical_monitor_width = monitor_size.width as f64 / scale;
+            let resolved_width = config.resolve_width(logical_monitor_width);
+            window.set_inner_size(LogicalSize::new(resolved_width, resolved_height));
+        }
     }
 }
 

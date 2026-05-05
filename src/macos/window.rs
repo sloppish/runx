@@ -7,7 +7,10 @@ use core_graphics::{
     event::CGEvent,
     event_source::{CGEventSource, CGEventSourceStateID},
 };
+use objc2::MainThreadMarker;
+use objc2_app_kit::NSScreen;
 use objc2_app_kit::{NSWindow, NSWindowStyleMask};
+use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, ns_string};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
 use tracing::{debug, warn};
@@ -27,6 +30,8 @@ use super::{
     },
     types::{AccessibilityWindow, CursorDisplayLocation},
 };
+
+const LAUNCHER_TOP_OFFSET_DIVISOR: f64 = 3.2;
 
 #[derive(Debug, Clone, Copy)]
 struct ExactWindowFocus {
@@ -71,6 +76,27 @@ pub fn show_launcher_panel(window: &Window) {
 pub fn focus_launcher_panel(window: &Window) {
     let window = ns_window(window);
     window.makeKeyWindow();
+}
+
+/// Returns the logical size of the AppKit screen for a CoreGraphics display ID.
+pub fn display_logical_size(display_id: u32) -> Option<(f64, f64)> {
+    let screen = screen_for_display_id(display_id)?;
+    let frame = screen.frame();
+    Some((frame.size.width, frame.size.height))
+}
+
+/// Positions the launcher panel on the selected AppKit screen.
+pub fn position_launcher_panel(window: &Window, display_id: u32, width: f64, height: f64) -> bool {
+    let Some(screen) = screen_for_display_id(display_id) else {
+        return false;
+    };
+
+    let frame = screen.frame();
+    let top_left = launcher_panel_top_left(frame, width, height);
+    let window = ns_window(window);
+    window.setContentSize(NSSize::new(width, height));
+    window.setFrameTopLeftPoint(top_left);
+    true
 }
 
 /// Focuses the selected window when possible, then activates the owning app.
@@ -274,6 +300,60 @@ fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result
     bail!("window exists but does not expose focus actions")
 }
 
+fn screen_for_display_id(display_id: u32) -> Option<objc2::rc::Retained<NSScreen>> {
+    let mtm = MainThreadMarker::new()?;
+    let screens = NSScreen::screens(mtm);
+    for index in 0..screens.count() {
+        let screen = screens.objectAtIndex(index);
+        if screen_display_id(&screen) == display_id {
+            return Some(screen);
+        }
+    }
+    None
+}
+
+fn screen_display_id(screen: &NSScreen) -> u32 {
+    screen
+        .deviceDescription()
+        .objectForKey(ns_string!("NSScreenNumber"))
+        .and_then(|value| value.downcast::<NSNumber>().ok())
+        .map_or(0, |value| value.as_u32())
+}
+
+fn launcher_panel_top_left(screen_frame: NSRect, window_width: f64, window_height: f64) -> NSPoint {
+    let x = screen_frame.origin.x + (screen_frame.size.width - window_width) / 2.0;
+    let top_offset = (screen_frame.size.height - window_height) / LAUNCHER_TOP_OFFSET_DIVISOR;
+    let y = screen_frame.origin.y + screen_frame.size.height - top_offset;
+    NSPoint::new(x.round(), y.round())
+}
+
 fn ns_window(window: &Window) -> &NSWindow {
     unsafe { &*(window.ns_window() as *mut NSWindow) }
+}
+
+#[cfg(test)]
+mod tests {
+    use objc2_foundation::{NSPoint, NSRect, NSSize};
+
+    use super::launcher_panel_top_left;
+
+    #[test]
+    fn launcher_panel_top_left_uses_right_hand_screen_frame() {
+        let screen_frame = NSRect::new(NSPoint::new(1728.0, 0.0), NSSize::new(2560.0, 1440.0));
+
+        let top_left = launcher_panel_top_left(screen_frame, 960.0, 500.0);
+
+        assert_eq!(top_left.x, 2528.0);
+        assert_eq!(top_left.y, 1146.0);
+    }
+
+    #[test]
+    fn launcher_panel_top_left_uses_lower_screen_frame() {
+        let screen_frame = NSRect::new(NSPoint::new(0.0, -1440.0), NSSize::new(2560.0, 1440.0));
+
+        let top_left = launcher_panel_top_left(screen_frame, 960.0, 500.0);
+
+        assert_eq!(top_left.x, 800.0);
+        assert_eq!(top_left.y, -294.0);
+    }
 }
