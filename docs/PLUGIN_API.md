@@ -16,6 +16,15 @@ You can add more plugin directories through `[plugins].directories` in `config.t
 - **`require` support:** Plugins can load sibling files via `require("utils")` which resolves to `utils.lua` or `utils/init.lua` in the same directory.
 - **Fresh state:** Runx evaluates the plugin in a fresh Lua state on every search or action. Do not rely on global variables surviving between calls. Garbage collection is disabled since the entire state is discarded after each call.
 
+## Editor Support
+
+Runx writes Lua language server metadata next to your user config:
+
+- `~/Library/Application Support/runx/.luarc.json`
+- `~/Library/Application Support/runx/types/runx.lua`
+
+Open `~/Library/Application Support/runx` as your editor workspace to get `runx.*` completions and diagnostics while editing plugins under `plugins/`.
+
 ## Minimal Plugin
 
 A plugin must return a table containing its identity and at least one search or action handler.

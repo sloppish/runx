@@ -1,0 +1,5 @@
+{
+  "diagnostics.globals": ["runx"],
+  "workspace.checkThirdParty": false,
+  "workspace.library": ["types"]
+}

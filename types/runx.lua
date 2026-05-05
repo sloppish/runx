@@ -1,0 +1,59 @@
+---@meta
+
+---@class Runx
+---@field api_version integer
+---@field plugin_path string
+---@field plugin_dir string
+---@field plugin_config table<string, any>
+runx = {}
+
+---@param candidate string
+---@param query string
+---@return integer
+function runx.fuzzy_score(candidate, query) end
+
+---@param name string
+---@return string?
+function runx.getenv(name) end
+
+---@param raw string
+---@return string[]
+function runx.parse_args(raw) end
+
+---@param root string
+---@return string[]
+function runx.walk_files(root) end
+
+---@param path string
+---@return string
+function runx.read_text(path) end
+
+---@param cmd string
+---@param args string[]
+---@param first_line? boolean
+---@param trim? boolean
+---@return string
+function runx.exec_capture(cmd, args, first_line, trim) end
+
+---@param cmd string
+---@param args string[]
+---@param silence_stderr? boolean
+---@return true
+function runx.exec_status(cmd, args, silence_stderr) end
+
+---@param cmd string
+---@param args string[]
+---@return any
+function runx.exec_json(cmd, args) end
+
+---@param text string
+function runx.copy_text(text) end
+
+---@return string
+function runx.clipboard_text() end
+
+---@param text string
+function runx.type_text(text) end
+
+---@return string
+function runx.home_dir() end

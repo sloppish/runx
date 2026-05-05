@@ -11,6 +11,7 @@ use std::{
 
 use anyhow::{Context, Result, anyhow};
 use directories::BaseDirs;
+use tracing::warn;
 
 mod defaults;
 mod errors;
@@ -27,6 +28,9 @@ use defaults::DEFAULT_CONFIG;
 use errors::render_toml_parse_error;
 use paths::{dedup_paths, resolve_path, runtime_paths};
 use validation::{RawConfigSpans, validate_config, validate_config_with_spans};
+
+const LUA_LS_CONFIG: &str = include_str!("../.luarc.json");
+const RUNX_LUA_TYPES: &str = include_str!("../types/runx.lua");
 
 /// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
@@ -92,11 +96,30 @@ pub fn ensure_user_config() -> Result<PathBuf> {
     let (root_dir, _, config_path) = runtime_paths()?;
     fs::create_dir_all(&root_dir)
         .with_context(|| format!("failed to create {}", root_dir.display()))?;
+    if let Err(error) = ensure_lua_ls_files(&root_dir) {
+        warn!(error = %format!("{error:#}"), "failed to install Lua language server files");
+    }
     if !config_path.exists() {
         fs::write(&config_path, DEFAULT_CONFIG)
             .with_context(|| format!("failed to write {}", config_path.display()))?;
     }
     Ok(config_path)
+}
+
+fn ensure_lua_ls_files(root_dir: &Path) -> Result<()> {
+    let types_dir = root_dir.join("types");
+    fs::create_dir_all(&types_dir)
+        .with_context(|| format!("failed to create {}", types_dir.display()))?;
+    let types_path = types_dir.join("runx.lua");
+    fs::write(&types_path, RUNX_LUA_TYPES)
+        .with_context(|| format!("failed to write {}", types_path.display()))?;
+
+    let lua_ls_config_path = root_dir.join(".luarc.json");
+    if !lua_ls_config_path.exists() {
+        fs::write(&lua_ls_config_path, LUA_LS_CONFIG)
+            .with_context(|| format!("failed to write {}", lua_ls_config_path.display()))?;
+    }
+    Ok(())
 }
 
 /// Parses and validates a raw Runx config document.
@@ -112,9 +135,39 @@ pub fn validate_config_toml(config_path: &Path, raw: &str) -> Result<Config> {
 
 #[cfg(test)]
 mod tests {
-    use std::path::Path;
+    use std::{fs, path::Path};
 
-    use super::{Config, WindowDisplayTarget, render_toml_parse_error, validate_config_toml};
+    use super::{
+        Config, WindowDisplayTarget, ensure_lua_ls_files, render_toml_parse_error,
+        validate_config_toml,
+    };
+
+    #[test]
+    fn lua_ls_files_are_installed_under_config_root() {
+        let root = tempfile::tempdir().expect("tempdir should be created");
+
+        ensure_lua_ls_files(root.path()).expect("lua_ls files should be installed");
+
+        let config = fs::read_to_string(root.path().join(".luarc.json"))
+            .expect(".luarc.json should be readable");
+        let types = fs::read_to_string(root.path().join("types/runx.lua"))
+            .expect("runx lua types should be readable");
+
+        assert!(config.contains("\"workspace.library\""));
+        assert!(types.contains("function runx.exec_capture"));
+    }
+
+    #[test]
+    fn lua_ls_install_preserves_existing_workspace_config() {
+        let root = tempfile::tempdir().expect("tempdir should be created");
+        let config_path = root.path().join(".luarc.json");
+        fs::write(&config_path, "{\"workspace.library\":[]}").expect("config should be written");
+
+        ensure_lua_ls_files(root.path()).expect("lua_ls files should be installed");
+
+        let config = fs::read_to_string(config_path).expect(".luarc.json should be readable");
+        assert_eq!(config, "{\"workspace.library\":[]}");
+    }
 
     mod hotkey_tests {
         use std::path::Path;
