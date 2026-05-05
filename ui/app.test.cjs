@@ -45,7 +45,7 @@ test("copy shortcut uses physical key code in config error mode", () => {
   );
   assert.equal(
     ui.isCopyShortcut({ code: "KeyC", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false }),
-    true,
+    false,
   );
   assert.equal(
     ui.isCopyShortcut({ code: "KeyC", metaKey: true, ctrlKey: false, altKey: true, shiftKey: false }),
@@ -60,7 +60,7 @@ test("paste shortcut uses physical key code", () => {
   );
   assert.equal(
     ui.isPasteShortcut({ code: "KeyV", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false }),
-    true,
+    false,
   );
   assert.equal(
     ui.isPasteShortcut({ code: "KeyV", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true }),

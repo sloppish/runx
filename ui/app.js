@@ -54,11 +54,11 @@
   }
 
   function isCopyShortcut(event) {
-    return event.code === "KeyC" && !event.altKey && !event.shiftKey && event.metaKey !== event.ctrlKey;
+    return event.code === "KeyC" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
   }
 
   function isPasteShortcut(event) {
-    return event.code === "KeyV" && !event.altKey && !event.shiftKey && event.metaKey !== event.ctrlKey;
+    return event.code === "KeyV" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
   }
 
   function selectedInputText(input) {
