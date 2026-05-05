@@ -127,17 +127,8 @@ impl WindowController {
 
     /// Shows the native window.
     pub(crate) fn show_window(&self, window: &Window) {
-        #[cfg(target_os = "macos")]
-        {
-            window.set_visible(true);
-            macos::show_launcher_panel(window);
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            window.set_visible(true);
-            window.set_focus();
-        }
+        window.set_visible(true);
+        macos::show_launcher_panel(window);
     }
 
     /// Hides the native window.
@@ -147,15 +138,7 @@ impl WindowController {
 
     /// Focuses the launcher window without changing its visibility state.
     pub(crate) fn focus_window(&self, window: &Window) {
-        #[cfg(target_os = "macos")]
-        {
-            macos::focus_launcher_panel(window);
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            window.set_focus();
-        }
+        macos::focus_launcher_panel(window);
     }
 
     /// Focuses the search input inside the webview.
@@ -186,41 +169,24 @@ impl WindowController {
             return;
         };
 
-        #[cfg(target_os = "macos")]
+        let display_id = monitor.native_id();
+        if let Some(display_width) = macos::display_logical_size(display_id).map(|(width, _)| width)
         {
-            let display_id = monitor.native_id();
-            if let Some(display_width) =
-                macos::display_logical_size(display_id).map(|(width, _)| width)
-            {
-                let resolved_width = config.resolve_width(display_width);
-                window.set_inner_size(LogicalSize::new(resolved_width, resolved_height));
-                if !macos::position_launcher_panel(
-                    window,
-                    display_id,
-                    resolved_width,
-                    resolved_height,
-                ) {
-                    warn!(display_id, "failed to position launcher on AppKit screen");
-                }
-                return;
-            }
-
-            let fallback_width = config.fallback_size(ui).0;
-            window.set_inner_size(LogicalSize::new(fallback_width, resolved_height));
-            warn!(
-                display_id,
-                "failed to resolve AppKit screen for launcher placement"
-            );
-        }
-
-        #[cfg(not(target_os = "macos"))]
-        {
-            let scale = monitor.scale_factor();
-            let monitor_size = monitor.size();
-            let logical_monitor_width = monitor_size.width as f64 / scale;
-            let resolved_width = config.resolve_width(logical_monitor_width);
+            let resolved_width = config.resolve_width(display_width);
             window.set_inner_size(LogicalSize::new(resolved_width, resolved_height));
+            if !macos::position_launcher_panel(window, display_id, resolved_width, resolved_height)
+            {
+                warn!(display_id, "failed to position launcher on AppKit screen");
+            }
+            return;
         }
+
+        let fallback_width = config.fallback_size(ui).0;
+        window.set_inner_size(LogicalSize::new(fallback_width, resolved_height));
+        warn!(
+            display_id,
+            "failed to resolve AppKit screen for launcher placement"
+        );
     }
 }
 

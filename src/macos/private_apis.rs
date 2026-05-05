@@ -40,7 +40,6 @@ const K_AX_ERROR_ACTION_UNSUPPORTED: AXError = -25206;
 const K_AX_ERROR_API_DISABLED: AXError = -25211;
 const K_AX_ERROR_NO_VALUE: AXError = -25212;
 
-#[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     fn AXUIElementCreateApplication(pid: c_int) -> AXUIElementRef;
@@ -63,7 +62,6 @@ unsafe extern "C" {
     fn _AXUIElementGetWindow(element: AXUIElementRef, out: *mut u32) -> AXError;
 }
 
-#[cfg(target_os = "macos")]
 unsafe extern "C" {
     fn dlopen(filename: *const c_char, flag: c_int) -> *mut c_void;
     fn dlsym(handle: *mut c_void, symbol: *const c_char) -> *mut c_void;

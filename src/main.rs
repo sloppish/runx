@@ -7,7 +7,7 @@
 //! - [`state`] owns pure launcher and search-session transitions.
 //! - [`providers`] contains the search sources and worker fan-out layer.
 //! - [`plugins`] hosts the Lua plugin runtime and command routing.
-//! - [`macos`] isolates platform-specific shell-outs and permissions.
+//! - [`macos`] isolates AppKit, Accessibility, Quartz, and related system integrations.
 //! - [`types`] defines the shared events and data models passed between modules.
 //!
 //! `main.rs` itself stays deliberately small so that `cargo doc` starts from a
@@ -31,7 +31,6 @@ mod types;
 
 use anyhow::Result;
 use global_hotkey::GlobalHotKeyEvent;
-#[cfg(target_os = "macos")]
 use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tao::{
     event::{Event, StartCause},
@@ -60,11 +59,8 @@ fn run() -> Result<()> {
     }
 
     let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
-    #[cfg(target_os = "macos")]
-    {
-        event_loop.set_activation_policy(ActivationPolicy::Accessory);
-        event_loop.set_dock_visibility(false);
-    }
+    event_loop.set_activation_policy(ActivationPolicy::Accessory);
+    event_loop.set_dock_visibility(false);
 
     let proxy = event_loop.create_proxy();
     let hotkey_proxy = proxy.clone();

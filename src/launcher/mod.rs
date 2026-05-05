@@ -35,7 +35,6 @@ use crate::{
 use action_runner::ActionRunner;
 use anyhow::{Context, Result};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
-#[cfg(target_os = "macos")]
 use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
     dpi::LogicalSize,
@@ -765,9 +764,7 @@ fn build_window(
         .with_decorations(false)
         .with_resizable(false)
         .with_inner_size(size)
-        .with_always_on_top(config.window.always_on_top);
-    #[cfg(target_os = "macos")]
-    let builder = builder
+        .with_always_on_top(config.window.always_on_top)
         .with_has_shadow(false)
         .with_non_activating_panel(true);
 
@@ -775,9 +772,7 @@ fn build_window(
         .build(event_loop)
         .context("failed to build the launcher window")?;
 
-    #[cfg(target_os = "macos")]
     window.set_has_shadow(false);
-    #[cfg(target_os = "macos")]
     configure_launcher_panel(&window);
 
     Ok(window)

@@ -7,7 +7,6 @@ use std::{collections::HashMap, fs, path::Path};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
-#[cfg(target_os = "macos")]
 use tao::platform::macos::{ActivationPolicy, EventLoopExtMacOS};
 use tao::{
     dpi::LogicalSize,
@@ -125,11 +124,8 @@ impl SettingsWindow {
 
 pub(crate) fn run_standalone_app() -> Result<()> {
     let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
-    #[cfg(target_os = "macos")]
-    {
-        event_loop.set_activation_policy(ActivationPolicy::Regular);
-        event_loop.set_dock_visibility(true);
-    }
+    event_loop.set_activation_policy(ActivationPolicy::Regular);
+    event_loop.set_dock_visibility(true);
 
     let proxy = event_loop.create_proxy();
     let settings = SettingsWindow::new(&event_loop, proxy)?;

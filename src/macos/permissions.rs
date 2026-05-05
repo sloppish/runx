@@ -9,7 +9,6 @@ use super::{private_apis::core_graphics_apis, process::run_quiet};
 const PRIVACY_ACCESSIBILITY: &str = "Privacy_Accessibility";
 const PRIVACY_SCREEN_CAPTURE: &str = "Privacy_ScreenCapture";
 
-#[cfg(target_os = "macos")]
 #[link(name = "ApplicationServices", kind = "framework")]
 unsafe extern "C" {
     static kAXTrustedCheckOptionPrompt: CFStringRef;
