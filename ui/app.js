@@ -423,6 +423,12 @@
       return;
     }
 
+    if (event.code === "KeyA" && event.metaKey && !event.altKey && !event.shiftKey && !event.ctrlKey) {
+      event.preventDefault();
+      inputEl.select();
+      return;
+    }
+
     if (isCtrlNextShortcut(event)) {
       event.preventDefault();
       moveSelection(state, 1, cycleSelectionEnabled());
