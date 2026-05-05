@@ -163,8 +163,12 @@ fn handle_standalone_settings_command(
     control_flow: &mut ControlFlow,
 ) -> Result<()> {
     match command {
-        SettingsCommand::Ready | SettingsCommand::Reload => {
+        SettingsCommand::Ready => {
             settings.refresh()?;
+        }
+        SettingsCommand::Reload => {
+            settings.refresh()?;
+            notify_launcher_reload();
         }
         SettingsCommand::Save { draft } => {
             save_draft(draft.as_ref())?;
