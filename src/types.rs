@@ -207,7 +207,17 @@ pub struct TimingSettingsDraft {
 pub struct PluginsSettingsDraft {
     pub directories: Vec<String>,
     pub search_paths: Vec<String>,
+    pub install: Vec<PluginInstallSettingsDraft>,
     pub plugin_toml: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
+pub struct PluginInstallSettingsDraft {
+    pub source: String,
+    #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
+    pub git_ref: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub branch: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

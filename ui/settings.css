@@ -492,6 +492,11 @@ textarea::placeholder {
   margin: 0;
 }
 
+.section-actions {
+  display: flex;
+  gap: 8px;
+}
+
 .item-header h3 {
   font-size: 12px;
   font-weight: 700;

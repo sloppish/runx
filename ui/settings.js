@@ -19,6 +19,7 @@
   const displayOverridesEl = document.getElementById("display-overrides");
   const providerBoostsEl = document.getElementById("provider-score-boosts");
   const scoreRulesEl = document.getElementById("score-rules");
+  const pluginInstallEl = document.getElementById("plugin-install-entries");
   const colorschemesEl = document.getElementById("custom-colorschemes");
   const configPathEl = document.getElementById("config-path");
   let state = root.__RUNX_INITIAL_SETTINGS__;
@@ -903,6 +904,53 @@
     });
   }
 
+  function renderPluginInstall(entries = []) {
+    pluginInstallEl.replaceChildren();
+    for (const entry of entries) {
+      addPluginInstall(entry);
+    }
+  }
+
+  function addPluginInstall(entry = {}) {
+    const wrapper = card("Plugin source", (node) => {
+      node.remove();
+      updateDirtyState();
+    });
+    const grid = document.createElement("div");
+    grid.className = "grid three";
+
+    const [sourceLabel, sourceInput] = labeledInput("Source URL", "text");
+    sourceInput.dataset.installField = "source";
+    sourceInput.placeholder = "https://github.com/user/plugin.git";
+    sourceInput.value = entry.source || "";
+
+    const [refLabel, refInput] = labeledInput("Tag (ref)", "text");
+    refInput.dataset.installField = "ref";
+    refInput.placeholder = "e.g. v1.0.0";
+    refInput.value = entry.ref || "";
+
+    const [branchLabel, branchInput] = labeledInput("Branch", "text");
+    branchInput.dataset.installField = "branch";
+    branchInput.placeholder = "e.g. main";
+    branchInput.value = entry.branch || "";
+
+    grid.append(sourceLabel, refLabel, branchLabel);
+    wrapper.append(grid);
+    pluginInstallEl.append(wrapper);
+  }
+
+  function collectPluginInstall() {
+    return Array.from(pluginInstallEl.querySelectorAll(".collection-item")).map((item) => {
+      const get = (key) => item.querySelector(`[data-install-field="${key}"]`);
+      const entry = { source: (get("source")?.value || "").trim() };
+      const ref = (get("ref")?.value || "").trim();
+      const branch = (get("branch")?.value || "").trim();
+      if (ref) entry.ref = ref;
+      if (branch) entry.branch = branch;
+      return entry;
+    }).filter((entry) => entry.source.length > 0);
+  }
+
   function renderCustomColorschemes(schemes = []) {
     colorschemesEl.replaceChildren();
     for (const scheme of schemes) {
@@ -1006,6 +1054,7 @@
         renderProviderOrder(payload.draft.ranking.provider_order);
         renderProviderBoosts(payload.draft.ranking.provider_score_boosts);
         renderScoreRules(payload.draft.ranking.score_rules);
+        renderPluginInstall(payload.draft.plugins.install);
         renderCustomColorschemes(payload.draft.ui.colorschemes);
         setStatus("");
       } else {
@@ -1013,6 +1062,7 @@
         renderProviderOrder([]);
         renderProviderBoosts({});
         renderScoreRules([]);
+        renderPluginInstall([]);
         renderCustomColorschemes([]);
         setPane("raw");
         setStatus(payload.error || "Config is invalid", true);
@@ -1070,6 +1120,7 @@
       plugins: {
         directories: lineList("plugins.directories"),
         search_paths: lineList("plugins.search_paths"),
+        install: collectPluginInstall(),
         plugin_toml: rawText("plugins.plugin_toml"),
       },
       ui: {
@@ -1180,6 +1231,11 @@
 
   document.getElementById("add-colorscheme").addEventListener("click", () => {
     addColorscheme({ name: nextColorschemeName(), base: "builtin_dark", tokens: {} });
+    updateDirtyState();
+  });
+
+  document.getElementById("add-plugin-install").addEventListener("click", () => {
+    addPluginInstall();
     updateDirtyState();
   });
 

@@ -78,7 +78,21 @@ pub fn update_all(
     for entry in entries {
         let id = match plugin_id_for_entry(plugins_dir, entry) {
             Some(id) => id,
-            None => continue,
+            None => {
+                match ensure_single_plugin(plugins_dir, entry, &mut lock) {
+                    Ok(id) => {
+                        results.insert(id, UpdateResult::Updated);
+                    }
+                    Err(error) => {
+                        let label = &entry.source;
+                        results.insert(
+                            label.clone(),
+                            UpdateResult::Failed(format!("{error:#}")),
+                        );
+                    }
+                }
+                continue;
+            }
         };
 
         let result = update_single_plugin(plugins_dir, &id, entry, &mut lock);
@@ -99,11 +113,18 @@ fn ensure_single_plugin(
     entry: &PluginInstallEntry,
     lock: &mut HashMap<String, LockEntry>,
 ) -> Result<String> {
+    let dir_name = dir_name_for_source(&entry.source);
+
     if let Some(id) = plugin_id_for_entry(plugins_dir, entry) {
         let plugin_path = plugins_dir.join(&id);
         if plugin_path.join("init.lua").exists() {
             return Ok(id);
         }
+    }
+
+    let target_dir = plugins_dir.join(&dir_name);
+    if target_dir.join("init.lua").exists() {
+        return Ok(dir_name);
     }
 
     let temp_dir = tempfile::tempdir_in(plugins_dir)
@@ -115,9 +136,6 @@ fn ensure_single_plugin(
     if !init_lua.exists() {
         bail!("cloned repo does not contain init.lua at its root");
     }
-
-    let id = extract_plugin_id(&init_lua)?;
-    let target_dir = plugins_dir.join(&id);
 
     if target_dir.exists() {
         fs::remove_dir_all(&target_dir).with_context(|| {
@@ -135,13 +153,12 @@ fn ensure_single_plugin(
         )
     })?;
 
-    // Keep temp_dir so it doesn't try to clean up the moved path
     let _ = temp_dir.keep();
 
     let commit = read_head_commit(&target_dir).unwrap_or_default();
     let now = now_iso8601();
     lock.insert(
-        id.clone(),
+        dir_name.clone(),
         LockEntry {
             source: entry.source.clone(),
             commit,
@@ -152,8 +169,8 @@ fn ensure_single_plugin(
         },
     );
 
-    info!(id = %id, source = %entry.source, "installed managed plugin");
-    Ok(id)
+    info!(id = %dir_name, source = %entry.source, "installed managed plugin");
+    Ok(dir_name)
 }
 
 fn update_single_plugin(
@@ -236,24 +253,14 @@ fn clone_repo(source: &str, target: &Path, entry: &PluginInstallEntry) -> Result
     Ok(())
 }
 
-fn extract_plugin_id(init_lua: &Path) -> Result<String> {
-    let source = fs::read_to_string(init_lua)
-        .with_context(|| format!("failed to read {}", init_lua.display()))?;
-
-    let lua = mlua::Lua::new();
-    let chunk = lua.load(&source).set_name(init_lua.to_string_lossy());
-    let table: mlua::Table = chunk
-        .eval()
-        .map_err(|e| anyhow::anyhow!("failed to evaluate init.lua: {e}"))?;
-
-    let id: Option<String> = table
-        .get("id")
-        .map_err(|e| anyhow::anyhow!("failed to read `id` from init.lua: {e}"))?;
-
-    match id {
-        Some(id) if !id.trim().is_empty() => Ok(id.trim().to_owned()),
-        _ => bail!("init.lua must export a non-empty `id` field"),
-    }
+fn dir_name_for_source(source: &str) -> String {
+    let stripped = source.trim_end_matches('/').trim_end_matches(".git");
+    stripped
+        .rsplit('/')
+        .next()
+        .filter(|s| !s.is_empty())
+        .unwrap_or("plugin")
+        .to_owned()
 }
 
 fn plugin_id_for_entry(plugins_dir: &Path, entry: &PluginInstallEntry) -> Option<String> {
@@ -385,36 +392,34 @@ mod tests {
     }
 
     #[test]
-    fn extract_id_trims_whitespace() {
-        let dir = tempfile::tempdir().unwrap();
-        let init_lua = dir.path().join("init.lua");
-        fs::write(&init_lua, r#"return { id = "  spaced  " }"#).unwrap();
-
-        let id = extract_plugin_id(&init_lua).unwrap();
-        assert_eq!(id, "spaced");
+    fn dir_name_from_https_url() {
+        assert_eq!(
+            dir_name_for_source("https://github.com/user/my-plugin.git"),
+            "my-plugin"
+        );
     }
 
     #[test]
-    fn extract_id_from_lua_source() {
-        let dir = tempfile::tempdir().unwrap();
-        let init_lua = dir.path().join("init.lua");
-        fs::write(
-            &init_lua,
-            r#"return { id = "my-plugin", name = "My Plugin" }"#,
-        )
-        .unwrap();
-
-        let id = extract_plugin_id(&init_lua).unwrap();
-        assert_eq!(id, "my-plugin");
+    fn dir_name_from_url_without_git_suffix() {
+        assert_eq!(
+            dir_name_for_source("https://github.com/user/cool-plugin"),
+            "cool-plugin"
+        );
     }
 
     #[test]
-    fn extract_id_fails_without_id_field() {
-        let dir = tempfile::tempdir().unwrap();
-        let init_lua = dir.path().join("init.lua");
-        fs::write(&init_lua, r#"return { name = "No ID" }"#).unwrap();
+    fn dir_name_from_local_path() {
+        assert_eq!(
+            dir_name_for_source("/Users/dev/projects/emoji"),
+            "emoji"
+        );
+    }
 
-        let result = extract_plugin_id(&init_lua);
-        assert!(result.is_err());
+    #[test]
+    fn dir_name_strips_trailing_slash() {
+        assert_eq!(
+            dir_name_for_source("/some/path/to/plugin/"),
+            "plugin"
+        );
     }
 }

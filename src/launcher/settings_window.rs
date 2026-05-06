@@ -30,7 +30,8 @@ use crate::{
     displays::active_displays,
     types::{
         AppEvent, AppsProviderSettingsDraft, DisplayOverrideSettingsDraft, HotkeySettingsDraft,
-        PluginsSettingsDraft, ProvidersSettingsDraft, RankingScoreRuleSettingsDraft,
+        PluginInstallSettingsDraft, PluginsSettingsDraft, ProvidersSettingsDraft,
+        RankingScoreRuleSettingsDraft,
         RankingSettingsDraft, SettingsCommand, SettingsDraft, TimingSettingsDraft,
         UiCanvasSettingsDraft, UiColorschemeSettingsDraft, UiEntriesSettingsDraft,
         UiFontSizesSettingsDraft, UiLayoutSettingsDraft, UiSettingsDraft, UiShortcutsSettingsDraft,
@@ -549,6 +550,16 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
         plugins: PluginsSettingsDraft {
             directories: config.plugins.directories.clone(),
             search_paths: config.plugins.search_paths.clone(),
+            install: config
+                .plugins
+                .install
+                .iter()
+                .map(|e| PluginInstallSettingsDraft {
+                    source: e.source.clone(),
+                    git_ref: e.git_ref.clone(),
+                    branch: e.branch.clone(),
+                })
+                .collect(),
             plugin_toml: plugin_toml_from_raw(raw)?,
         },
         ui: UiSettingsDraft {
@@ -811,6 +822,7 @@ fn apply_settings_draft_to_raw(
         ),
     )?;
     set_plugin_paths(&mut doc, &draft.plugins)?;
+    set_plugin_install(&mut doc, &draft.plugins.install)?;
     if current_draft
         .as_ref()
         .is_none_or(|current| current.plugins.plugin_toml != draft.plugins.plugin_toml)
@@ -971,6 +983,35 @@ fn set_plugin_paths(doc: &mut Document, plugins: &PluginsSettingsDraft) -> Resul
         "search_paths",
         string_array(&plugins.search_paths),
     )?;
+    Ok(())
+}
+
+fn set_plugin_install(doc: &mut Document, install: &[PluginInstallSettingsDraft]) -> Result<()> {
+    let plugins = doc
+        .as_table_mut()
+        .entry("plugins")
+        .or_insert_with(|| Item::Table(TomlTable::new()))
+        .as_table_mut()
+        .context("plugins is not a table")?;
+
+    if install.is_empty() {
+        plugins.remove("install");
+        return Ok(());
+    }
+
+    let mut array_of_tables = ArrayOfTables::new();
+    for entry in install {
+        let mut table = TomlTable::new();
+        table.insert("source", value(&entry.source));
+        if let Some(git_ref) = &entry.git_ref {
+            table.insert("ref", value(git_ref));
+        }
+        if let Some(branch) = &entry.branch {
+            table.insert("branch", value(branch));
+        }
+        array_of_tables.push(table);
+    }
+    plugins.insert("install", Item::ArrayOfTables(array_of_tables));
     Ok(())
 }
 

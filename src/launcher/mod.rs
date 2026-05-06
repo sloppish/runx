@@ -589,6 +589,13 @@ impl Launcher {
         let previous_config = self.loaded.config.clone();
 
         let loaded = LoadedConfig::load()?;
+
+        if !loaded.config.plugins.install.is_empty()
+            && let Some(managed_dir) = loaded.plugin_dirs.first()
+        {
+            plugins::manager::ensure_installed(managed_dir, &loaded.config.plugins.install);
+        }
+
         let reloaded_hotkey = loaded.config.hotkey()?;
         let plugin_config = loaded.config.plugin_config()?;
         let plugin_routes = loaded.config.plugin_routes()?;
