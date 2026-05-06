@@ -70,8 +70,6 @@ search_debounce_ms = 24
 [plugins]
 directories = []
 search_paths = []
-# Example:
-# search_paths = ["/opt/homebrew/bin"]
 
 # Per-plugin configuration can live under `[plugin.<id>]`.
 # Command routing can be configured under `[plugin.<id>.commands]`.

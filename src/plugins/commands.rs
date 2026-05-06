@@ -174,15 +174,21 @@ fn command_for_plugin(program: &str, search_paths: &[PathBuf]) -> Command {
     command
 }
 
+const IMPLICIT_SEARCH_PATHS: &[&str] = &["/opt/homebrew/bin"];
+
 fn plugin_search_path(search_paths: &[PathBuf]) -> OsString {
     let mut paths = match env::var_os("PATH") {
         Some(value) => env::split_paths(&value).collect::<Vec<_>>(),
         None => Vec::new(),
     };
 
-    for path in search_paths {
-        if !paths.iter().any(|candidate| candidate == path) {
-            paths.push(path.clone());
+    for path in IMPLICIT_SEARCH_PATHS
+        .iter()
+        .map(PathBuf::from)
+        .chain(search_paths.iter().cloned())
+    {
+        if !paths.iter().any(|candidate| candidate == &path) {
+            paths.push(path);
         }
     }
 
