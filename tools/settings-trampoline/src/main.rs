@@ -20,6 +20,6 @@ fn main() {
     };
 
     let err = Command::new(&runx).arg("--settings").exec();
-    eprintln!("settings-trampoline: exec failed: {err}");
+    eprintln!("settings-trampoline: failed to exec: {err}");
     std::process::exit(1);
 }

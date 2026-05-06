@@ -105,8 +105,6 @@ pub enum SettingsCommand {
     Reload,
     Save { draft: Box<SettingsDraft> },
     SaveRaw { raw: String },
-    CopyText { text: String },
-    PasteText,
     OpenUrl { url: String },
     ClientError { message: String },
     Close,

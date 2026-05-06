@@ -28,7 +28,6 @@ use crate::{
         WindowDisplayTarget, ensure_user_config, validate_config_toml,
     },
     displays::active_displays,
-    macos,
     types::{
         AppEvent, AppsProviderSettingsDraft, DisplayOverrideSettingsDraft, HotkeySettingsDraft,
         PluginsSettingsDraft, ProvidersSettingsDraft, RankingScoreRuleSettingsDraft,
@@ -111,18 +110,13 @@ impl SettingsWindow {
             .context("failed to update the settings status")
     }
 
-    pub(crate) fn paste_text(&self, text: &str) -> Result<()> {
-        let script = format!(
-            "window.__RUNX_SETTINGS_PASTE_TEXT__ && window.__RUNX_SETTINGS_PASTE_TEXT__({});",
-            serde_json::to_string(text)?
-        );
-        self.webview
-            .evaluate_script(&script)
-            .context("failed to paste clipboard text into settings editor")
-    }
 }
 
 pub(crate) fn run_standalone_app() -> Result<()> {
+    use objc2_foundation::{NSProcessInfo, NSString};
+    let name = NSString::from_str(SETTINGS_WINDOW_TITLE);
+    NSProcessInfo::processInfo().setProcessName(&name);
+
     let mut event_loop = EventLoopBuilder::<AppEvent>::with_user_event().build();
     event_loop.set_activation_policy(ActivationPolicy::Regular);
     event_loop.set_dock_visibility(true);
@@ -134,7 +128,10 @@ pub(crate) fn run_standalone_app() -> Result<()> {
         *control_flow = ControlFlow::Wait;
 
         let result = match event {
-            Event::NewEvents(StartCause::Init) => settings.show(),
+            Event::NewEvents(StartCause::Init) => {
+                override_app_menu_title(SETTINGS_WINDOW_TITLE);
+                settings.show()
+            }
             Event::WindowEvent {
                 window_id,
                 event: WindowEvent::CloseRequested,
@@ -155,6 +152,57 @@ pub(crate) fn run_standalone_app() -> Result<()> {
             let _ = settings.set_status(&message, true);
         }
     });
+}
+
+fn override_app_menu_title(title: &str) {
+    use objc2::{MainThreadMarker, MainThreadOnly, sel};
+    use objc2_app_kit::{NSApplication, NSMenu, NSMenuItem};
+    use objc2_foundation::NSString;
+
+    let Some(mtm) = MainThreadMarker::new() else {
+        return;
+    };
+    let app = NSApplication::sharedApplication(mtm);
+    let ns_title = NSString::from_str(title);
+
+    let menu_item = |title_str: &str, action: objc2::runtime::Sel, key: &str| unsafe {
+        NSMenuItem::initWithTitle_action_keyEquivalent(
+            NSMenuItem::alloc(mtm),
+            &NSString::from_str(title_str),
+            Some(action),
+            &NSString::from_str(key),
+        )
+    };
+
+    let menu_bar = NSMenu::new(mtm);
+
+    let app_menu_item = NSMenuItem::new(mtm);
+    let app_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &ns_title);
+    app_menu.addItem(&menu_item(&format!("Hide {title}"), sel!(hide:), "h"));
+    app_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    app_menu.addItem(&menu_item(&format!("Quit {title}"), sel!(terminate:), "q"));
+    app_menu_item.setSubmenu(Some(&app_menu));
+    menu_bar.addItem(&app_menu_item);
+
+    let edit_menu_item = NSMenuItem::new(mtm);
+    let edit_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Edit"));
+    edit_menu.addItem(&menu_item("Undo", sel!(undo:), "z"));
+    edit_menu.addItem(&menu_item("Redo", sel!(redo:), "Z"));
+    edit_menu.addItem(&NSMenuItem::separatorItem(mtm));
+    edit_menu.addItem(&menu_item("Cut", sel!(cut:), "x"));
+    edit_menu.addItem(&menu_item("Copy", sel!(copy:), "c"));
+    edit_menu.addItem(&menu_item("Paste", sel!(paste:), "v"));
+    edit_menu.addItem(&menu_item("Select All", sel!(selectAll:), "a"));
+    edit_menu_item.setSubmenu(Some(&edit_menu));
+    menu_bar.addItem(&edit_menu_item);
+
+    let window_menu_item = NSMenuItem::new(mtm);
+    let window_menu = NSMenu::initWithTitle(NSMenu::alloc(mtm), &NSString::from_str("Window"));
+    window_menu.addItem(&menu_item("Close Window", sel!(performClose:), "w"));
+    window_menu_item.setSubmenu(Some(&window_menu));
+    menu_bar.addItem(&window_menu_item);
+
+    app.setMainMenu(Some(&menu_bar));
 }
 
 fn handle_standalone_settings_command(
@@ -181,14 +229,6 @@ fn handle_standalone_settings_command(
             notify_launcher_reload();
             settings.refresh()?;
             settings.set_status("", false)?;
-        }
-        SettingsCommand::CopyText { text } => {
-            macos::copy_text_to_clipboard(&text)?;
-        }
-        SettingsCommand::PasteText => {
-            if let Ok(text) = macos::read_clipboard_text() {
-                settings.paste_text(&text)?;
-            }
         }
         SettingsCommand::OpenUrl { url } => {
             let _ = std::process::Command::new("open").arg(&url).spawn();
