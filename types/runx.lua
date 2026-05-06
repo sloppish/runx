@@ -47,6 +47,10 @@ function runx.exec_status(cmd, args, silence_stderr) end
 function runx.exec_json(cmd, args) end
 
 ---@param text string
+---@return any
+function runx.json_decode(text) end
+
+---@param text string
 function runx.copy_text(text) end
 
 ---@return string

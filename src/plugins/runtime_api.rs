@@ -159,6 +159,14 @@ fn install_runtime(
     )?;
 
     runtime.set(
+        "json_decode",
+        lua.create_function(move |lua, text: String| {
+            let value = serde_json::from_str::<JsonValue>(&text).map_err(mlua::Error::external)?;
+            lua.to_value(&value)
+        })?,
+    )?;
+
+    runtime.set(
         "copy_text",
         lua.create_function(move |_, text: String| {
             copy_text_to_clipboard(&text).map_err(mlua::Error::external)

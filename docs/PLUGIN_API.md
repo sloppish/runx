@@ -205,6 +205,10 @@ Runs a command; returns `true` on success, errors on failure.
 
 Runs a command, parses stdout as JSON, and returns it as a Lua table. Errors if the command fails or output is not valid JSON.
 
+#### `runx.json_decode(text: string) -> table`
+
+Parses a JSON string and returns it as a Lua table. Errors if the input is not valid JSON.
+
 ### Clipboard & Interaction
 
 #### `runx.copy_text(text: string)`
