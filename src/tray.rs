@@ -20,6 +20,7 @@ const TRAY_ID: &str = "runx-tray";
 const MENU_OPEN_ID: &str = "tray-open";
 const MENU_SETTINGS_ID: &str = "tray-settings";
 const MENU_AUTOSTART_ID: &str = "tray-autostart";
+const MENU_CHECK_UPDATES_ID: &str = "tray-check-updates";
 const MENU_SPONSOR_ID: &str = "tray-sponsor";
 const MENU_QUIT_ID: &str = "tray-quit";
 
@@ -30,6 +31,7 @@ pub struct TrayState {
     _open_item: MenuItem,
     _settings_item: MenuItem,
     autostart_item: CheckMenuItem,
+    _check_updates_item: MenuItem,
     _sponsor_item: MenuItem,
     _quit_item: MenuItem,
 }
@@ -63,12 +65,15 @@ impl TrayState {
             autostart_enabled,
             None,
         );
+        let check_updates_item =
+            MenuItem::with_id(MENU_CHECK_UPDATES_ID, "Check for Updates…", true, None);
         let sponsor_item = MenuItem::with_id(MENU_SPONSOR_ID, "Sponsor", true, None);
         let quit_item = MenuItem::with_id(MENU_QUIT_ID, "Quit Runx", true, None);
         menu.append_items(&[
             &open_item,
             &settings_item,
             &autostart_item,
+            &check_updates_item,
             &sponsor_item,
             &quit_item,
         ])
@@ -77,6 +82,7 @@ impl TrayState {
         let open_id = open_item.id().clone();
         let settings_id = settings_item.id().clone();
         let autostart_id = autostart_item.id().clone();
+        let check_updates_id = check_updates_item.id().clone();
         let sponsor_id = sponsor_item.id().clone();
         let quit_id = quit_item.id().clone();
         MenuEvent::set_event_handler(Some({
@@ -88,6 +94,8 @@ impl TrayState {
                     Some(AppEvent::TraySettings)
                 } else if event.id == autostart_id {
                     Some(AppEvent::TrayToggleAutostart)
+                } else if event.id == check_updates_id {
+                    Some(AppEvent::TrayCheckForUpdates)
                 } else if event.id == sponsor_id {
                     Some(AppEvent::TraySponsor)
                 } else if event.id == quit_id {
@@ -132,6 +140,7 @@ impl TrayState {
             _open_item: open_item,
             _settings_item: settings_item,
             autostart_item,
+            _check_updates_item: check_updates_item,
             _sponsor_item: sponsor_item,
             _quit_item: quit_item,
         })

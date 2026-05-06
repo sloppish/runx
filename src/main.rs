@@ -28,6 +28,7 @@ mod scoring;
 mod state;
 mod tray;
 mod types;
+mod updates;
 
 use anyhow::Result;
 use global_hotkey::GlobalHotKeyEvent;

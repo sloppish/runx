@@ -255,6 +255,11 @@ impl Launcher {
                     .arg("https://oplachko.nl/sponsor")
                     .spawn();
             }
+            AppEvent::TrayCheckForUpdates => {
+                self.runtime
+                    .handle()
+                    .spawn_blocking(crate::updates::check_for_updates);
+            }
             AppEvent::Quit => {
                 terminate_settings_app();
                 std::process::exit(0);
