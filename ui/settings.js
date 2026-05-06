@@ -519,7 +519,7 @@
     }
   }
 
-  function buildDisplayTargetBlock(selectedDisplay) {
+  function buildDisplayTargetBlock(selectedDisplay, disconnectedEntry) {
     const target = document.createElement("div");
     target.className = "display-target";
     const targetLabel = document.createElement("label");
@@ -532,11 +532,38 @@
     for (const display of state.displays || []) {
       targetSelect.append(option(display.key, display.label));
     }
-    targetSelect.append(option("manual", "Manual identity"));
-    targetSelect.value = selectedDisplay?.key || "manual";
+    if (disconnectedEntry) {
+      const key = displayKeyFor(disconnectedEntry);
+      const opt = option(key, disconnectedDisplayLabel(disconnectedEntry));
+      opt.disabled = true;
+      targetSelect.append(opt);
+      targetSelect.append(option("manual", "Manual identity"));
+      targetSelect.value = key;
+    } else {
+      targetSelect.append(option("manual", "Manual identity"));
+      targetSelect.value = selectedDisplay?.key || "manual";
+    }
     targetLabel.append(targetText, targetSelect);
     target.append(targetLabel, targetSummary);
     return { target, targetSelect, targetSummary };
+  }
+
+  function disconnectedDisplayLabel(entry) {
+    const parts = [];
+    if (entry.built_in != null) {
+      parts.push(entry.built_in ? "Built-in" : "External");
+    }
+    if (entry.vendor != null) {
+      parts.push(`vendor ${entry.vendor}`);
+    }
+    if (entry.model != null) {
+      parts.push(`model ${entry.model}`);
+    }
+    if (entry.serial != null) {
+      parts.push(`serial ${entry.serial}`);
+    }
+    const label = parts.length > 0 ? parts.join(" · ") : "Unknown display";
+    return `${label} (disconnected)`;
   }
 
   function buildIdentityBlock(entry) {
@@ -603,7 +630,9 @@
       ? (state.displays || []).find((display) => display.key === preferredDisplayKey)
       : displayForOverride(entry);
 
-    const { target, targetSelect, targetSummary } = buildDisplayTargetBlock(selectedDisplay);
+    const hasIdentity = entry.built_in != null || entry.vendor != null || entry.model != null || entry.serial != null;
+    const disconnectedEntry = !selectedDisplay && hasIdentity ? entry : null;
+    const { target, targetSelect, targetSummary } = buildDisplayTargetBlock(selectedDisplay, disconnectedEntry);
     const { identity, builtIn } = buildIdentityBlock(entry);
     const grid = buildDimensionsGrid(entry);
 
@@ -615,10 +644,12 @@
         wrapper.querySelector('[data-override-field="model"]').value = display.model ?? "";
         wrapper.querySelector('[data-override-field="serial"]').value = display.serial ?? "";
         targetSummary.textContent = displayIdentitySummary(display);
+        identity.hidden = true;
       } else {
+        const isDisconnected = targetSelect.value !== "manual";
+        identity.hidden = isDisconnected;
         targetSummary.textContent = "";
       }
-      identity.hidden = !!display;
     }
 
     wrapper.append(target, identity, grid);
