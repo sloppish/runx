@@ -255,7 +255,10 @@ impl Launcher {
                     .arg("https://oplachko.nl/sponsor")
                     .spawn();
             }
-            AppEvent::Quit => std::process::exit(0),
+            AppEvent::Quit => {
+                terminate_settings_app();
+                std::process::exit(0);
+            }
             AppEvent::Frontend(command) => self.handle_frontend(command)?,
             AppEvent::Settings(_) => {}
             AppEvent::ReloadConfig => self.reload_config_after_settings_save()?,
@@ -718,6 +721,21 @@ impl Launcher {
 fn packaged_settings_app_path() -> Result<Option<PathBuf>> {
     let executable = std::env::current_exe().context("failed to resolve current executable")?;
     Ok(settings_app_bundle_path_from_executable(&executable).filter(|path| path.is_dir()))
+}
+
+fn terminate_settings_app() {
+    use objc2_app_kit::NSRunningApplication;
+    use objc2_foundation::NSString;
+
+    let my_pid = std::process::id() as i32;
+    let bundle_id = NSString::from_str("io.github.sloppish.runx");
+    let apps = NSRunningApplication::runningApplicationsWithBundleIdentifier(&bundle_id);
+    for index in 0..apps.count() {
+        let app = apps.objectAtIndex(index);
+        if app.processIdentifier() != my_pid {
+            app.terminate();
+        }
+    }
 }
 
 fn settings_app_bundle_path_from_executable(executable: &Path) -> Option<PathBuf> {

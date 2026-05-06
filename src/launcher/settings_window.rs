@@ -109,7 +109,6 @@ impl SettingsWindow {
             .evaluate_script(&script)
             .context("failed to update the settings status")
     }
-
 }
 
 pub(crate) fn run_standalone_app() -> Result<()> {
