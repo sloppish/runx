@@ -32,26 +32,35 @@ pub enum UpdateResult {
 
 /// Ensures all configured managed plugins are cloned locally.
 /// Called during launcher bootstrap.
-pub fn ensure_installed(plugins_dir: &Path, entries: &[PluginInstallEntry]) -> Vec<String> {
+/// Result of ensure_installed: any install errors encountered.
+pub struct InstallResult {
+    pub errors: Vec<String>,
+}
+
+pub fn ensure_installed(plugins_dir: &Path, entries: &[PluginInstallEntry]) -> InstallResult {
     let lockfile_path = plugins_dir.parent().map(|p| p.join("plugins.lock.toml"));
     let mut lock = lockfile_path
         .as_deref()
         .map(read_lockfile)
         .unwrap_or_default();
-    let mut installed_ids = Vec::new();
+    let mut errors = Vec::new();
 
     for entry in entries {
         match ensure_single_plugin(plugins_dir, entry, &mut lock) {
-            Ok(id) => installed_ids.push(id),
+            Ok(_) => {}
             Err(error) => {
+                let msg = format!("{}: {error:#}", entry.source);
                 warn!(
                     source = %entry.source,
                     error = %format!("{error:#}"),
                     "failed to install managed plugin"
                 );
+                errors.push(msg);
             }
         }
     }
+
+    prune_removed(plugins_dir, entries, &mut lock);
 
     if let Some(path) = lockfile_path.as_deref()
         && let Err(error) = write_lockfile(path, &lock)
@@ -59,7 +68,7 @@ pub fn ensure_installed(plugins_dir: &Path, entries: &[PluginInstallEntry]) -> V
         warn!(error = %format!("{error:#}"), "failed to write plugins lockfile");
     }
 
-    installed_ids
+    InstallResult { errors }
 }
 
 /// Updates all managed plugins that are not pinned to a tag.
@@ -85,10 +94,7 @@ pub fn update_all(
                     }
                     Err(error) => {
                         let label = &entry.source;
-                        results.insert(
-                            label.clone(),
-                            UpdateResult::Failed(format!("{error:#}")),
-                        );
+                        results.insert(label.clone(), UpdateResult::Failed(format!("{error:#}")));
                     }
                 }
                 continue;
@@ -124,6 +130,21 @@ fn ensure_single_plugin(
 
     let target_dir = plugins_dir.join(&dir_name);
     if target_dir.join("init.lua").exists() {
+        if !lock.contains_key(&dir_name) {
+            let commit = read_head_commit(&target_dir).unwrap_or_default();
+            let now = now_iso8601();
+            lock.insert(
+                dir_name.clone(),
+                LockEntry {
+                    source: entry.source.clone(),
+                    commit,
+                    git_ref: entry.git_ref.clone(),
+                    branch: entry.branch.clone(),
+                    installed_at: now.clone(),
+                    updated_at: now,
+                },
+            );
+        }
         return Ok(dir_name);
     }
 
@@ -261,6 +282,33 @@ fn dir_name_for_source(source: &str) -> String {
         .filter(|s| !s.is_empty())
         .unwrap_or("plugin")
         .to_owned()
+}
+
+fn prune_removed(
+    plugins_dir: &Path,
+    entries: &[PluginInstallEntry],
+    lock: &mut HashMap<String, LockEntry>,
+) {
+    let active_sources: std::collections::HashSet<&str> =
+        entries.iter().map(|e| e.source.as_str()).collect();
+
+    let stale: Vec<String> = lock
+        .iter()
+        .filter(|(_, v)| !active_sources.contains(v.source.as_str()))
+        .map(|(k, _)| k.clone())
+        .collect();
+
+    for id in stale {
+        lock.remove(&id);
+        let plugin_path = plugins_dir.join(&id);
+        if plugin_path.join(".git").exists() {
+            if let Err(error) = fs::remove_dir_all(&plugin_path) {
+                warn!(id = %id, error = %error, "failed to remove uninstalled managed plugin");
+            } else {
+                info!(id = %id, "removed managed plugin (no longer in config)");
+            }
+        }
+    }
 }
 
 fn plugin_id_for_entry(plugins_dir: &Path, entry: &PluginInstallEntry) -> Option<String> {
@@ -409,17 +457,11 @@ mod tests {
 
     #[test]
     fn dir_name_from_local_path() {
-        assert_eq!(
-            dir_name_for_source("/Users/dev/projects/emoji"),
-            "emoji"
-        );
+        assert_eq!(dir_name_for_source("/Users/dev/projects/emoji"), "emoji");
     }
 
     #[test]
     fn dir_name_strips_trailing_slash() {
-        assert_eq!(
-            dir_name_for_source("/some/path/to/plugin/"),
-            "plugin"
-        );
+        assert_eq!(dir_name_for_source("/some/path/to/plugin/"), "plugin");
     }
 }

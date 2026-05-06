@@ -538,9 +538,7 @@ impl Launcher {
     }
 
     fn build_bootstrap_config(loaded: LoadedConfig) -> Result<BootstrapConfig> {
-        if !loaded.config.plugins.install.is_empty()
-            && let Some(managed_dir) = loaded.plugin_dirs.first()
-        {
+        if let Some(managed_dir) = loaded.plugin_dirs.first() {
             plugins::manager::ensure_installed(managed_dir, &loaded.config.plugins.install);
         }
         let hotkey = loaded.config.hotkey()?;
@@ -590,9 +588,7 @@ impl Launcher {
 
         let loaded = LoadedConfig::load()?;
 
-        if !loaded.config.plugins.install.is_empty()
-            && let Some(managed_dir) = loaded.plugin_dirs.first()
-        {
+        if let Some(managed_dir) = loaded.plugin_dirs.first() {
             plugins::manager::ensure_installed(managed_dir, &loaded.config.plugins.install);
         }
 

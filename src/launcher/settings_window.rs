@@ -31,11 +31,10 @@ use crate::{
     types::{
         AppEvent, AppsProviderSettingsDraft, DisplayOverrideSettingsDraft, HotkeySettingsDraft,
         PluginInstallSettingsDraft, PluginsSettingsDraft, ProvidersSettingsDraft,
-        RankingScoreRuleSettingsDraft,
-        RankingSettingsDraft, SettingsCommand, SettingsDraft, TimingSettingsDraft,
-        UiCanvasSettingsDraft, UiColorschemeSettingsDraft, UiEntriesSettingsDraft,
-        UiFontSizesSettingsDraft, UiLayoutSettingsDraft, UiSettingsDraft, UiShortcutsSettingsDraft,
-        WindowSettingsDraft, WindowsProviderSettingsDraft,
+        RankingScoreRuleSettingsDraft, RankingSettingsDraft, SettingsCommand, SettingsDraft,
+        TimingSettingsDraft, UiCanvasSettingsDraft, UiColorschemeSettingsDraft,
+        UiEntriesSettingsDraft, UiFontSizesSettingsDraft, UiLayoutSettingsDraft, UiSettingsDraft,
+        UiShortcutsSettingsDraft, WindowSettingsDraft, WindowsProviderSettingsDraft,
     },
     ui::builtin_colorscheme_token_values,
 };
@@ -220,15 +219,25 @@ fn handle_standalone_settings_command(
         }
         SettingsCommand::Save { draft } => {
             save_draft(draft.as_ref())?;
+            let install_errors = run_plugin_install();
             notify_launcher_reload();
             settings.refresh()?;
-            settings.set_status("", false)?;
+            if install_errors.is_empty() {
+                settings.set_status("", false)?;
+            } else {
+                settings.set_status(&install_errors.join("; "), true)?;
+            }
         }
         SettingsCommand::SaveRaw { raw } => {
             save_raw(&raw)?;
+            let install_errors = run_plugin_install();
             notify_launcher_reload();
             settings.refresh()?;
-            settings.set_status("", false)?;
+            if install_errors.is_empty() {
+                settings.set_status("", false)?;
+            } else {
+                settings.set_status(&install_errors.join("; "), true)?;
+            }
         }
         SettingsCommand::OpenUrl { url } => {
             let _ = std::process::Command::new("open").arg(&url).spawn();
@@ -244,6 +253,19 @@ fn handle_standalone_settings_command(
         }
     }
     Ok(())
+}
+
+fn run_plugin_install() -> Vec<String> {
+    use crate::config::LoadedConfig;
+    use crate::plugins::manager::ensure_installed;
+
+    let Ok(loaded) = LoadedConfig::load() else {
+        return Vec::new();
+    };
+    let Some(managed_dir) = loaded.plugin_dirs.first() else {
+        return Vec::new();
+    };
+    ensure_installed(managed_dir, &loaded.config.plugins.install).errors
 }
 
 fn notify_launcher_reload() {
