@@ -77,6 +77,7 @@ pub struct SearchSession {
     search_token: u64,
     provider_items: HashMap<String, Vec<SearchItem>>,
     rendered_items: Vec<SearchItem>,
+    rendered_query: String,
     pending_providers: usize,
 }
 
@@ -89,6 +90,7 @@ impl SearchSession {
         self.config_error = None;
         self.provider_items.clear();
         self.rendered_items.clear();
+        self.rendered_query.clear();
         self.pending_providers = 0;
     }
 
@@ -195,7 +197,13 @@ impl SearchSession {
             self.pending_providers > 0 && next_items.is_empty() && !self.rendered_items.is_empty();
         if !keep_previous_items {
             self.rendered_items = next_items;
+            self.rendered_query = self.query.clone();
         }
+    }
+
+    /// Returns whether the rendered items correspond to a query older than the current one.
+    pub fn has_stale_results(&self) -> bool {
+        self.query != self.rendered_query
     }
 
     /// Converts the session into the frontend-facing serialized view model.

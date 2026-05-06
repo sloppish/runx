@@ -115,6 +115,11 @@ impl ProviderSet {
         }
     }
 
+    /// Returns whether the query matches a routed plugin command.
+    pub fn is_routed_query(&self, query: &str) -> bool {
+        self.plugins_host.is_routed_query(query)
+    }
+
     fn enabled_providers(&self, query: &str) -> impl Iterator<Item = &'static str> {
         let enabled = enabled_providers_for_query(
             query,

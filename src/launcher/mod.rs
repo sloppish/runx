@@ -454,19 +454,47 @@ impl Launcher {
     }
 
     fn activate(&mut self, index: usize, all_windows: bool) {
-        let Some(item) = self.state.session().rendered_item(index).cloned() else {
+        let stale_query = if self.state.session().has_stale_results() {
+            let query = self.state.session().query();
+            if self.providers.is_routed_query(query) {
+                Some(query.to_owned())
+            } else {
+                None
+            }
+        } else {
+            None
+        };
+
+        let item = if stale_query.is_some() {
+            None
+        } else {
+            self.state.session().rendered_item(index).cloned()
+        };
+
+        if item.is_none() && stale_query.is_none() {
             warn!(index, "activate ignored missing rendered item");
             return;
-        };
-        debug!(
-            index,
-            all_windows,
-            title = ?item.title,
-            provider = %item.provider,
-            action = ?item.action,
-            previous_app = ?self.windows.previous_app(),
-            "activate"
-        );
+        }
+
+        if let Some(ref item) = item {
+            debug!(
+                index,
+                all_windows,
+                title = ?item.title,
+                provider = %item.provider,
+                action = ?item.action,
+                previous_app = ?self.windows.previous_app(),
+                "activate"
+            );
+        } else {
+            debug!(
+                index,
+                all_windows,
+                stale_query = ?stale_query,
+                previous_app = ?self.windows.previous_app(),
+                "activate with stale results, re-searching"
+            );
+        }
 
         let context = PluginExecutionContext {
             previous_app: self.windows.previous_app(),
@@ -480,6 +508,7 @@ impl Launcher {
             &self.runtime,
             self.proxy.clone(),
             item,
+            stale_query,
             all_windows,
             context,
         );
