@@ -11,6 +11,7 @@ OUT_DIR="$ROOT_DIR/dist"
 APP_ICON_SOURCE="$ROOT_DIR/assets/runx-app-icon.svg"
 TRAY_ICON_SOURCE="$ROOT_DIR/assets/runx-status-template.svg"
 SVG2PNG_TOOL_MANIFEST="$ROOT_DIR/tools/svg2png/Cargo.toml"
+TRAMPOLINE_MANIFEST="$ROOT_DIR/tools/settings-trampoline/Cargo.toml"
 UNIVERSAL=0
 
 usage() {
@@ -175,23 +176,36 @@ if [[ "$UNIVERSAL" -eq 1 ]]; then
       cargo_args+=(--release)
     fi
     cargo "${cargo_args[@]}"
+
+    cargo_args=(build --manifest-path "$TRAMPOLINE_MANIFEST" --target "$target")
+    if [[ "${PROFILE}" == "release" ]]; then
+      cargo_args+=(--release)
+    fi
+    cargo "${cargo_args[@]}"
   done
 
   UNIVERSAL_BIN_DIR="$TARGET_DIR/universal/$PROFILE"
   mkdir -p "$UNIVERSAL_BIN_DIR"
   bin_paths=()
+  trampoline_paths=()
   for target in "${targets[@]}"; do
     bin_paths+=("$TARGET_DIR/$target/$PROFILE/runx")
+    trampoline_paths+=("$TARGET_DIR/$target/$PROFILE/settings-trampoline")
   done
   lipo -create "${bin_paths[@]}" -output "$UNIVERSAL_BIN_DIR/runx"
+  lipo -create "${trampoline_paths[@]}" -output "$UNIVERSAL_BIN_DIR/settings-trampoline"
   BIN_PATH="$UNIVERSAL_BIN_DIR/runx"
+  TRAMPOLINE_PATH="$UNIVERSAL_BIN_DIR/settings-trampoline"
 else
   if [[ "${PROFILE}" == "release" ]]; then
     cargo build --bin runx --release --manifest-path "$ROOT_DIR/Cargo.toml"
+    cargo build --release --manifest-path "$TRAMPOLINE_MANIFEST"
   else
     cargo build --bin runx --manifest-path "$ROOT_DIR/Cargo.toml"
+    cargo build --manifest-path "$TRAMPOLINE_MANIFEST"
   fi
   BIN_PATH="$TARGET_DIR/$PROFILE/runx"
+  TRAMPOLINE_PATH="$TARGET_DIR/$PROFILE/settings-trampoline"
 fi
 
 BUNDLE_PATH="$OUT_DIR/${APP_NAME}.app"
@@ -208,7 +222,7 @@ mkdir -p "$MACOS_PATH" "$RESOURCES_PATH" "$SETTINGS_MACOS_PATH" "$SETTINGS_RESOU
 
 cp "$BIN_PATH" "$MACOS_PATH/runx"
 chmod 755 "$MACOS_PATH/runx"
-cp "$BIN_PATH" "$SETTINGS_MACOS_PATH/runx-settings"
+cp "$TRAMPOLINE_PATH" "$SETTINGS_MACOS_PATH/runx-settings"
 chmod 755 "$SETTINGS_MACOS_PATH/runx-settings"
 build_app_icon "$RESOURCES_PATH"
 build_tray_icon "$RESOURCES_PATH"

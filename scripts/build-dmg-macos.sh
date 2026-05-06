@@ -213,7 +213,7 @@ hdiutil create \
   -volname "$VOLUME_NAME" \
   -srcfolder "$stage_dir" \
   -ov \
-  -format UDZO \
+  -format ULMO \
   "$DMG_PATH" >/dev/null
 
 if [[ "$SIGN_IDENTITY" != "-" ]]; then

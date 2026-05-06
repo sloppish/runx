@@ -41,6 +41,12 @@ wry = { version = "0.55", features = ["transparent"] }
 [patch.crates-io]
 tao = { git = "https://github.com/sloppish/tao.git", rev = "c355c45d1323721e759eb7c3dde3fb9533b04e09" }
 
+[profile.release]
+strip = true
+lto = "thin"
+codegen-units = 1
+panic = "abort"
+
 [lints.rustdoc]
 broken_intra_doc_links = "deny"
 
