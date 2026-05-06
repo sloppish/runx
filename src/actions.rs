@@ -30,11 +30,17 @@ pub fn execute_action(
             app_name,
             window_title,
             window_id,
+            pid,
         } => {
             if all_windows {
-                macos::focus_window_and_activate_all_windows(app_name, window_title, *window_id)
+                macos::focus_window_and_activate_all_windows(
+                    app_name,
+                    window_title,
+                    *window_id,
+                    *pid,
+                )
             } else {
-                macos::focus_window(app_name, window_title, *window_id)
+                macos::focus_window(app_name, window_title, *window_id, *pid)
             }
         }
         Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload, context),

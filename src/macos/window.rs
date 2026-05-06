@@ -1,6 +1,6 @@
 use std::ffi::c_int;
 
-use anyhow::{Context, Result, bail};
+use anyhow::{Result, bail};
 use core_foundation::base::TCFType;
 use core_graphics::{
     display::CGDisplay,
@@ -18,8 +18,7 @@ use tracing::{debug, warn};
 use super::{
     apps::{
         AppActivationMode, activate_running_application_by_pid,
-        activate_running_application_by_pid_with_mode, open_named_application,
-        running_application_pid_by_name,
+        activate_running_application_by_pid_with_mode,
     },
     permissions::{ensure_accessibility_trusted, open_accessibility_settings},
     private_apis::{
@@ -101,40 +100,37 @@ pub fn position_launcher_panel(window: &Window, display_id: u32, width: f64, hei
 
 /// Focuses the selected window when possible, then activates the owning app.
 /// Falls back to activating/opening the app if exact window focus is unavailable.
-pub fn focus_window(app_name: &str, window_title: &str, window_id: u32) -> Result<Option<String>> {
-    if let Some(pid) = running_application_pid_by_name(app_name) {
-        if ensure_accessibility_trusted(true) {
-            match focus_window_for_pid(pid, window_id) {
-                Ok(focus) => {
-                    if !focus.activated_app {
-                        activate_running_application_by_pid_with_mode(
-                            pid,
-                            AppActivationMode::Default,
-                        )?;
-                        let _ = focus_window_for_pid(pid, window_id);
-                    }
-                    return Ok(Some(format!("Focused {}", window_title)));
+pub fn focus_window(
+    app_name: &str,
+    window_title: &str,
+    window_id: u32,
+    pid: i64,
+) -> Result<Option<String>> {
+    let pid = pid as c_int;
+    if ensure_accessibility_trusted(true) {
+        match focus_window_for_pid(pid, window_id) {
+            Ok(focus) => {
+                if !focus.activated_app {
+                    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
+                    let _ = focus_window_for_pid(pid, window_id);
                 }
-                Err(error) => {
-                    debug!(
-                        app = ?app_name,
-                        title = ?window_title,
-                        window_id,
-                        error = %format!("{error:#}"),
-                        "focus_window direct focus failed"
-                    );
-                }
+                return Ok(Some(format!("Focused {}", window_title)));
             }
-        } else {
-            open_accessibility_settings();
+            Err(error) => {
+                debug!(
+                    app = ?app_name,
+                    title = ?window_title,
+                    window_id,
+                    error = %format!("{error:#}"),
+                    "focus_window direct focus failed"
+                );
+            }
         }
-
-        activate_running_application_by_pid(pid)?;
-        return Ok(Some(format!("Activated {}", app_name)));
+    } else {
+        open_accessibility_settings();
     }
 
-    open_named_application(app_name)
-        .with_context(|| format!("failed to activate {app_name} for window focus"))?;
+    activate_running_application_by_pid(pid)?;
     Ok(Some(format!("Activated {}", app_name)))
 }
 
@@ -142,56 +138,52 @@ pub fn focus_window_and_activate_all_windows(
     app_name: &str,
     window_title: &str,
     window_id: u32,
+    pid: i64,
 ) -> Result<Option<String>> {
-    if let Some(pid) = running_application_pid_by_name(app_name) {
-        let accessibility_trusted = ensure_accessibility_trusted(true);
-        if accessibility_trusted {
-            if let Err(error) = focus_window_for_pid(pid, window_id) {
+    let pid = pid as c_int;
+    let accessibility_trusted = ensure_accessibility_trusted(true);
+    if accessibility_trusted {
+        if let Err(error) = focus_window_for_pid(pid, window_id) {
+            debug!(
+                app = ?app_name,
+                title = ?window_title,
+                window_id,
+                error = %format!("{error:#}"),
+                "focus_window_and_activate_all_windows initial focus failed"
+            );
+        }
+    } else {
+        open_accessibility_settings();
+    }
+
+    activate_running_application_by_pid_with_mode(pid, AppActivationMode::AllWindows)?;
+
+    if accessibility_trusted {
+        match focus_window_for_pid(pid, window_id) {
+            Ok(_) => {
+                return Ok(Some(format!(
+                    "Focused {} and activated all {} windows",
+                    window_title, app_name
+                )));
+            }
+            Err(error) => {
                 debug!(
                     app = ?app_name,
                     title = ?window_title,
                     window_id,
                     error = %format!("{error:#}"),
-                    "focus_window_and_activate_all_windows initial focus failed"
+                    "focus_window_and_activate_all_windows final focus failed"
                 );
             }
-        } else {
-            open_accessibility_settings();
         }
-
-        activate_running_application_by_pid_with_mode(pid, AppActivationMode::AllWindows)?;
-
-        if accessibility_trusted {
-            match focus_window_for_pid(pid, window_id) {
-                Ok(_) => {
-                    return Ok(Some(format!(
-                        "Focused {} and activated all {} windows",
-                        window_title, app_name
-                    )));
-                }
-                Err(error) => {
-                    debug!(
-                        app = ?app_name,
-                        title = ?window_title,
-                        window_id,
-                        error = %format!("{error:#}"),
-                        "focus_window_and_activate_all_windows final focus failed"
-                    );
-                }
-            }
-        } else {
-            return Ok(Some(format!(
-                "Activated all {} windows (window focus requires Accessibility permission)",
-                app_name
-            )));
-        }
-
-        return Ok(Some(format!("Activated all {} windows", app_name)));
+    } else {
+        return Ok(Some(format!(
+            "Activated all {} windows (window focus requires Accessibility permission)",
+            app_name
+        )));
     }
 
-    open_named_application(app_name)
-        .with_context(|| format!("failed to activate {app_name} for all-window focus"))?;
-    Ok(Some(format!("Activated {}", app_name)))
+    Ok(Some(format!("Activated all {} windows", app_name)))
 }
 
 /// Returns Accessibility-visible windows for a running application.

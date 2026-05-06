@@ -104,6 +104,7 @@ impl WindowsProvider {
                     app_name: window.owner,
                     window_title: window.title,
                     window_id: window.window_id,
+                    pid: window.pid,
                 },
             })
             .collect())

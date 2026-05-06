@@ -65,24 +65,6 @@ pub fn running_application_is_regular(pid: i64) -> bool {
     false
 }
 
-pub(super) fn open_named_application(name: &str) -> Result<()> {
-    run_quiet("open", &["-a", name])
-}
-
-pub(super) fn running_application_pid_by_name(name: &str) -> Option<c_int> {
-    let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
-    for index in 0..running_apps.count() {
-        let candidate = running_apps.objectAtIndex(index);
-        if candidate
-            .localizedName()
-            .is_some_and(|actual| actual.to_string() == name)
-        {
-            return Some(candidate.processIdentifier());
-        }
-    }
-    None
-}
-
 pub(super) fn activate_running_application_by_pid(pid: c_int) -> Result<()> {
     activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)
 }

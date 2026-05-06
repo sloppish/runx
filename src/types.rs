@@ -43,6 +43,7 @@ pub enum Action {
         app_name: String,
         window_title: String,
         window_id: u32,
+        pid: i64,
     },
     Plugin {
         plugin_id: String,
