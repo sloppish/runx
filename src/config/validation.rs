@@ -99,6 +99,7 @@ struct RawWindowSpans {
     always_on_top: bool,
     show_on: WindowDisplayTarget,
     scale: Option<Spanned<f64>>,
+    show_animation: bool,
 }
 
 #[derive(Debug, Deserialize, Default)]

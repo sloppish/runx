@@ -1092,6 +1092,7 @@
         max_height: optionalFloat("window.max_height"),
         hide_when_inactive: bool("window.hide_when_inactive"),
         always_on_top: bool("window.always_on_top"),
+        show_animation: bool("window.show_animation"),
         show_on: text("window.show_on"),
         scale: float("window.scale"),
       },

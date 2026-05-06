@@ -23,6 +23,7 @@ hide_when_inactive = true
 always_on_top = true
 show_on = "cursor"
 scale = 1.0
+show_animation = true
 
 # Optional per-display size overrides.
 # Matching prefers serial number, then vendor/model, then built-in/external.

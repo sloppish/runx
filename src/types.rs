@@ -144,6 +144,7 @@ pub struct WindowSettingsDraft {
     pub always_on_top: bool,
     pub show_on: String,
     pub scale: f64,
+    pub show_animation: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -9,7 +9,7 @@ use core_graphics::{
 };
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSScreen;
-use objc2_app_kit::{NSWindow, NSWindowStyleMask};
+use objc2_app_kit::{NSWindow, NSWindowAnimationBehavior, NSWindowStyleMask};
 use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, ns_string};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
@@ -56,12 +56,27 @@ pub fn cursor_display_location() -> Option<CursorDisplayLocation> {
 }
 
 /// Configures the launcher window to behave like a non-activating panel.
-pub fn configure_launcher_panel(window: &Window) {
+pub fn configure_launcher_panel(window: &Window, show_animation: bool) {
     let window = ns_window(window);
     let mut style_mask = window.styleMask();
     style_mask.insert(NSWindowStyleMask::NonactivatingPanel);
     window.setStyleMask(style_mask);
     window.setHidesOnDeactivate(false);
+    set_window_animation(window, show_animation);
+}
+
+/// Enables or disables the macOS show/hide zoom animation on the launcher window.
+pub fn set_launcher_animation(window: &Window, show_animation: bool) {
+    set_window_animation(ns_window(window), show_animation);
+}
+
+fn set_window_animation(window: &NSWindow, show_animation: bool) {
+    let behavior = if show_animation {
+        NSWindowAnimationBehavior::Default
+    } else {
+        NSWindowAnimationBehavior::None
+    };
+    window.setAnimationBehavior(behavior);
 }
 
 /// Shows the launcher panel without activating Runx as the foreground app.

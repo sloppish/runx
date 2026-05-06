@@ -25,7 +25,8 @@ pub use types::FrontmostApp;
 pub use window::{
     accessibility_windows_for_pid, configure_launcher_panel, cursor_display_location,
     display_logical_size, focus_launcher_panel, focus_window,
-    focus_window_and_activate_all_windows, position_launcher_panel, show_launcher_panel,
+    focus_window_and_activate_all_windows, position_launcher_panel, set_launcher_animation,
+    show_launcher_panel,
 };
 
 #[cfg(test)]

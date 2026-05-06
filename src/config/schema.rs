@@ -71,6 +71,8 @@ pub struct WindowConfig {
     pub show_on: WindowDisplayTarget,
     /// Multiplier applied to UI typography and spacing tokens.
     pub scale: f64,
+    /// Play the macOS zoom animation when showing or hiding the launcher window.
+    pub show_animation: bool,
 }
 
 /// Provider-specific runtime behavior.
@@ -689,6 +691,7 @@ impl Default for WindowConfig {
             always_on_top: true,
             show_on: WindowDisplayTarget::Cursor,
             scale: 1.0,
+            show_animation: true,
         }
     }
 }

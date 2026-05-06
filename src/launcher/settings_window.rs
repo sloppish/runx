@@ -519,6 +519,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
             }
             .to_owned(),
             scale: config.window.scale,
+            show_animation: config.window.show_animation,
         },
         display_overrides: config
             .display_overrides
@@ -877,6 +878,12 @@ fn apply_settings_draft_to_raw(
         value(draft.ui.font_family.clone()),
     )?;
     set_item(&mut doc, &["window"], "scale", value(draft.window.scale))?;
+    set_item(
+        &mut doc,
+        &["window"],
+        "show_animation",
+        value(draft.window.show_animation),
+    )?;
     set_item(
         &mut doc,
         &["ui", "canvas"],

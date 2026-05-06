@@ -678,6 +678,7 @@ impl Launcher {
     fn apply_window_config(&mut self, window: &config::WindowConfig, ui: &config::UiConfig) {
         self.windows.apply_window_geometry(&self.window, window, ui);
         self.window.set_always_on_top(window.always_on_top);
+        macos::set_launcher_animation(&self.window, window.show_animation);
     }
 
     fn refresh_display_config(&mut self) -> Result<()> {
@@ -833,7 +834,7 @@ fn build_window(
         .context("failed to build the launcher window")?;
 
     window.set_has_shadow(false);
-    configure_launcher_panel(&window);
+    configure_launcher_panel(&window, config.window.show_animation);
 
     Ok(window)
 }
