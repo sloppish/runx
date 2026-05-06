@@ -177,7 +177,7 @@ if [[ "$UNIVERSAL" -eq 1 ]]; then
     fi
     cargo "${cargo_args[@]}"
 
-    cargo_args=(build --manifest-path "$TRAMPOLINE_MANIFEST" --target "$target")
+    cargo_args=(build --manifest-path "$TRAMPOLINE_MANIFEST" --target-dir "$TARGET_DIR" --target "$target")
     if [[ "${PROFILE}" == "release" ]]; then
       cargo_args+=(--release)
     fi
@@ -199,10 +199,10 @@ if [[ "$UNIVERSAL" -eq 1 ]]; then
 else
   if [[ "${PROFILE}" == "release" ]]; then
     cargo build --bin runx --release --manifest-path "$ROOT_DIR/Cargo.toml"
-    cargo build --release --manifest-path "$TRAMPOLINE_MANIFEST"
+    cargo build --release --manifest-path "$TRAMPOLINE_MANIFEST" --target-dir "$TARGET_DIR"
   else
     cargo build --bin runx --manifest-path "$ROOT_DIR/Cargo.toml"
-    cargo build --manifest-path "$TRAMPOLINE_MANIFEST"
+    cargo build --manifest-path "$TRAMPOLINE_MANIFEST" --target-dir "$TARGET_DIR"
   fi
   BIN_PATH="$TARGET_DIR/$PROFILE/runx"
   TRAMPOLINE_PATH="$TARGET_DIR/$PROFILE/settings-trampoline"
