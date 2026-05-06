@@ -1183,6 +1183,10 @@
     updateDirtyState();
   });
 
+  document.getElementById("update-plugins-btn").addEventListener("click", () => {
+    send({ type: "update_plugins" });
+  });
+
   function reloadSettings() {
     setStatus("Reloading...");
     send({ type: "reload" });

@@ -118,6 +118,7 @@ mod tests {
             badge: "TST".to_owned(),
             path: PathBuf::from("test/init.lua"),
             source: String::new(),
+            default_commands: std::collections::HashMap::new(),
         }
     }
 

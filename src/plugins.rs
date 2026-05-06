@@ -6,6 +6,7 @@
 
 mod commands;
 mod item_validation;
+pub mod manager;
 mod routing;
 mod runtime_api;
 
@@ -50,6 +51,7 @@ struct LuaPlugin {
     badge: String,
     path: PathBuf,
     source: String,
+    default_commands: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -104,7 +106,16 @@ impl PluginHost {
         }
 
         plugins.sort_by(|left, right| left.name.cmp(&right.name));
-        let mut routes = build_routes(route_config);
+
+        let mut merged_route_config = route_config;
+        for plugin in &plugins {
+            if !plugin.default_commands.is_empty() && !merged_route_config.contains_key(&plugin.id)
+            {
+                merged_route_config.insert(plugin.id.clone(), plugin.default_commands.clone());
+            }
+        }
+
+        let mut routes = build_routes(merged_route_config);
         routes.sort_by(|left, right| {
             right
                 .command
@@ -212,6 +223,7 @@ fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
         .with_context(|| format!("failed to read plugin {}", path.display()))?;
     let (_lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths)?;
     let metadata = extract_metadata(&table)?;
+    let default_commands = extract_default_commands(&table);
 
     let fallback_id = path
         .parent()
@@ -226,6 +238,7 @@ fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
         badge: metadata.badge.unwrap_or_else(|| "PLG".to_owned()),
         path: path.to_path_buf(),
         source,
+        default_commands,
     })
 }
 
@@ -235,6 +248,24 @@ fn extract_metadata(table: &Table) -> Result<PluginMetadata> {
         name: table.get("name")?,
         badge: table.get("badge")?,
     })
+}
+
+fn extract_default_commands(table: &Table) -> HashMap<String, String> {
+    let mut commands = HashMap::new();
+    let Ok(Some(commands_table)) = table.get::<Option<Table>>("commands") else {
+        return commands;
+    };
+    for pair in commands_table.pairs::<String, String>() {
+        let Ok((key, value)) = pair else {
+            continue;
+        };
+        let key = key.trim().to_owned();
+        let value = value.trim().to_owned();
+        if !key.is_empty() && !value.is_empty() {
+            commands.insert(key, value);
+        }
+    }
+    commands
 }
 
 fn items_from_wire(plugin: &LuaPlugin, raw_items: Vec<PluginItemWire>) -> Result<Vec<SearchItem>> {
@@ -339,6 +370,7 @@ fn run_action(
 
 #[cfg(test)]
 mod tests {
+    use std::collections::HashMap;
     use std::path::PathBuf;
 
     use super::{LuaPlugin, run_search, run_search_handler, runtime_api::empty_plugin_config};
@@ -364,6 +396,7 @@ mod tests {
                 }
             "#
             .to_owned(),
+            default_commands: HashMap::new(),
         };
 
         let items = run_search_handler(
@@ -402,6 +435,7 @@ mod tests {
                 }
             "#
             .to_owned(),
+            default_commands: HashMap::new(),
         };
 
         let items = run_search_handler(&plugin, "search_echo", "", empty_plugin_config(), &[])
@@ -431,6 +465,7 @@ mod tests {
                 }
             "#
             .to_owned(),
+            default_commands: HashMap::new(),
         };
 
         let items =
@@ -438,5 +473,94 @@ mod tests {
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "function");
+    }
+
+    #[test]
+    fn default_commands_merged_into_routes_when_no_user_config() {
+        use super::routing::build_routes;
+
+        let default_commands = HashMap::from([("greet".to_owned(), "search_greet".to_owned())]);
+        let user_routes: HashMap<String, HashMap<String, String>> = HashMap::new();
+
+        let mut merged = user_routes;
+        let plugin_id = "greeter";
+        if !default_commands.is_empty() && !merged.contains_key(plugin_id) {
+            merged.insert(plugin_id.to_owned(), default_commands);
+        }
+
+        let routes = build_routes(merged);
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].command, "greet");
+        assert_eq!(routes[0].handler, "search_greet");
+        assert_eq!(routes[0].plugin_id, "greeter");
+    }
+
+    #[test]
+    fn default_commands_are_overridden_by_user_config() {
+        use super::routing::build_routes;
+
+        let default_commands = HashMap::from([("greet".to_owned(), "search_greet".to_owned())]);
+        let user_routes = HashMap::from([(
+            "greeter".to_owned(),
+            HashMap::from([("hi".to_owned(), "search_greet".to_owned())]),
+        )]);
+
+        // User config present — default_commands should NOT be merged
+        let mut merged = user_routes.clone();
+        let plugin_id = "greeter";
+        if !default_commands.is_empty() && !merged.contains_key(plugin_id) {
+            merged.insert(plugin_id.to_owned(), default_commands);
+        }
+
+        let routes = build_routes(merged);
+        // Should only have user's "hi" route, not plugin's default "greet"
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].command, "hi");
+    }
+
+    #[test]
+    fn extract_default_commands_from_lua_table() {
+        let plugin = super::load_plugin(&PathBuf::from("test/init.lua"), &[]);
+        // load_plugin requires a real file, so test via a full plugin load instead
+        let source = r#"
+            return {
+              id = "test",
+              commands = {
+                foo = "search_foo",
+                bar = "search_bar",
+              },
+              search_foo = function() return {} end,
+              search_bar = function() return {} end,
+            }
+        "#;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = dir.path().join("test");
+        std::fs::create_dir(&plugin_dir).expect("mkdir");
+        std::fs::write(plugin_dir.join("init.lua"), source).expect("write");
+
+        let loaded =
+            super::load_plugin(&plugin_dir.join("init.lua"), &[]).expect("plugin should load");
+        drop(plugin);
+        assert_eq!(loaded.default_commands.len(), 2);
+        assert_eq!(loaded.default_commands["foo"], "search_foo");
+        assert_eq!(loaded.default_commands["bar"], "search_bar");
+    }
+
+    #[test]
+    fn extract_default_commands_returns_empty_when_no_commands_table() {
+        let source = r#"
+            return {
+              id = "test",
+              search = function() return {} end,
+            }
+        "#;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = dir.path().join("test");
+        std::fs::create_dir(&plugin_dir).expect("mkdir");
+        std::fs::write(plugin_dir.join("init.lua"), source).expect("write");
+
+        let loaded =
+            super::load_plugin(&plugin_dir.join("init.lua"), &[]).expect("plugin should load");
+        assert!(loaded.default_commands.is_empty());
     }
 }

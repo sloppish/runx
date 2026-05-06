@@ -108,6 +108,7 @@ pub enum SettingsCommand {
     Save { draft: Box<SettingsDraft> },
     SaveRaw { raw: String },
     OpenUrl { url: String },
+    UpdatePlugins,
     ClientError { message: String },
     Close,
 }

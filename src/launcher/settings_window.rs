@@ -232,6 +232,9 @@ fn handle_standalone_settings_command(
         SettingsCommand::OpenUrl { url } => {
             let _ = std::process::Command::new("open").arg(&url).spawn();
         }
+        SettingsCommand::UpdatePlugins => {
+            handle_update_plugins(settings)?;
+        }
         SettingsCommand::ClientError { message } => {
             settings.set_status(&message, true)?;
         }
@@ -244,6 +247,68 @@ fn handle_standalone_settings_command(
 
 fn notify_launcher_reload() {
     let _ = config_reload_ipc::notify_reload();
+}
+
+fn handle_update_plugins(settings: &SettingsWindow) -> Result<()> {
+    use crate::config::LoadedConfig;
+    use crate::plugins::manager::{UpdateResult, update_all};
+
+    settings.set_status("Updating plugins...", false)?;
+
+    let loaded = LoadedConfig::load()?;
+    if loaded.config.plugins.install.is_empty() {
+        settings.set_status("No managed plugins configured.", false)?;
+        return Ok(());
+    }
+
+    let plugins_dir = loaded
+        .plugin_dirs
+        .first()
+        .context("no plugin directory available")?;
+
+    let results = update_all(plugins_dir, &loaded.config.plugins.install);
+
+    let mut updated = 0u32;
+    let mut up_to_date = 0u32;
+    let mut pinned = 0u32;
+    let mut failed = Vec::new();
+
+    for (id, result) in &results {
+        match result {
+            UpdateResult::Updated => updated += 1,
+            UpdateResult::AlreadyUpToDate => up_to_date += 1,
+            UpdateResult::Pinned => pinned += 1,
+            UpdateResult::Failed(msg) => failed.push(format!("{id}: {msg}")),
+        }
+    }
+
+    let status = if failed.is_empty() {
+        let mut parts = Vec::new();
+        if updated > 0 {
+            parts.push(format!("{updated} updated"));
+        }
+        if up_to_date > 0 {
+            parts.push(format!("{up_to_date} up to date"));
+        }
+        if pinned > 0 {
+            parts.push(format!("{pinned} pinned"));
+        }
+        if parts.is_empty() {
+            "No plugins to update.".to_owned()
+        } else {
+            parts.join(", ")
+        }
+    } else {
+        format!("Errors: {}", failed.join("; "))
+    };
+
+    settings.set_status(&status, !failed.is_empty())?;
+
+    if updated > 0 {
+        notify_launcher_reload();
+    }
+
+    Ok(())
 }
 
 #[derive(Debug, Serialize)]

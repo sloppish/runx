@@ -221,6 +221,21 @@ pub struct PluginsConfig {
     pub directories: Vec<String>,
     /// Extra PATH entries exposed to plugin subprocess helpers.
     pub search_paths: Vec<String>,
+    /// Managed plugin installations from Git sources.
+    pub install: Vec<PluginInstallEntry>,
+}
+
+/// A single managed plugin to clone and keep up to date.
+#[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
+#[serde(deny_unknown_fields)]
+pub struct PluginInstallEntry {
+    /// Git clone URL or local path.
+    pub source: String,
+    /// Pin to a specific Git tag. Mutually exclusive with `branch`.
+    #[serde(rename = "ref")]
+    pub git_ref: Option<String>,
+    /// Track a branch. Mutually exclusive with `ref`.
+    pub branch: Option<String>,
 }
 
 /// Theme tokens injected into the embedded HTML/CSS UI templates.

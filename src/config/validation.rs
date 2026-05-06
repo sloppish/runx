@@ -35,7 +35,7 @@ pub(super) struct RawConfigSpans {
     providers: RawProvidersSpans,
     ranking: RawRankingSpans,
     timing: TimingConfig,
-    plugins: PluginsConfig,
+    plugins: RawPluginsSpans,
     plugin: HashMap<String, Table>,
     ui: RawUiSpans,
     debug_log: bool,
@@ -119,6 +119,24 @@ struct RawDisplayOverrideSpans {
 
 #[derive(Debug, Deserialize, Default)]
 #[serde(default, deny_unknown_fields)]
+struct RawPluginsSpans {
+    directories: Vec<String>,
+    search_paths: Vec<String>,
+    install: Vec<RawPluginInstallSpans>,
+}
+
+#[derive(Debug, Deserialize)]
+#[serde(deny_unknown_fields)]
+#[allow(dead_code)]
+struct RawPluginInstallSpans {
+    source: Spanned<String>,
+    #[serde(rename = "ref")]
+    git_ref: Option<String>,
+    branch: Option<String>,
+}
+
+#[derive(Debug, Deserialize, Default)]
+#[serde(default, deny_unknown_fields)]
 struct RawProvidersSpans {
     disabled: Vec<Spanned<String>>,
     windows: WindowsProviderConfig,
@@ -156,6 +174,7 @@ struct RawRankingScoreRuleSpans {
 }
 
 pub(super) fn validate_config(config: &Config) -> Result<()> {
+    validate_plugin_install_entries(&config.plugins.install)?;
     validate_provider_names(&config.providers.disabled, "[providers].disabled")?;
     validate_provider_names(&config.ranking.provider_order, "[ranking].provider_order")?;
     validate_window_dimension_fraction(
@@ -786,6 +805,41 @@ fn readonly_builtin_colorscheme_message(name: &str) -> String {
 fn colorscheme_table_header_span(raw: &str, name: &str) -> Option<std::ops::Range<usize>> {
     let header = format!("[ui.colorschemes.{name}]");
     raw.find(&header).map(|start| start..start + header.len())
+}
+
+fn validate_plugin_install_entries(entries: &[PluginInstallEntry]) -> Result<()> {
+    for (index, entry) in entries.iter().enumerate() {
+        let context = format!("[[plugins.install]] entry {}", index + 1);
+        if entry.source.trim().is_empty() {
+            bail!("{context}.source must not be empty");
+        }
+        if entry.git_ref.is_some() && entry.branch.is_some() {
+            bail!("{context} cannot set both `ref` and `branch`");
+        }
+        if let Some(git_ref) = &entry.git_ref
+            && git_ref.trim().is_empty()
+        {
+            bail!("{context}.ref must not be empty");
+        }
+        if let Some(branch) = &entry.branch
+            && branch.trim().is_empty()
+        {
+            bail!("{context}.branch must not be empty");
+        }
+    }
+
+    let mut seen_sources = std::collections::HashSet::new();
+    for (index, entry) in entries.iter().enumerate() {
+        if !seen_sources.insert(&entry.source) {
+            bail!(
+                "[[plugins.install]] entry {} has a duplicate source `{}`",
+                index + 1,
+                entry.source
+            );
+        }
+    }
+
+    Ok(())
 }
 
 fn validate_ui_colorscheme_name_impl<'a>(

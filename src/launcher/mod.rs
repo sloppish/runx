@@ -538,6 +538,11 @@ impl Launcher {
     }
 
     fn build_bootstrap_config(loaded: LoadedConfig) -> Result<BootstrapConfig> {
+        if !loaded.config.plugins.install.is_empty()
+            && let Some(managed_dir) = loaded.plugin_dirs.first()
+        {
+            plugins::manager::ensure_installed(managed_dir, &loaded.config.plugins.install);
+        }
         let hotkey = loaded.config.hotkey()?;
         let plugin_config = loaded.config.plugin_config()?;
         let plugin_routes = loaded.config.plugin_routes()?;

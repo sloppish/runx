@@ -1112,4 +1112,111 @@ bogus = true
             assert!(error.message().contains("unknown field `bogus`"));
         }
     }
+
+    mod plugin_install_tests {
+        use std::path::Path;
+
+        use super::validate_config_toml;
+
+        #[test]
+        fn accepts_valid_install_entry() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/runx-test.git"
+            "#;
+            let config = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect("valid install entry should parse");
+            assert_eq!(config.plugins.install.len(), 1);
+            assert_eq!(
+                config.plugins.install[0].source,
+                "https://github.com/user/runx-test.git"
+            );
+        }
+
+        #[test]
+        fn accepts_install_entry_with_ref() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/runx-test.git"
+                ref = "v1.0.0"
+            "#;
+            let config = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect("install entry with ref should parse");
+            assert_eq!(config.plugins.install[0].git_ref, Some("v1.0.0".to_owned()));
+        }
+
+        #[test]
+        fn accepts_install_entry_with_branch() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/runx-test.git"
+                branch = "develop"
+            "#;
+            let config = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect("install entry with branch should parse");
+            assert_eq!(config.plugins.install[0].branch, Some("develop".to_owned()));
+        }
+
+        #[test]
+        fn rejects_empty_source() {
+            let toml = r#"
+                [[plugins.install]]
+                source = ""
+            "#;
+            let error = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect_err("empty source should fail");
+            assert!(error.to_string().contains("source must not be empty"));
+        }
+
+        #[test]
+        fn rejects_both_ref_and_branch() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+                ref = "v1.0.0"
+                branch = "main"
+            "#;
+            let error = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect_err("ref + branch should fail");
+            assert!(error.to_string().contains("cannot set both"));
+        }
+
+        #[test]
+        fn rejects_duplicate_sources() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+            "#;
+            let error = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect_err("duplicate source should fail");
+            assert!(error.to_string().contains("duplicate source"));
+        }
+
+        #[test]
+        fn rejects_empty_ref() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+                ref = "  "
+            "#;
+            let error = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect_err("empty ref should fail");
+            assert!(error.to_string().contains("ref must not be empty"));
+        }
+
+        #[test]
+        fn rejects_unknown_field_in_install_entry() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+                bogus = "value"
+            "#;
+            let error = validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect_err("unknown field should fail");
+            assert!(error.to_string().contains("unknown field"));
+        }
+    }
 }
