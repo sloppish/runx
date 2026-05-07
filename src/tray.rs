@@ -3,10 +3,10 @@
 //! This module owns the status-item icon and its small menu, then translates
 //! tray interactions back into [`crate::types::AppEvent`] values.
 
-use std::{fs::File, io::BufReader, path::Path};
+use std::path::Path;
 
-use anyhow::{Context, Result, bail};
-use png::{ColorType, Decoder, Transformations};
+use anyhow::{Context, Result};
+use image::ImageReader;
 use tao::event_loop::EventLoopProxy;
 use tray_icon::{
     Icon, MouseButton, MouseButtonState, TrayIcon, TrayIconBuilder, TrayIconEvent,
@@ -153,38 +153,12 @@ impl TrayState {
 }
 
 fn load_icon(path: &Path) -> Result<Icon> {
-    let file = File::open(path).with_context(|| format!("failed to open {}", path.display()))?;
-    let mut decoder = Decoder::new(BufReader::new(file));
-    decoder.set_transformations(Transformations::normalize_to_color8());
-    let mut reader = decoder
-        .read_info()
-        .with_context(|| format!("failed to decode {}", path.display()))?;
-    let mut buffer = vec![0; reader.output_buffer_size()];
-    let info = reader
-        .next_frame(&mut buffer)
-        .with_context(|| format!("failed to read icon data from {}", path.display()))?;
-    let pixels = &buffer[..info.buffer_size()];
-    let rgba = rgba_pixels(pixels, info.color_type)?;
-    Icon::from_rgba(rgba, info.width, info.height)
+    let img = ImageReader::open(path)
+        .with_context(|| format!("failed to open {}", path.display()))?
+        .decode()
+        .with_context(|| format!("failed to decode {}", path.display()))?
+        .into_rgba8();
+    let (width, height) = (img.width(), img.height());
+    Icon::from_rgba(img.into_raw(), width, height)
         .with_context(|| format!("failed to build tray icon from {}", path.display()))
-}
-
-fn rgba_pixels(pixels: &[u8], color_type: ColorType) -> Result<Vec<u8>> {
-    let rgba = match color_type {
-        ColorType::Rgba => pixels.to_vec(),
-        ColorType::Rgb => pixels
-            .chunks_exact(3)
-            .flat_map(|chunk| [chunk[0], chunk[1], chunk[2], 255])
-            .collect(),
-        ColorType::Grayscale => pixels
-            .iter()
-            .flat_map(|value| [*value, *value, *value, 255])
-            .collect(),
-        ColorType::GrayscaleAlpha => pixels
-            .chunks_exact(2)
-            .flat_map(|chunk| [chunk[0], chunk[0], chunk[0], chunk[1]])
-            .collect(),
-        ColorType::Indexed => bail!("indexed PNG tray icons are not supported"),
-    };
-    Ok(rgba)
 }

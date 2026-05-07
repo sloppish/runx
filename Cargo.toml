@@ -15,10 +15,8 @@ memchr = "2.7"
 miette = { version = "7.6", features = ["fancy"] }
 mlua = { version = "0.11.6", features = ["lua55", "send", "serde", "vendored"] }
 plist = "1.7"
-png = "0.17"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
-shell-words = "1.1"
 tempfile = "3.27"
 thread_local = "1.1"
 time = { version = "0.3", features = ["formatting"] }
