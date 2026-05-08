@@ -1,11 +1,14 @@
 use std::ffi::c_int;
 
 use anyhow::{Result, bail};
-use core_foundation::base::TCFType;
+use core_foundation::base::{CFType, TCFType};
+use core_foundation::number::CFNumber;
+use core_foundation::string::CFString;
 use core_graphics::{
     display::CGDisplay,
     event::CGEvent,
     event_source::{CGEventSource, CGEventSourceStateID},
+    window::{copy_window_info, kCGNullWindowID, kCGWindowListOptionOnScreenOnly, kCGWindowNumber},
 };
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSScreen;
@@ -114,8 +117,10 @@ pub fn position_launcher_panel(window: &Window, display_id: u32, width: f64, hei
     true
 }
 
-/// Activates the owning app (triggering a Space switch if needed), then focuses
-/// the exact window via Accessibility/SkyLight.
+/// Focuses a single window. When the window is on the current Space, uses
+/// SkyLight to raise just that window without pulling the entire app forward.
+/// When on a different Space, activates the app first (triggering a Space
+/// switch), then focuses the exact window.
 pub fn focus_window(
     app_name: &str,
     window_title: &str,
@@ -123,7 +128,11 @@ pub fn focus_window(
     pid: i64,
 ) -> Result<Option<String>> {
     let pid = pid as c_int;
-    activate_running_application_by_pid(pid)?;
+    let on_current_space = is_window_on_screen(window_id);
+
+    if !on_current_space {
+        activate_running_application_by_pid(pid)?;
+    }
 
     if ensure_accessibility_trusted(true) {
         match focus_window_for_pid(pid, window_id) {
@@ -134,7 +143,7 @@ pub fn focus_window(
                     title = ?window_title,
                     window_id,
                     error = %format!("{error:#}"),
-                    "focus_window direct focus failed after activation"
+                    "focus_window direct focus failed"
                 );
             }
         }
@@ -142,6 +151,9 @@ pub fn focus_window(
         open_accessibility_settings();
     }
 
+    if on_current_space {
+        activate_running_application_by_pid(pid)?;
+    }
     Ok(Some(format!("Activated {}", app_name)))
 }
 
@@ -305,6 +317,24 @@ fn launcher_panel_top_left(screen_frame: NSRect, window_width: f64, window_heigh
     let top_offset = (screen_frame.size.height - window_height) / LAUNCHER_TOP_OFFSET_DIVISOR;
     let y = screen_frame.origin.y + screen_frame.size.height - top_offset;
     NSPoint::new(x.round(), y.round())
+}
+
+fn is_window_on_screen(window_id: u32) -> bool {
+    let Some(array) = copy_window_info(kCGWindowListOptionOnScreenOnly, kCGNullWindowID) else {
+        return false;
+    };
+    let key = unsafe { CFString::wrap_under_get_rule(kCGWindowNumber) };
+    array.get_all_values().iter().any(|raw_value| {
+        let dict = unsafe {
+            core_foundation::dictionary::CFDictionary::<CFString, CFType>::wrap_under_get_rule(
+                *raw_value as _,
+            )
+        };
+        dict.find(&key)
+            .and_then(|v| v.downcast::<CFNumber>())
+            .and_then(|v| v.to_i64())
+            .is_some_and(|wid| wid as u32 == window_id)
+    })
 }
 
 fn ns_window(window: &Window) -> &NSWindow {
