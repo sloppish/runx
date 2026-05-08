@@ -23,6 +23,14 @@ test-rust: build-ui
 
 test: test-ui test-rust
 
+fmt-ui:
+    bunx biome check --write
+
+fmt-rust:
+    cargo fmt
+
+fmt: fmt-ui fmt-rust
+
 lint-ui:
     bunx biome check
 
