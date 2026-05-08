@@ -80,6 +80,7 @@ function setPane(name: string): void {
   for (const pane of panes) {
     pane.classList.toggle("active", pane.dataset.panePanel === name);
   }
+  formEl.scrollTop = 0;
   updateDirtyState();
 }
 
