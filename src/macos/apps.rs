@@ -56,7 +56,9 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
 /// Returns whether the app can normally own foreground windows.
 /// Returns the subset of `pids` that belong to regular-activation-policy apps,
 /// fetching the running application list only once.
-pub fn regular_pids_from_running_applications(pids: &std::collections::HashSet<i64>) -> std::collections::HashSet<i64> {
+pub fn regular_pids_from_running_applications(
+    pids: &std::collections::HashSet<i64>,
+) -> std::collections::HashSet<i64> {
     let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
     let mut result = std::collections::HashSet::new();
     for index in 0..running_apps.count() {

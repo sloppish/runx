@@ -9,7 +9,9 @@ use core_graphics::{
 };
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSScreen;
-use objc2_app_kit::{NSWindow, NSWindowAnimationBehavior, NSWindowStyleMask};
+use objc2_app_kit::{
+    NSWindow, NSWindowAnimationBehavior, NSWindowCollectionBehavior, NSWindowStyleMask,
+};
 use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, ns_string};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
@@ -62,6 +64,10 @@ pub fn configure_launcher_panel(window: &Window, show_animation: bool) {
     style_mask.insert(NSWindowStyleMask::NonactivatingPanel);
     window.setStyleMask(style_mask);
     window.setHidesOnDeactivate(false);
+    window.setCollectionBehavior(
+        NSWindowCollectionBehavior::MoveToActiveSpace
+            | NSWindowCollectionBehavior::FullScreenAuxiliary,
+    );
     set_window_animation(window, show_animation);
 }
 

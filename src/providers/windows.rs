@@ -156,9 +156,8 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn read_windows(include_other_desktops: bool) -> Vec<WindowRecord> {
-    let onscreen_raw = parse_window_list(
-        kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-    );
+    let onscreen_raw =
+        parse_window_list(kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements);
 
     let all_raw = if include_other_desktops {
         parse_window_list(kCGWindowListExcludeDesktopElements)
