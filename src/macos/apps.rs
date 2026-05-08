@@ -1,4 +1,4 @@
-use std::{ffi::c_int, thread, time::Duration};
+use std::ffi::c_int;
 
 use anyhow::{Result, bail};
 use objc2_app_kit::{
@@ -7,8 +7,6 @@ use objc2_app_kit::{
 };
 
 use super::{process::run_quiet, types::FrontmostApp};
-
-const APP_REACTIVATION_DELAY: Duration = Duration::from_millis(120);
 
 #[derive(Clone, Copy)]
 pub(super) enum AppActivationMode {
@@ -103,7 +101,6 @@ fn activate_running_application(app: &NSRunningApplication, mode: AppActivationM
     };
 
     if app.activateWithOptions(options) {
-        thread::sleep(APP_REACTIVATION_DELAY);
         return Ok(());
     }
 

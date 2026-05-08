@@ -15,7 +15,7 @@ use objc2_app_kit::{
 use objc2_foundation::{NSNumber, NSPoint, NSRect, NSSize, ns_string};
 use tao::{platform::macos::WindowExtMacOS, window::Window};
 
-use tracing::{debug, warn};
+use tracing::debug;
 
 use super::{
     apps::{
@@ -33,11 +33,6 @@ use super::{
 };
 
 const LAUNCHER_TOP_OFFSET_DIVISOR: f64 = 3.2;
-
-#[derive(Debug, Clone, Copy)]
-struct ExactWindowFocus {
-    activated_app: bool,
-}
 
 /// Returns the display currently containing the mouse cursor using CoreGraphics.
 pub fn cursor_display_location() -> Option<CursorDisplayLocation> {
@@ -119,8 +114,8 @@ pub fn position_launcher_panel(window: &Window, display_id: u32, width: f64, hei
     true
 }
 
-/// Focuses the selected window when possible, then activates the owning app.
-/// Falls back to activating/opening the app if exact window focus is unavailable.
+/// Activates the owning app (triggering a Space switch if needed), then focuses
+/// the exact window via Accessibility/SkyLight.
 pub fn focus_window(
     app_name: &str,
     window_title: &str,
@@ -128,22 +123,18 @@ pub fn focus_window(
     pid: i64,
 ) -> Result<Option<String>> {
     let pid = pid as c_int;
+    activate_running_application_by_pid(pid)?;
+
     if ensure_accessibility_trusted(true) {
         match focus_window_for_pid(pid, window_id) {
-            Ok(focus) => {
-                if !focus.activated_app {
-                    activate_running_application_by_pid_with_mode(pid, AppActivationMode::Default)?;
-                    let _ = focus_window_for_pid(pid, window_id);
-                }
-                return Ok(Some(format!("Focused {}", window_title)));
-            }
+            Ok(_) => return Ok(Some(format!("Focused {}", window_title))),
             Err(error) => {
                 debug!(
                     app = ?app_name,
                     title = ?window_title,
                     window_id,
                     error = %format!("{error:#}"),
-                    "focus_window direct focus failed"
+                    "focus_window direct focus failed after activation"
                 );
             }
         }
@@ -151,7 +142,6 @@ pub fn focus_window(
         open_accessibility_settings();
     }
 
-    activate_running_application_by_pid(pid)?;
     Ok(Some(format!("Activated {}", app_name)))
 }
 
@@ -162,24 +152,9 @@ pub fn focus_window_and_activate_all_windows(
     pid: i64,
 ) -> Result<Option<String>> {
     let pid = pid as c_int;
-    let accessibility_trusted = ensure_accessibility_trusted(true);
-    if accessibility_trusted {
-        if let Err(error) = focus_window_for_pid(pid, window_id) {
-            debug!(
-                app = ?app_name,
-                title = ?window_title,
-                window_id,
-                error = %format!("{error:#}"),
-                "focus_window_and_activate_all_windows initial focus failed"
-            );
-        }
-    } else {
-        open_accessibility_settings();
-    }
-
     activate_running_application_by_pid_with_mode(pid, AppActivationMode::AllWindows)?;
 
-    if accessibility_trusted {
+    if ensure_accessibility_trusted(true) {
         match focus_window_for_pid(pid, window_id) {
             Ok(_) => {
                 return Ok(Some(format!(
@@ -193,11 +168,12 @@ pub fn focus_window_and_activate_all_windows(
                     title = ?window_title,
                     window_id,
                     error = %format!("{error:#}"),
-                    "focus_window_and_activate_all_windows final focus failed"
+                    "focus_window_and_activate_all_windows focus failed"
                 );
             }
         }
     } else {
+        open_accessibility_settings();
         return Ok(Some(format!(
             "Activated all {} windows (window focus requires Accessibility permission)",
             app_name
@@ -241,7 +217,7 @@ pub fn accessibility_windows_for_pid(pid: i64) -> Vec<AccessibilityWindow> {
     output
 }
 
-fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<ExactWindowFocus> {
+fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<()> {
     let app_element = OwnedAxElement::application(pid)
         .ok_or_else(|| anyhow::anyhow!("failed to create accessibility handle for pid {pid}"))?;
     let _ = app_element.set_messaging_timeout(AX_MESSAGING_TIMEOUT);
@@ -281,21 +257,12 @@ fn focus_window_for_pid(pid: c_int, window_id: u32) -> Result<ExactWindowFocus> 
     bail!("window not found")
 }
 
-fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result<ExactWindowFocus> {
-    let activated_app = match focus_cg_window(pid, window_id) {
-        Ok(()) => true,
-        Err(error) => {
-            warn!(
-                pid,
-                window_id,
-                error = %format!("{error:#}"),
-                "focus_cg_window failed"
-            );
-            false
-        }
-    };
+fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result<()> {
+    let mut did_focus = false;
 
-    let mut did_focus = activated_app;
+    if focus_cg_window(pid, window_id).is_ok() {
+        did_focus = true;
+    }
     if set_ax_bool_attribute(window, ax_main_attribute().as_concrete_TypeRef(), true).is_ok() {
         did_focus = true;
     }
@@ -307,7 +274,7 @@ fn focus_ax_window(pid: c_int, window_id: u32, window: AXUIElementRef) -> Result
     }
 
     if did_focus {
-        return Ok(ExactWindowFocus { activated_app });
+        return Ok(());
     }
 
     bail!("window exists but does not expose focus actions")
