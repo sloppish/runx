@@ -168,6 +168,9 @@ if [[ -z "$TARGET_DIR" ]]; then
   exit 1
 fi
 
+echo "Building frontend (TypeScript)..."
+(cd "$ROOT_DIR" && bun run build:release)
+
 if [[ "$UNIVERSAL" -eq 1 ]]; then
   targets=(aarch64-apple-darwin x86_64-apple-darwin)
   for target in "${targets[@]}"; do

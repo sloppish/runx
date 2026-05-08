@@ -1,6 +1,9 @@
 /target
 /tools/config-docgen/target
 /dist
+/node_modules
+/ui/app.js
+/ui/settings.js
 task_plan.md
 findings.md
 progress.md
