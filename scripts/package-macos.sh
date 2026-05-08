@@ -169,7 +169,7 @@ if [[ -z "$TARGET_DIR" ]]; then
 fi
 
 echo "Building frontend (TypeScript)..."
-(cd "$ROOT_DIR" && bun run build:release)
+(cd "$ROOT_DIR" && bun ui/build.ts --release)
 
 if [[ "$UNIVERSAL" -eq 1 ]]; then
   targets=(aarch64-apple-darwin x86_64-apple-darwin)

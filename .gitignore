@@ -4,6 +4,7 @@
 /node_modules
 /ui/app.js
 /ui/settings.js
+.redo/
 task_plan.md
 findings.md
 progress.md
