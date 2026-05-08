@@ -156,20 +156,36 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
 }
 
 fn read_windows(include_other_desktops: bool) -> Vec<WindowRecord> {
-    let onscreen = read_window_entries(
+    let onscreen_raw = parse_window_list(
         kCGWindowListOptionOnScreenOnly | kCGWindowListExcludeDesktopElements,
-        true,
     );
+
+    let all_raw = if include_other_desktops {
+        parse_window_list(kCGWindowListExcludeDesktopElements)
+    } else {
+        Vec::new()
+    };
+
+    let all_pids: HashSet<i64> = onscreen_raw
+        .iter()
+        .chain(all_raw.iter())
+        .map(|w| w.pid)
+        .collect();
+
+    let ax_windows = accessibility_windows_by_pids(&all_pids);
+    let regular_pids = regular_app_pids_from_set(&all_pids);
+
+    let onscreen = apply_accessibility_titles(onscreen_raw, &ax_windows, &regular_pids, true);
 
     if !include_other_desktops {
         return assign_z_indices(onscreen);
     }
 
-    let all_windows = read_window_entries(kCGWindowListExcludeDesktopElements, false);
-    merge_window_orders(onscreen, all_windows)
+    let all = apply_accessibility_titles(all_raw, &ax_windows, &regular_pids, false);
+    merge_window_orders(onscreen, all)
 }
 
-fn read_window_entries(list_options: u32, fallback_empty_titles: bool) -> Vec<WindowRecord> {
+fn parse_window_list(list_options: u32) -> Vec<WindowRecord> {
     let Some(array) = copy_window_info(list_options, kCGNullWindowID) else {
         return Vec::new();
     };
@@ -209,40 +225,49 @@ fn read_window_entries(list_options: u32, fallback_empty_titles: bool) -> Vec<Wi
         });
     }
 
-    let ax_windows = accessibility_windows_by_window(raw_windows.as_slice());
-    let regular_app_pids = regular_app_pids(raw_windows.as_slice());
-    apply_accessibility_titles(
-        raw_windows,
-        &ax_windows,
-        &regular_app_pids,
-        fallback_empty_titles,
-    )
+    raw_windows
 }
 
-fn accessibility_windows_by_window(
-    windows: &[WindowRecord],
+fn accessibility_windows_by_pids(
+    pids: &HashSet<i64>,
 ) -> HashMap<(i64, u32), AccessibilityWindowRecord> {
-    let mut output = HashMap::new();
-    let pids: HashSet<i64> = windows.iter().map(|window| window.pid).collect();
-    for pid in pids {
-        for window in macos::accessibility_windows_for_pid(pid) {
-            output.insert(
-                (pid, window.window_id),
-                AccessibilityWindowRecord {
-                    title: window.title,
-                    focusable: is_focusable_accessibility_subrole(&window.subrole),
-                },
-            );
+    let pids: Vec<i64> = pids.iter().copied().collect();
+
+    std::thread::scope(|s| {
+        let handles: Vec<_> = pids
+            .iter()
+            .map(|&pid| {
+                s.spawn(move || {
+                    macos::accessibility_windows_for_pid(pid)
+                        .into_iter()
+                        .map(|window| {
+                            (
+                                (pid, window.window_id),
+                                AccessibilityWindowRecord {
+                                    title: window.title,
+                                    focusable: is_focusable_accessibility_subrole(&window.subrole),
+                                },
+                            )
+                        })
+                        .collect::<Vec<_>>()
+                })
+            })
+            .collect();
+
+        let mut output = HashMap::new();
+        for handle in handles {
+            if let Ok(entries) = handle.join() {
+                for (key, value) in entries {
+                    output.insert(key, value);
+                }
+            }
         }
-    }
-    output
+        output
+    })
 }
 
-fn regular_app_pids(windows: &[WindowRecord]) -> HashSet<i64> {
-    let pids: HashSet<i64> = windows.iter().map(|window| window.pid).collect();
-    pids.into_iter()
-        .filter(|pid| macos::running_application_is_regular(*pid))
-        .collect()
+fn regular_app_pids_from_set(pids: &HashSet<i64>) -> HashSet<i64> {
+    macos::regular_pids_from_running_applications(pids)
 }
 
 fn apply_accessibility_titles(
