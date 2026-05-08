@@ -264,8 +264,8 @@ h2 {
 
 .plugins-toml-section {
   display: grid;
-  grid-template-rows: auto minmax(0, 1fr);
-  min-height: 0;
+  grid-template-rows: auto 1fr;
+  min-height: 600px;
 }
 
 .grid {
