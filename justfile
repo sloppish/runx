@@ -23,9 +23,14 @@ test-rust: build-ui
 
 test: test-ui test-rust
 
-lint: build-ui
+lint-ui:
+    bunx biome check
+
+lint-rust: build-ui
     cargo fmt --check
     cargo clippy --all-targets --all-features -- -D warnings
+
+lint: lint-ui lint-rust
 
 check: lint typecheck test
 

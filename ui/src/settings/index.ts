@@ -1,12 +1,12 @@
-import {
-  SettingsPayload,
-  SettingsDraft,
-  SettingsMessage,
+import type {
+  ColorschemeEntry,
   DisplayOptionPayload,
   DisplayOverride,
   PluginInstallEntry,
   ScoreRule,
-  ColorschemeEntry,
+  SettingsDraft,
+  SettingsMessage,
+  SettingsPayload,
 } from "../types";
 
 function send(payload: SettingsMessage): void {
@@ -15,15 +15,21 @@ function send(payload: SettingsMessage): void {
 
 document.addEventListener("contextmenu", (event) => event.preventDefault());
 document.addEventListener("click", (e) => {
-  const link = (e.target as HTMLElement).closest("[data-url]") as HTMLElement | null;
+  const link = (e.target as HTMLElement).closest(
+    "[data-url]",
+  ) as HTMLElement | null;
   if (link) {
     e.preventDefault();
     send({ type: "open_url", url: link.dataset.url! });
   }
 });
 
-const panes = Array.from(document.querySelectorAll("[data-pane-panel]")) as HTMLElement[];
-const navItems = Array.from(document.querySelectorAll("[data-pane]")) as HTMLElement[];
+const panes = Array.from(
+  document.querySelectorAll("[data-pane-panel]"),
+) as HTMLElement[];
+const navItems = Array.from(
+  document.querySelectorAll("[data-pane]"),
+) as HTMLElement[];
 const statusEl = document.getElementById("status")!;
 const saveButton = document.getElementById("save") as HTMLButtonElement;
 const formEl = document.getElementById("settings-form") as HTMLFormElement;
@@ -39,11 +45,16 @@ const configPathEl = document.getElementById("config-path")!;
 
 let state = window.__RUNX_INITIAL_SETTINGS__!;
 let activePane = "general";
-let cleanSnapshots: { raw: string | null; structured: string | null } = { raw: null, structured: null };
+let cleanSnapshots: { raw: string | null; structured: string | null } = {
+  raw: null,
+  structured: null,
+};
 let isRendering = false;
 let isSaving = false;
 
-function field(path: string): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
+function field(
+  path: string,
+): HTMLInputElement | HTMLSelectElement | HTMLTextAreaElement {
   return document.querySelector(`[data-field="${path}"]`) as HTMLInputElement;
 }
 
@@ -60,7 +71,10 @@ function setStatus(message: string, isError = false): void {
 function setPane(name: string): void {
   activePane = name;
   for (const item of navItems) {
-    item.classList.toggle("active", (item as HTMLElement).dataset.pane === name);
+    item.classList.toggle(
+      "active",
+      (item as HTMLElement).dataset.pane === name,
+    );
   }
   formEl.style.display = name === "raw" ? "none" : "";
   for (const pane of panes) {
@@ -73,7 +87,9 @@ function activeEditorKey(): "raw" | "structured" {
   return activePane === "raw" ? "raw" : "structured";
 }
 
-function editorSnapshot(key: "raw" | "structured" = activeEditorKey()): string | null {
+function editorSnapshot(
+  key: "raw" | "structured" = activeEditorKey(),
+): string | null {
   if (key === "raw") {
     return JSON.stringify(rawEl.value);
   }
@@ -96,11 +112,14 @@ function activeEditorCanSave(): boolean {
 
 function activeEditorIsDirty(): boolean {
   const key = activeEditorKey();
-  return cleanSnapshots[key] != null && editorSnapshot(key) !== cleanSnapshots[key];
+  return (
+    cleanSnapshots[key] != null && editorSnapshot(key) !== cleanSnapshots[key]
+  );
 }
 
 function updateSaveButtonState(): void {
-  saveButton.disabled = isSaving || !activeEditorCanSave() || !activeEditorIsDirty();
+  saveButton.disabled =
+    isSaving || !activeEditorCanSave() || !activeEditorIsDirty();
 }
 
 function updateDirtyState(): void {
@@ -114,7 +133,10 @@ function updateDirtyState(): void {
   }
   if (dirty) {
     setStatus("Unsaved changes");
-  } else if (statusEl.textContent === "Unsaved changes" || statusEl.textContent === "Saving...") {
+  } else if (
+    statusEl.textContent === "Unsaved changes" ||
+    statusEl.textContent === "Saving..."
+  ) {
     setStatus("");
   }
 }
@@ -134,7 +156,8 @@ function setField(path: string, value: unknown): void {
   if ((input as HTMLInputElement).type === "checkbox") {
     (input as HTMLInputElement).checked = !!value;
   } else if (Array.isArray(value)) {
-    input.value = input.tagName === "TEXTAREA" ? value.join("\n") : value.join(", ");
+    input.value =
+      input.tagName === "TEXTAREA" ? value.join("\n") : value.join(", ");
   } else {
     input.value = (value ?? "") as string;
   }
@@ -152,13 +175,6 @@ function rawText(path: string): string {
   return field(path).value;
 }
 
-function list(path: string): string[] {
-  return text(path)
-    .split(",")
-    .map((item) => item.trim())
-    .filter(Boolean);
-}
-
 function lineList(path: string): string[] {
   return rawText(path)
     .split(/\r?\n/)
@@ -174,7 +190,10 @@ function int(path: string): number {
   return Math.trunc(Number(field(path).value));
 }
 
-function optionalNumber(input: HTMLInputElement, integer = false): number | null {
+function optionalNumber(
+  input: HTMLInputElement,
+  integer = false,
+): number | null {
   const value = input.value.trim();
   if (!value) {
     return null;
@@ -262,20 +281,37 @@ function isModifierOnlyKey(event: KeyboardEvent): boolean {
 
 function shortcutKeyFromEvent(event: KeyboardEvent): string | null {
   const code = event.code || "";
-  if (/^Key[A-Z]$/.test(code) || /^Digit[0-9]$/.test(code) || /^Numpad[0-9]$/.test(code)) {
+  if (
+    /^Key[A-Z]$/.test(code) ||
+    /^Digit[0-9]$/.test(code) ||
+    /^Numpad[0-9]$/.test(code)
+  ) {
     return code;
   }
-  if ([
-    "Space", "Enter", "NumpadEnter", "Escape", "Tab", "Backspace", "Delete",
-    "ArrowUp", "ArrowDown", "ArrowLeft", "ArrowRight",
-  ].includes(code)) {
+  if (
+    [
+      "Space",
+      "Enter",
+      "NumpadEnter",
+      "Escape",
+      "Tab",
+      "Backspace",
+      "Delete",
+      "ArrowUp",
+      "ArrowDown",
+      "ArrowLeft",
+      "ArrowRight",
+    ].includes(code)
+  ) {
     return code;
   }
   return null;
 }
 
 function syncShortcutRecorders(): void {
-  for (const button of formEl.querySelectorAll("[data-shortcut-recorder]") as NodeListOf<HTMLElement>) {
+  for (const button of formEl.querySelectorAll(
+    "[data-shortcut-recorder]",
+  ) as NodeListOf<HTMLElement>) {
     if (button === recordingShortcut) {
       button.textContent = "Press shortcut...";
       button.classList.add("recording");
@@ -283,9 +319,15 @@ function syncShortcutRecorders(): void {
       continue;
     }
     const target = button.dataset.shortcutRecorder!;
-    const textValue = displayShortcutText(field(target).value, "Record shortcut");
+    const textValue = displayShortcutText(
+      field(target).value,
+      "Record shortcut",
+    );
     button.textContent = textValue;
-    button.classList.toggle("empty", textValue === "Disabled" || textValue === "Record shortcut");
+    button.classList.toggle(
+      "empty",
+      textValue === "Disabled" || textValue === "Record shortcut",
+    );
     button.classList.remove("recording");
   }
 }
@@ -321,7 +363,9 @@ function validateStructuredForm(): string | null {
   }
 
   const colorschemeNames = new Set<string>();
-  for (const input of colorschemesEl.querySelectorAll("[data-colorscheme-name]") as NodeListOf<HTMLInputElement>) {
+  for (const input of colorschemesEl.querySelectorAll(
+    "[data-colorscheme-name]",
+  ) as NodeListOf<HTMLInputElement>) {
     const name = input.value.trim();
     if (colorschemeNames.has(name)) {
       return `Custom colorscheme ${name} is duplicated.`;
@@ -330,7 +374,9 @@ function validateStructuredForm(): string | null {
   }
 
   const boostProviders = new Set<string>();
-  for (const select of providerBoostsEl.querySelectorAll("[data-boost-provider]") as NodeListOf<HTMLSelectElement>) {
+  for (const select of providerBoostsEl.querySelectorAll(
+    "[data-boost-provider]",
+  ) as NodeListOf<HTMLSelectElement>) {
     if (boostProviders.has(select.value)) {
       return `Provider score boost for ${select.value} is duplicated.`;
     }
@@ -338,7 +384,9 @@ function validateStructuredForm(): string | null {
   }
 
   const displayOverrideTargets = new Set<string>();
-  for (const select of displayOverridesEl.querySelectorAll("[data-display-target]") as NodeListOf<HTMLSelectElement>) {
+  for (const select of displayOverridesEl.querySelectorAll(
+    "[data-display-target]",
+  ) as NodeListOf<HTMLSelectElement>) {
     if (select.value === "manual") continue;
     if (displayOverrideTargets.has(select.value)) {
       return "Display override targets must not be duplicated.";
@@ -365,7 +413,10 @@ function actionButton(label: string, action: () => void): HTMLButtonElement {
   return button;
 }
 
-function card(title: string, onRemove: (node: HTMLElement) => void): HTMLElement {
+function card(
+  title: string,
+  onRemove: (node: HTMLElement) => void,
+): HTMLElement {
   const wrapper = document.createElement("div");
   wrapper.className = "collection-item";
   const header = document.createElement("div");
@@ -383,7 +434,11 @@ function card(title: string, onRemove: (node: HTMLElement) => void): HTMLElement
   return wrapper;
 }
 
-function labeledInput(label: string, type: string, className?: string): [HTMLLabelElement, HTMLInputElement] {
+function labeledInput(
+  label: string,
+  type: string,
+  className?: string,
+): [HTMLLabelElement, HTMLInputElement] {
   const wrapper = document.createElement("label");
   const span = document.createElement("span");
   const input = document.createElement("input");
@@ -396,7 +451,9 @@ function labeledInput(label: string, type: string, className?: string): [HTMLLab
 }
 
 function checkedProviders(): string[] {
-  return Array.from(providerListEl.querySelectorAll("input") as NodeListOf<HTMLInputElement>)
+  return Array.from(
+    providerListEl.querySelectorAll("input") as NodeListOf<HTMLInputElement>,
+  )
     .filter((input) => !input.checked)
     .map((input) => input.value);
 }
@@ -454,16 +511,22 @@ function renderProviderOrder(order: string[]): void {
 }
 
 function collectProviderOrder(): string[] {
-  return Array.from(providerOrderEl.querySelectorAll(".order-item") as NodeListOf<HTMLElement>).map(
-    (el) => el.dataset.provider!,
-  );
+  return Array.from(
+    providerOrderEl.querySelectorAll(".order-item") as NodeListOf<HTMLElement>,
+  ).map((el) => el.dataset.provider!);
 }
 
 function syncColorschemeOptions(): void {
   const select = field("ui.colorscheme") as HTMLSelectElement;
   const previous = select.value || state.draft?.ui?.colorscheme || "system";
-  const customNames = collectColorschemes().map((scheme) => scheme.name).filter(Boolean);
-  const names = ["system", ...(state.builtin_colorschemes || []), ...customNames];
+  const customNames = collectColorschemes()
+    .map((scheme) => scheme.name)
+    .filter(Boolean);
+  const names = [
+    "system",
+    ...(state.builtin_colorschemes || []),
+    ...customNames,
+  ];
   select.replaceChildren();
   for (const name of names) {
     select.append(option(name));
@@ -480,8 +543,13 @@ function renderColorschemes(payload: SettingsPayload): void {
 }
 
 function renderDraft(draft: SettingsDraft): void {
-  for (const input of formEl.querySelectorAll("[data-field]") as NodeListOf<HTMLElement>) {
-    setField((input as HTMLElement).dataset.field!, pathValue(draft, (input as HTMLElement).dataset.field!));
+  for (const input of formEl.querySelectorAll(
+    "[data-field]",
+  ) as NodeListOf<HTMLElement>) {
+    setField(
+      (input as HTMLElement).dataset.field!,
+      pathValue(draft, (input as HTMLElement).dataset.field!),
+    );
   }
   syncShortcutRecorders();
 }
@@ -510,25 +578,41 @@ function manualDisplayEntry(): DisplayOverride {
   return { built_in: null, vendor: null, model: null, serial: null };
 }
 
-function displayForOverride(entry: DisplayOverride): DisplayOptionPayload | null {
+function displayForOverride(
+  entry: DisplayOverride,
+): DisplayOptionPayload | null {
   const displays = state.displays || [];
   if (entry.built_in != null) {
-    const exact = displays.find((display) => display.key === displayKeyFor(entry));
+    const exact = displays.find(
+      (display) => display.key === displayKeyFor(entry),
+    );
     if (exact) return exact;
   }
   if (entry.serial != null) {
-    const serialMatch = displays.find((display) => display.serial === entry.serial);
+    const serialMatch = displays.find(
+      (display) => display.serial === entry.serial,
+    );
     if (serialMatch) return serialMatch;
   }
   if (entry.vendor != null && entry.model != null) {
-    return displays.find((display) => display.vendor === entry.vendor && display.model === entry.model) || null;
+    return (
+      displays.find(
+        (display) =>
+          display.vendor === entry.vendor && display.model === entry.model,
+      ) || null
+    );
   }
   return null;
 }
 
-function selectedDisplayFromSelect(select: HTMLSelectElement): DisplayOptionPayload | null {
+function selectedDisplayFromSelect(
+  select: HTMLSelectElement,
+): DisplayOptionPayload | null {
   if (select.value === "manual") return null;
-  return (state.displays || []).find((display) => display.key === select.value) || null;
+  return (
+    (state.displays || []).find((display) => display.key === select.value) ||
+    null
+  );
 }
 
 function displayIdentitySummary(display: DisplayOptionPayload): string {
@@ -541,7 +625,8 @@ function displayIdentitySummary(display: DisplayOptionPayload): string {
 
 function disconnectedDisplayLabel(entry: DisplayOverride): string {
   const parts: string[] = [];
-  if (entry.built_in != null) parts.push(entry.built_in ? "Built-in" : "External");
+  if (entry.built_in != null)
+    parts.push(entry.built_in ? "Built-in" : "External");
   if (entry.vendor != null) parts.push(`vendor ${entry.vendor}`);
   if (entry.model != null) parts.push(`model ${entry.model}`);
   if (entry.serial != null) parts.push(`serial ${entry.serial}`);
@@ -549,7 +634,10 @@ function disconnectedDisplayLabel(entry: DisplayOverride): string {
   return `${label} (disconnected)`;
 }
 
-function buildDisplayTargetBlock(selectedDisplay: DisplayOptionPayload | null, disconnectedEntry: DisplayOverride | null) {
+function buildDisplayTargetBlock(
+  selectedDisplay: DisplayOptionPayload | null,
+  disconnectedEntry: DisplayOverride | null,
+) {
   const target = document.createElement("div");
   target.className = "display-target";
   const targetLabel = document.createElement("label");
@@ -587,12 +675,20 @@ function buildIdentityBlock(entry: DisplayOverride) {
   const builtIn = document.createElement("select");
   builtIn.dataset.overrideField = "built_in";
   builtInText.textContent = "Built-in";
-  builtIn.append(option("", "Any"), option("true", "Built-in"), option("false", "External"));
+  builtIn.append(
+    option("", "Any"),
+    option("true", "Built-in"),
+    option("false", "External"),
+  );
   builtIn.value = entry.built_in == null ? "" : String(entry.built_in);
   builtInLabel.append(builtInText, builtIn);
   identity.append(builtInLabel);
 
-  for (const [key, label] of [["vendor", "Vendor"], ["model", "Model"], ["serial", "Serial"]] as const) {
+  for (const [key, label] of [
+    ["vendor", "Vendor"],
+    ["model", "Model"],
+    ["serial", "Serial"],
+  ] as const) {
     const [labelNode, input] = labeledInput(label, "text");
     input.dataset.overrideField = key;
     input.dataset.optional = "true";
@@ -628,8 +724,17 @@ function buildDimensionsGrid(entry: DisplayOverride) {
   return grid;
 }
 
-function addDisplayOverride(entry: DisplayOverride = manualDisplayEntry(), preferredDisplayKey: string | null = null, reveal = false): void {
-  if (Object.keys(entry).every((k) => entry[k as keyof DisplayOverride] == null) && (state.displays || []).length > 0) {
+function addDisplayOverride(
+  entry: DisplayOverride = manualDisplayEntry(),
+  preferredDisplayKey: string | null = null,
+  reveal = false,
+): void {
+  if (
+    Object.keys(entry).every(
+      (k) => entry[k as keyof DisplayOverride] == null,
+    ) &&
+    (state.displays || []).length > 0
+  ) {
     const display = state.displays[0];
     preferredDisplayKey = display.key;
     entry = displayEntry(display);
@@ -637,12 +742,21 @@ function addDisplayOverride(entry: DisplayOverride = manualDisplayEntry(), prefe
 
   const wrapper = card("Display override", (node) => node.remove());
   const selectedDisplay = preferredDisplayKey
-    ? (state.displays || []).find((display) => display.key === preferredDisplayKey) || null
+    ? (state.displays || []).find(
+        (display) => display.key === preferredDisplayKey,
+      ) || null
     : displayForOverride(entry);
 
-  const hasIdentity = entry.built_in != null || entry.vendor != null || entry.model != null || entry.serial != null;
+  const hasIdentity =
+    entry.built_in != null ||
+    entry.vendor != null ||
+    entry.model != null ||
+    entry.serial != null;
   const disconnectedEntry = !selectedDisplay && hasIdentity ? entry : null;
-  const { target, targetSelect, targetSummary } = buildDisplayTargetBlock(selectedDisplay, disconnectedEntry);
+  const { target, targetSelect, targetSummary } = buildDisplayTargetBlock(
+    selectedDisplay,
+    disconnectedEntry,
+  );
   const { identity, builtIn } = buildIdentityBlock(entry);
   const grid = buildDimensionsGrid(entry);
 
@@ -650,9 +764,21 @@ function addDisplayOverride(entry: DisplayOverride = manualDisplayEntry(), prefe
     const display = selectedDisplayFromSelect(targetSelect);
     if (display) {
       builtIn.value = String(display.built_in);
-      (wrapper.querySelector('[data-override-field="vendor"]') as HTMLInputElement).value = display.vendor != null ? String(display.vendor) : "";
-      (wrapper.querySelector('[data-override-field="model"]') as HTMLInputElement).value = display.model != null ? String(display.model) : "";
-      (wrapper.querySelector('[data-override-field="serial"]') as HTMLInputElement).value = display.serial != null ? String(display.serial) : "";
+      (
+        wrapper.querySelector(
+          '[data-override-field="vendor"]',
+        ) as HTMLInputElement
+      ).value = display.vendor != null ? String(display.vendor) : "";
+      (
+        wrapper.querySelector(
+          '[data-override-field="model"]',
+        ) as HTMLInputElement
+      ).value = display.model != null ? String(display.model) : "";
+      (
+        wrapper.querySelector(
+          '[data-override-field="serial"]',
+        ) as HTMLInputElement
+      ).value = display.serial != null ? String(display.serial) : "";
       targetSummary.textContent = displayIdentitySummary(display);
       (identity as HTMLElement).hidden = true;
     } else {
@@ -674,10 +800,14 @@ function addDisplayOverride(entry: DisplayOverride = manualDisplayEntry(), prefe
 
 function firstDisplayWithoutOverride(): DisplayOptionPayload | null {
   const used = new Set<string>();
-  for (const select of displayOverridesEl.querySelectorAll("[data-display-target]") as NodeListOf<HTMLSelectElement>) {
+  for (const select of displayOverridesEl.querySelectorAll(
+    "[data-display-target]",
+  ) as NodeListOf<HTMLSelectElement>) {
     if (select.value !== "manual") used.add(select.value);
   }
-  return (state.displays || []).find((display) => !used.has(display.key)) || null;
+  return (
+    (state.displays || []).find((display) => !used.has(display.key)) || null
+  );
 }
 
 function handleAddDisplayOverride(event?: Event): void {
@@ -688,16 +818,30 @@ function handleAddDisplayOverride(event?: Event): void {
     setStatus(`Added display override for ${display.label}.`);
   } else {
     addDisplayOverride(manualDisplayEntry(), "manual", true);
-    setStatus("All detected displays already have overrides. Added a manual identity override.");
+    setStatus(
+      "All detected displays already have overrides. Added a manual identity override.",
+    );
   }
   updateDirtyState();
 }
 
 function collectDisplayOverrides(): DisplayOverride[] {
-  return Array.from(displayOverridesEl.querySelectorAll(".collection-item") as NodeListOf<HTMLElement>).map((item) => {
-    const get = (key: string) => item.querySelector(`[data-override-field="${key}"]`) as HTMLInputElement | HTMLSelectElement;
-    const selectedDisplay = selectedDisplayFromSelect(item.querySelector("[data-display-target]") as HTMLSelectElement);
-    const identity: Pick<DisplayOverride, "built_in" | "vendor" | "model" | "serial"> = selectedDisplay
+  return Array.from(
+    displayOverridesEl.querySelectorAll(
+      ".collection-item",
+    ) as NodeListOf<HTMLElement>,
+  ).map((item) => {
+    const get = (key: string) =>
+      item.querySelector(`[data-override-field="${key}"]`) as
+        | HTMLInputElement
+        | HTMLSelectElement;
+    const selectedDisplay = selectedDisplayFromSelect(
+      item.querySelector("[data-display-target]") as HTMLSelectElement,
+    );
+    const identity: Pick<
+      DisplayOverride,
+      "built_in" | "vendor" | "model" | "serial"
+    > = selectedDisplay
       ? {
           built_in: selectedDisplay.built_in,
           vendor: selectedDisplay.vendor,
@@ -713,7 +857,10 @@ function collectDisplayOverrides(): DisplayOverride[] {
     return {
       ...identity,
       width_fraction: optionalNumber(get("width_fraction") as HTMLInputElement),
-      visible_rows: optionalNumber(get("visible_rows") as HTMLInputElement, true),
+      visible_rows: optionalNumber(
+        get("visible_rows") as HTMLInputElement,
+        true,
+      ),
       min_width: optionalNumber(get("min_width") as HTMLInputElement),
       max_width: optionalNumber(get("max_width") as HTMLInputElement),
       min_height: optionalNumber(get("min_height") as HTMLInputElement),
@@ -730,7 +877,10 @@ function renderProviderBoosts(boosts: Record<string, number> = {}): void {
   }
 }
 
-function addProviderBoost(provider = (state.known_providers || [])[0] || "apps", boost = 0): void {
+function addProviderBoost(
+  provider = (state.known_providers || [])[0] || "apps",
+  boost = 0,
+): void {
   const wrapper = card("Provider boost", (node) => node.remove());
   const grid = document.createElement("div");
   grid.className = "grid two";
@@ -758,9 +908,17 @@ function addProviderBoost(provider = (state.known_providers || [])[0] || "apps",
 
 function collectProviderBoosts(): Record<string, number> {
   const boosts: Record<string, number> = {};
-  for (const item of providerBoostsEl.querySelectorAll(".collection-item") as NodeListOf<HTMLElement>) {
-    const provider = (item.querySelector("[data-boost-provider]") as HTMLSelectElement).value;
-    const boost = Math.trunc(Number((item.querySelector("[data-boost-value]") as HTMLInputElement).value));
+  for (const item of providerBoostsEl.querySelectorAll(
+    ".collection-item",
+  ) as NodeListOf<HTMLElement>) {
+    const provider = (
+      item.querySelector("[data-boost-provider]") as HTMLSelectElement
+    ).value;
+    const boost = Math.trunc(
+      Number(
+        (item.querySelector("[data-boost-value]") as HTMLInputElement).value,
+      ),
+    );
     boosts[provider] = boost;
   }
   return boosts;
@@ -835,10 +993,19 @@ function addScoreRule(rule: Partial<ScoreRule> = {}): void {
 }
 
 function collectScoreRules(): ScoreRule[] {
-  return Array.from(scoreRulesEl.querySelectorAll(".collection-item") as NodeListOf<HTMLElement>).map((item) => {
-    const get = (key: string) => item.querySelector(`[data-rule-field="${key}"]`) as HTMLElement;
+  return Array.from(
+    scoreRulesEl.querySelectorAll(
+      ".collection-item",
+    ) as NodeListOf<HTMLElement>,
+  ).map((item) => {
+    const get = (key: string) =>
+      item.querySelector(`[data-rule-field="${key}"]`) as HTMLElement;
     return {
-      providers: Array.from((get("providers") as HTMLElement).querySelectorAll("input:checked") as NodeListOf<HTMLInputElement>).map((cb) => cb.value),
+      providers: Array.from(
+        (get("providers") as HTMLElement).querySelectorAll(
+          "input:checked",
+        ) as NodeListOf<HTMLInputElement>,
+      ).map((cb) => cb.value),
       field: (get("field") as HTMLSelectElement).value,
       match_kind: (get("match_kind") as HTMLSelectElement).value,
       pattern: (get("pattern") as HTMLInputElement).value.trim(),
@@ -883,15 +1050,26 @@ function addPluginInstall(entry: Partial<PluginInstallEntry> = {}): void {
 }
 
 function collectPluginInstall(): PluginInstallEntry[] {
-  return Array.from(pluginInstallEl.querySelectorAll(".collection-item") as NodeListOf<HTMLElement>).map((item) => {
-    const get = (key: string) => item.querySelector(`[data-install-field="${key}"]`) as HTMLInputElement | null;
-    const entry: PluginInstallEntry = { source: (get("source")?.value || "").trim() };
-    const ref = (get("ref")?.value || "").trim();
-    const branch = (get("branch")?.value || "").trim();
-    if (ref) entry.ref = ref;
-    if (branch) entry.branch = branch;
-    return entry;
-  }).filter((entry) => entry.source.length > 0);
+  return Array.from(
+    pluginInstallEl.querySelectorAll(
+      ".collection-item",
+    ) as NodeListOf<HTMLElement>,
+  )
+    .map((item) => {
+      const get = (key: string) =>
+        item.querySelector(
+          `[data-install-field="${key}"]`,
+        ) as HTMLInputElement | null;
+      const entry: PluginInstallEntry = {
+        source: (get("source")?.value || "").trim(),
+      };
+      const ref = (get("ref")?.value || "").trim();
+      const branch = (get("branch")?.value || "").trim();
+      if (ref) entry.ref = ref;
+      if (branch) entry.branch = branch;
+      return entry;
+    })
+    .filter((entry) => entry.source.length > 0);
 }
 
 function renderCustomColorschemes(schemes: ColorschemeEntry[] = []): void {
@@ -950,7 +1128,9 @@ function addColorscheme(scheme: Partial<ColorschemeEntry> = {}): void {
 
   function updateInheritedTokenPlaceholders(): void {
     const preset = state.color_presets?.[baseSelect.value] || {};
-    for (const input of tokens.querySelectorAll("[data-color-token]") as NodeListOf<HTMLInputElement>) {
+    for (const input of tokens.querySelectorAll(
+      "[data-color-token]",
+    ) as NodeListOf<HTMLInputElement>) {
       input.placeholder = preset[input.dataset.colorToken!] || "";
     }
   }
@@ -964,15 +1144,24 @@ function addColorscheme(scheme: Partial<ColorschemeEntry> = {}): void {
 }
 
 function collectColorschemes(): ColorschemeEntry[] {
-  return Array.from(colorschemesEl.querySelectorAll(".collection-item") as NodeListOf<HTMLElement>).map((item) => {
+  return Array.from(
+    colorschemesEl.querySelectorAll(
+      ".collection-item",
+    ) as NodeListOf<HTMLElement>,
+  ).map((item) => {
     const tokens: Record<string, string> = {};
-    for (const input of item.querySelectorAll("[data-color-token]") as NodeListOf<HTMLInputElement>) {
+    for (const input of item.querySelectorAll(
+      "[data-color-token]",
+    ) as NodeListOf<HTMLInputElement>) {
       const value = input.value.trim();
       if (value) tokens[input.dataset.colorToken!] = value;
     }
     return {
-      name: (item.querySelector("[data-colorscheme-name]") as HTMLInputElement).value.trim(),
-      base: (item.querySelector("[data-colorscheme-base]") as HTMLSelectElement).value,
+      name: (
+        item.querySelector("[data-colorscheme-name]") as HTMLInputElement
+      ).value.trim(),
+      base: (item.querySelector("[data-colorscheme-base]") as HTMLSelectElement)
+        .value,
       tokens,
     };
   });
@@ -1008,7 +1197,9 @@ function render(payload: SettingsPayload): void {
       setPane("raw");
       setStatus(payload.error || "Config is invalid", true);
     }
-    for (const input of formEl.querySelectorAll("input, select, textarea, button") as NodeListOf<HTMLInputElement>) {
+    for (const input of formEl.querySelectorAll(
+      "input, select, textarea, button",
+    ) as NodeListOf<HTMLInputElement>) {
       input.disabled = !hasDraft;
     }
   } finally {
@@ -1039,7 +1230,9 @@ function collectDraft(): SettingsDraft {
     providers: {
       disabled: checkedProviders(),
       windows: {
-        include_other_desktops: bool("providers.windows.include_other_desktops"),
+        include_other_desktops: bool(
+          "providers.windows.include_other_desktops",
+        ),
         show_on_empty_query: bool("providers.windows.show_on_empty_query"),
       },
       apps: {
@@ -1107,18 +1300,24 @@ function collectDraft(): SettingsDraft {
 }
 
 for (const item of navItems) {
-  item.addEventListener("click", () => setPane((item as HTMLElement).dataset.pane!));
+  item.addEventListener("click", () =>
+    setPane((item as HTMLElement).dataset.pane!),
+  );
 }
 
 formEl.addEventListener("input", updateDirtyState);
 formEl.addEventListener("change", updateDirtyState);
 rawEl.addEventListener("input", updateDirtyState);
 
-for (const input of document.querySelectorAll('input[type="number"]') as NodeListOf<HTMLInputElement>) {
+for (const input of document.querySelectorAll(
+  'input[type="number"]',
+) as NodeListOf<HTMLInputElement>) {
   normalizeNumberInput(input);
 }
 
-for (const button of formEl.querySelectorAll("[data-shortcut-recorder]") as NodeListOf<HTMLElement>) {
+for (const button of formEl.querySelectorAll(
+  "[data-shortcut-recorder]",
+) as NodeListOf<HTMLElement>) {
   button.addEventListener("click", () => {
     if ((button as HTMLButtonElement).disabled) return;
     recordingShortcut = button;
@@ -1136,7 +1335,9 @@ for (const button of formEl.querySelectorAll("[data-shortcut-recorder]") as Node
   });
 }
 
-for (const button of formEl.querySelectorAll("[data-shortcut-clear]") as NodeListOf<HTMLElement>) {
+for (const button of formEl.querySelectorAll(
+  "[data-shortcut-clear]",
+) as NodeListOf<HTMLElement>) {
   button.addEventListener("click", () => {
     if ((button as HTMLButtonElement).disabled) return;
     field(button.dataset.shortcutClear!).value = "none";
@@ -1145,7 +1346,9 @@ for (const button of formEl.querySelectorAll("[data-shortcut-clear]") as NodeLis
   });
 }
 
-document.getElementById("add-display-override")!.addEventListener("click", handleAddDisplayOverride);
+document
+  .getElementById("add-display-override")!
+  .addEventListener("click", handleAddDisplayOverride);
 
 document.getElementById("add-provider-boost")!.addEventListener("click", () => {
   addProviderBoost();
@@ -1158,7 +1361,11 @@ document.getElementById("add-score-rule")!.addEventListener("click", () => {
 });
 
 document.getElementById("add-colorscheme")!.addEventListener("click", () => {
-  addColorscheme({ name: nextColorschemeName(), base: "builtin_dark", tokens: {} });
+  addColorscheme({
+    name: nextColorschemeName(),
+    base: "builtin_dark",
+    tokens: {},
+  });
   updateDirtyState();
 });
 

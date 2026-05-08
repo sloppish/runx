@@ -2,6 +2,7 @@
   "name": "runx-ui",
   "private": true,
   "devDependencies": {
+    "@biomejs/biome": "^2.4.14",
     "bun-types": "^1.3.13",
     "typescript": "^5.8.0"
   }

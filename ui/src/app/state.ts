@@ -1,4 +1,4 @@
-import { RenderItem, RenderPayload } from "../types";
+import type { RenderItem, RenderPayload } from "../types";
 
 export interface LauncherState {
   query: string;
@@ -34,21 +34,32 @@ export function clampSelection(state: LauncherState): void {
     state.selectedIndex = 0;
     return;
   }
-  state.selectedIndex = Math.max(0, Math.min(state.selectedIndex, state.items.length - 1));
+  state.selectedIndex = Math.max(
+    0,
+    Math.min(state.selectedIndex, state.items.length - 1),
+  );
 }
 
-export function moveSelection(state: LauncherState, delta: number, cycle = false): void {
+export function moveSelection(
+  state: LauncherState,
+  delta: number,
+  cycle = false,
+): void {
   if (state.items.length === 0) {
     return;
   }
 
   if (!cycle) {
-    state.selectedIndex = Math.max(0, Math.min(state.selectedIndex + delta, state.items.length - 1));
+    state.selectedIndex = Math.max(
+      0,
+      Math.min(state.selectedIndex + delta, state.items.length - 1),
+    );
     return;
   }
 
   const count = state.items.length;
-  state.selectedIndex = ((state.selectedIndex + delta) % count + count) % count;
+  state.selectedIndex =
+    (((state.selectedIndex + delta) % count) + count) % count;
 }
 
 export function inputChanged(state: LauncherState, query: string): void {
@@ -62,7 +73,8 @@ export function applyRenderPayload(
   environment: Environment,
 ): RenderUpdate {
   const payloadQuery = typeof payload.query === "string" ? payload.query : "";
-  state.configError = typeof payload.config_error === "string" ? payload.config_error : null;
+  state.configError =
+    typeof payload.config_error === "string" ? payload.config_error : null;
   const shouldSyncInput =
     payloadQuery === "" ||
     environment.inputValue === payloadQuery ||

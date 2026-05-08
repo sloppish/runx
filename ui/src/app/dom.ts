@@ -1,7 +1,6 @@
-import { RenderItem } from "../types";
-import { escapeHtml, escapeAttr } from "./text";
-import { LauncherState } from "./state";
 import { send } from "./ipc";
+import type { LauncherState } from "./state";
+import { escapeAttr, escapeHtml } from "./text";
 
 export interface DomElements {
   shell: HTMLElement;
@@ -39,7 +38,10 @@ export function renderResults(dom: DomElements, state: LauncherState): void {
   for (const [index, item] of state.items.entries()) {
     const row = document.createElement("button");
     row.type = "button";
-    row.className = "item" + (item.compact ? " compact" : "") + (index === state.selectedIndex ? " selected" : "");
+    row.className =
+      "item" +
+      (item.compact ? " compact" : "") +
+      (index === state.selectedIndex ? " selected" : "");
     const badgeMarkup = item.compact
       ? ""
       : item.icon
@@ -57,12 +59,18 @@ export function renderResults(dom: DomElements, state: LauncherState): void {
       </div>
       <div class="accelerator">${item.accelerator ? escapeHtml(item.accelerator) : ""}</div>
     `;
-    row.addEventListener("click", () => send({ type: "activate", index, all_windows: false }));
+    row.addEventListener("click", () =>
+      send({ type: "activate", index, all_windows: false }),
+    );
     dom.results.appendChild(row);
   }
 }
 
-export function syncSelection(dom: DomElements, selectedIndex: number, ensureVisible = true): void {
+export function syncSelection(
+  dom: DomElements,
+  selectedIndex: number,
+  ensureVisible = true,
+): void {
   Array.from(dom.results.children).forEach((child, index) => {
     child.classList.toggle("selected", index === selectedIndex);
   });
@@ -103,7 +111,8 @@ export function measurePreferredHeight(dom: DomElements, rows: number): number {
 
   const inputWrap = document.createElement("div");
   inputWrap.className = "input-wrap";
-  inputWrap.innerHTML = '<input type="text" autocomplete="off" spellcheck="false" placeholder="" value="" />';
+  inputWrap.innerHTML =
+    '<input type="text" autocomplete="off" spellcheck="false" placeholder="" value="" />';
 
   const results = document.createElement("section");
   results.className = "results";

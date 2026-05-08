@@ -1,23 +1,35 @@
-import { RenderPayload, Shortcut } from "../types";
+import type { RenderPayload, Shortcut } from "../types";
 import {
-  LauncherState,
-  createState,
-  normalizeVisibleRows,
-  clampSelection,
-  moveSelection,
-  inputChanged,
-  applyRenderPayload,
-} from "./state";
+  type DomElements,
+  measurePreferredHeight,
+  queryElements,
+  renderConfigError,
+  renderResults,
+  syncSelection,
+} from "./dom";
+import { send } from "./ipc";
 import {
+  isCopyShortcut,
   isCtrlNextShortcut,
   isCtrlPreviousShortcut,
-  isCopyShortcut,
   isPasteShortcut,
   matchesShortcut,
 } from "./shortcuts";
-import { escapeHtml, escapeAttr, selectedInputText, replaceInputSelection } from "./text";
-import { send } from "./ipc";
-import { DomElements, queryElements, renderConfigError, renderResults, syncSelection, measurePreferredHeight } from "./dom";
+import {
+  applyRenderPayload,
+  clampSelection,
+  createState,
+  inputChanged,
+  type LauncherState,
+  moveSelection,
+  normalizeVisibleRows,
+} from "./state";
+import {
+  escapeAttr,
+  escapeHtml,
+  replaceInputSelection,
+  selectedInputText,
+} from "./text";
 
 const api = {
   applyRenderPayload,
@@ -36,7 +48,6 @@ const api = {
   replaceInputSelection,
   selectedInputText,
 };
-
 
 if (typeof window !== "undefined" && window.document) {
   const state: LauncherState = createState();
@@ -79,7 +90,10 @@ if (typeof window !== "undefined" && window.document) {
     if (!Number.isFinite(height) || height <= 0) {
       return;
     }
-    if (lastReportedPreferredHeight === height && lastReportedLayoutVersion === version) {
+    if (
+      lastReportedPreferredHeight === height &&
+      lastReportedLayoutVersion === version
+    ) {
       return;
     }
     lastReportedPreferredHeight = height;
@@ -167,7 +181,13 @@ if (typeof window !== "undefined" && window.document) {
       return;
     }
 
-    if (event.code === "KeyA" && event.metaKey && !event.altKey && !event.shiftKey && !event.ctrlKey) {
+    if (
+      event.code === "KeyA" &&
+      event.metaKey &&
+      !event.altKey &&
+      !event.shiftKey &&
+      !event.ctrlKey
+    ) {
       event.preventDefault();
       dom.input.select();
       return;
@@ -195,7 +215,11 @@ if (typeof window !== "undefined" && window.document) {
 
     if (matchesShortcut(event, focusWindowShortcut())) {
       event.preventDefault();
-      send({ type: "activate", index: state.selectedIndex, all_windows: false });
+      send({
+        type: "activate",
+        index: state.selectedIndex,
+        all_windows: false,
+      });
       return;
     }
 
@@ -235,7 +259,12 @@ if (typeof window !== "undefined" && window.document) {
       return;
     }
 
-    if (event.metaKey || event.ctrlKey || event.altKey || event.key.length !== 1) {
+    if (
+      event.metaKey ||
+      event.ctrlKey ||
+      event.altKey ||
+      event.key.length !== 1
+    ) {
       return;
     }
 
@@ -253,19 +282,19 @@ if (typeof window !== "undefined" && window.document) {
 }
 
 export {
-  createState,
-  normalizeVisibleRows,
-  clampSelection,
-  moveSelection,
-  inputChanged,
   applyRenderPayload,
+  clampSelection,
+  createState,
+  escapeAttr,
+  escapeHtml,
+  inputChanged,
+  isCopyShortcut,
   isCtrlNextShortcut,
   isCtrlPreviousShortcut,
-  isCopyShortcut,
   isPasteShortcut,
   matchesShortcut,
-  escapeHtml,
-  escapeAttr,
-  selectedInputText,
+  moveSelection,
+  normalizeVisibleRows,
   replaceInputSelection,
+  selectedInputText,
 };

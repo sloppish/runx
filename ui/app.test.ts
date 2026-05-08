@@ -1,17 +1,17 @@
-import { test, expect } from "bun:test";
+import { expect, test } from "bun:test";
 import {
-  createState,
-  normalizeVisibleRows,
-  moveSelection,
-  inputChanged,
   applyRenderPayload,
+  createState,
+  inputChanged,
+  isCopyShortcut,
   isCtrlNextShortcut,
   isCtrlPreviousShortcut,
-  isCopyShortcut,
   isPasteShortcut,
   matchesShortcut,
-  selectedInputText,
+  moveSelection,
+  normalizeVisibleRows,
   replaceInputSelection,
+  selectedInputText,
 } from "./src/app/index";
 
 test("hover does not steal keyboard selection", () => {
@@ -35,44 +35,116 @@ test("selection can wrap from first to last and last to first", () => {
 
 test("ctrl-n and ctrl-p use physical key codes so they survive non-latin layouts", () => {
   expect(
-    isCtrlNextShortcut({ key: "т", code: "KeyN", ctrlKey: true, metaKey: false, altKey: false } as any),
+    isCtrlNextShortcut({
+      key: "т",
+      code: "KeyN",
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+    } as any),
   ).toBe(true);
   expect(
-    isCtrlPreviousShortcut({ key: "з", code: "KeyP", ctrlKey: true, metaKey: false, altKey: false } as any),
+    isCtrlPreviousShortcut({
+      key: "з",
+      code: "KeyP",
+      ctrlKey: true,
+      metaKey: false,
+      altKey: false,
+    } as any),
   ).toBe(true);
   expect(
-    isCtrlNextShortcut({ key: "n", code: "KeyN", ctrlKey: false, metaKey: false, altKey: false } as any),
+    isCtrlNextShortcut({
+      key: "n",
+      code: "KeyN",
+      ctrlKey: false,
+      metaKey: false,
+      altKey: false,
+    } as any),
   ).toBe(false);
 });
 
 test("copy shortcut uses physical key code in config error mode", () => {
   expect(
-    isCopyShortcut({ code: "KeyC", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false } as any),
+    isCopyShortcut({
+      code: "KeyC",
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+    } as any),
   ).toBe(true);
   expect(
-    isCopyShortcut({ code: "KeyC", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false } as any),
+    isCopyShortcut({
+      code: "KeyC",
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+    } as any),
   ).toBe(false);
   expect(
-    isCopyShortcut({ code: "KeyC", metaKey: true, ctrlKey: false, altKey: true, shiftKey: false } as any),
+    isCopyShortcut({
+      code: "KeyC",
+      metaKey: true,
+      ctrlKey: false,
+      altKey: true,
+      shiftKey: false,
+    } as any),
   ).toBe(false);
 });
 
 test("paste shortcut uses physical key code", () => {
   expect(
-    isPasteShortcut({ code: "KeyV", metaKey: true, ctrlKey: false, altKey: false, shiftKey: false } as any),
+    isPasteShortcut({
+      code: "KeyV",
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: false,
+    } as any),
   ).toBe(true);
   expect(
-    isPasteShortcut({ code: "KeyV", metaKey: false, ctrlKey: true, altKey: false, shiftKey: false } as any),
+    isPasteShortcut({
+      code: "KeyV",
+      metaKey: false,
+      ctrlKey: true,
+      altKey: false,
+      shiftKey: false,
+    } as any),
   ).toBe(false);
   expect(
-    isPasteShortcut({ code: "KeyV", metaKey: true, ctrlKey: false, altKey: false, shiftKey: true } as any),
+    isPasteShortcut({
+      code: "KeyV",
+      metaKey: true,
+      ctrlKey: false,
+      altKey: false,
+      shiftKey: true,
+    } as any),
   ).toBe(false);
 });
 
 test("input copy reads selected text", () => {
-  expect(selectedInputText({ value: "abcdef", selectionStart: 1, selectionEnd: 4 } as any)).toBe("bcd");
-  expect(selectedInputText({ value: "abcdef", selectionStart: 4, selectionEnd: 1 } as any)).toBe("bcd");
-  expect(selectedInputText({ value: "abcdef", selectionStart: 2, selectionEnd: 2 } as any)).toBe("");
+  expect(
+    selectedInputText({
+      value: "abcdef",
+      selectionStart: 1,
+      selectionEnd: 4,
+    } as any),
+  ).toBe("bcd");
+  expect(
+    selectedInputText({
+      value: "abcdef",
+      selectionStart: 4,
+      selectionEnd: 1,
+    } as any),
+  ).toBe("bcd");
+  expect(
+    selectedInputText({
+      value: "abcdef",
+      selectionStart: 2,
+      selectionEnd: 2,
+    } as any),
+  ).toBe("");
 });
 
 test("input paste replaces selected text and moves caret", () => {
@@ -105,10 +177,30 @@ test("shortcut matcher supports configurable option-enter", () => {
   };
 
   expect(
-    matchesShortcut({ key: "Enter", code: "Enter", altKey: true, ctrlKey: false, metaKey: false, shiftKey: false } as any, shortcut),
+    matchesShortcut(
+      {
+        key: "Enter",
+        code: "Enter",
+        altKey: true,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+      } as any,
+      shortcut,
+    ),
   ).toBe(true);
   expect(
-    matchesShortcut({ key: "Enter", code: "Enter", altKey: false, ctrlKey: false, metaKey: false, shiftKey: false } as any, shortcut),
+    matchesShortcut(
+      {
+        key: "Enter",
+        code: "Enter",
+        altKey: false,
+        ctrlKey: false,
+        metaKey: false,
+        shiftKey: false,
+      } as any,
+      shortcut,
+    ),
   ).toBe(false);
 });
 
@@ -128,7 +220,6 @@ test("visible rows normalize to a positive integer", () => {
   expect(normalizeVisibleRows(0)).toBe(1);
   expect(normalizeVisibleRows("4.6" as any)).toBe(5);
 });
-
 
 test("backend render payload does not overwrite active typing with stale query text", () => {
   const state = createState();

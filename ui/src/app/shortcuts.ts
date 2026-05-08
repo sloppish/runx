@@ -1,22 +1,43 @@
-import { Shortcut } from "../types";
+import type { Shortcut } from "../types";
 
 export function isCtrlNextShortcut(event: KeyboardEvent): boolean {
-  return event.key === "ArrowDown" || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyN");
+  return (
+    event.key === "ArrowDown" ||
+    (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyN")
+  );
 }
 
 export function isCtrlPreviousShortcut(event: KeyboardEvent): boolean {
-  return event.key === "ArrowUp" || (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyP");
+  return (
+    event.key === "ArrowUp" ||
+    (event.ctrlKey && !event.metaKey && !event.altKey && event.code === "KeyP")
+  );
 }
 
 export function isCopyShortcut(event: KeyboardEvent): boolean {
-  return event.code === "KeyC" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+  return (
+    event.code === "KeyC" &&
+    event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey
+  );
 }
 
 export function isPasteShortcut(event: KeyboardEvent): boolean {
-  return event.code === "KeyV" && event.metaKey && !event.ctrlKey && !event.altKey && !event.shiftKey;
+  return (
+    event.code === "KeyV" &&
+    event.metaKey &&
+    !event.ctrlKey &&
+    !event.altKey &&
+    !event.shiftKey
+  );
 }
 
-export function matchesShortcut(event: KeyboardEvent, shortcut: Shortcut | null): boolean {
+export function matchesShortcut(
+  event: KeyboardEvent,
+  shortcut: Shortcut | null,
+): boolean {
   if (!shortcut) {
     return false;
   }

@@ -18,7 +18,10 @@ export function selectedInputText(input: HTMLInputElement): string {
   return input.value.slice(Math.min(start, end), Math.max(start, end));
 }
 
-export function replaceInputSelection(input: HTMLInputElement, text: string): string {
+export function replaceInputSelection(
+  input: HTMLInputElement,
+  text: string,
+): string {
   const start = input.selectionStart ?? input.value.length;
   const end = input.selectionEnd ?? input.value.length;
   const head = input.value.slice(0, Math.min(start, end));
