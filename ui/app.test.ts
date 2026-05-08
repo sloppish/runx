@@ -2,6 +2,8 @@ import { expect, test } from "bun:test";
 import {
   applyRenderPayload,
   createState,
+  escapeAttr,
+  escapeHtml,
   inputChanged,
   isCopyShortcut,
   isCtrlNextShortcut,
@@ -249,4 +251,26 @@ test("backend render payload preserves config error separately from items", () =
 
   expect(state.configError).toBe("bad syntax");
   expect(state.items.length).toBe(0);
+});
+
+test("escapeHtml encodes angle brackets and ampersands", () => {
+  expect(escapeHtml("<script>alert('xss')</script>")).toBe(
+    "&lt;script&gt;alert('xss')&lt;/script&gt;",
+  );
+  expect(escapeHtml("a & b")).toBe("a &amp; b");
+  expect(escapeHtml("safe text")).toBe("safe text");
+});
+
+test("escapeHtml handles multiple special characters in sequence", () => {
+  expect(escapeHtml("<>&<>&")).toBe("&lt;&gt;&amp;&lt;&gt;&amp;");
+});
+
+test("escapeAttr additionally encodes double quotes", () => {
+  expect(escapeAttr('value="injected"')).toBe("value=&quot;injected&quot;");
+  expect(escapeAttr("<b>bold</b>")).toBe("&lt;b&gt;bold&lt;/b&gt;");
+});
+
+test("escapeHtml returns empty string unchanged", () => {
+  expect(escapeHtml("")).toBe("");
+  expect(escapeAttr("")).toBe("");
 });
