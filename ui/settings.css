@@ -526,6 +526,13 @@ textarea::placeholder {
   background: color-mix(in srgb, var(--surface) 84%, var(--surface-2));
 }
 
+.plugin-install-row {
+  display: grid;
+  grid-template-columns: 1fr auto auto;
+  gap: 10px;
+  align-items: end;
+}
+
 [hidden] {
   display: none !important;
 }

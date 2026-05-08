@@ -1022,30 +1022,28 @@ function renderPluginInstall(entries: PluginInstallEntry[] = []): void {
 }
 
 function addPluginInstall(entry: Partial<PluginInstallEntry> = {}): void {
-  const wrapper = card("Plugin source", (node) => {
-    node.remove();
-    updateDirtyState();
-  });
-  const grid = document.createElement("div");
-  grid.className = "grid three";
+  const wrapper = document.createElement("div");
+  wrapper.className = "collection-item plugin-install-row";
 
   const [sourceLabel, sourceInput] = labeledInput("Source URL", "text");
   sourceInput.dataset.installField = "source";
   sourceInput.placeholder = "https://github.com/user/plugin.git";
   sourceInput.value = entry.source || "";
 
-  const [refLabel, refInput] = labeledInput("Tag (ref)", "text");
-  refInput.dataset.installField = "ref";
-  refInput.placeholder = "e.g. v1.0.0";
-  refInput.value = entry.ref || "";
+  const [pinLabel, pinInput] = labeledInput(
+    "Pin (tag, branch, or commit)",
+    "text",
+  );
+  pinInput.dataset.installField = "pin";
+  pinInput.placeholder = "e.g. v1.0.0, main, a1b2c3d";
+  pinInput.value = entry.ref || entry.branch || "";
 
-  const [branchLabel, branchInput] = labeledInput("Branch", "text");
-  branchInput.dataset.installField = "branch";
-  branchInput.placeholder = "e.g. main";
-  branchInput.value = entry.branch || "";
+  const deleteBtn = actionButton("Delete", () => {
+    wrapper.remove();
+    updateDirtyState();
+  });
 
-  grid.append(sourceLabel, refLabel, branchLabel);
-  wrapper.append(grid);
+  wrapper.append(sourceLabel, pinLabel, deleteBtn);
   pluginInstallEl.append(wrapper);
 }
 
@@ -1063,10 +1061,8 @@ function collectPluginInstall(): PluginInstallEntry[] {
       const entry: PluginInstallEntry = {
         source: (get("source")?.value || "").trim(),
       };
-      const ref = (get("ref")?.value || "").trim();
-      const branch = (get("branch")?.value || "").trim();
-      if (ref) entry.ref = ref;
-      if (branch) entry.branch = branch;
+      const pin = (get("pin")?.value || "").trim();
+      if (pin) entry.ref = pin;
       return entry;
     })
     .filter((entry) => entry.source.length > 0);
