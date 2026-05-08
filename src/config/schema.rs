@@ -233,6 +233,8 @@ pub struct PluginsConfig {
 pub struct PluginInstallEntry {
     /// Git clone URL or local path.
     pub source: String,
+    /// Override the directory name (defaults to last path segment of source).
+    pub name: Option<String>,
     /// Pin to a specific Git tag. Mutually exclusive with `branch`.
     #[serde(rename = "ref")]
     pub git_ref: Option<String>,

@@ -1031,6 +1031,11 @@ function addPluginInstall(entry: Partial<PluginInstallEntry> = {}): void {
   sourceInput.placeholder = "https://github.com/user/plugin.git";
   sourceInput.value = entry.source || "";
 
+  const [nameLabel, nameInput] = labeledInput("Install as", "text");
+  nameInput.dataset.installField = "name";
+  nameInput.placeholder = "optional directory name override";
+  nameInput.value = entry.name || "";
+
   const [pinLabel, pinInput] = labeledInput(
     "Pin (tag, branch, or commit)",
     "text",
@@ -1044,7 +1049,7 @@ function addPluginInstall(entry: Partial<PluginInstallEntry> = {}): void {
     updateDirtyState();
   });
 
-  wrapper.append(sourceLabel, pinLabel, deleteBtn);
+  wrapper.append(sourceLabel, nameLabel, pinLabel, deleteBtn);
   pluginInstallEl.append(wrapper);
 }
 
@@ -1062,6 +1067,8 @@ function collectPluginInstall(): PluginInstallEntry[] {
       const entry: PluginInstallEntry = {
         source: (get("source")?.value || "").trim(),
       };
+      const name = (get("name")?.value || "").trim();
+      if (name) entry.name = name;
       const pin = (get("pin")?.value || "").trim();
       if (pin) entry.ref = pin;
       return entry;

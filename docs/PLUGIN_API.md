@@ -82,13 +82,29 @@ search = function(query) -> { items... }
 
 Routed commands allow you to trigger a plugin with a specific prefix (e.g., `calc 1+1`). This is faster and prevents your plugin from interfering with general search results.
 
-**Config (`config.toml`):**
-```toml
-[plugin.myplugin.commands]
-"calc" = "search_calc"
+Plugins can declare their own default commands by exporting a `commands` table. These are used automatically unless the user overrides them in `config.toml`:
+
+```lua
+return {
+  id = "calc",
+  commands = { calc = "search_calc" },
+
+  search_calc = function(raw, argv)
+    -- return items...
+  end,
+}
 ```
 
-**Lua:**
+Users can override a plugin's default commands in `config.toml`:
+
+```toml
+[plugin.calc.commands]
+"c" = "search_calc"
+```
+
+When `[plugin.<id>.commands]` is present in the user's config, it completely replaces the plugin's built-in `commands` table.
+
+**Lua handler signature:**
 ```lua
 -- raw: everything after "calc " (e.g., "1 + 1")
 -- argv: shell-parsed arguments (e.g., {"1", "+", "1"})
@@ -97,7 +113,7 @@ search_calc = function(raw, argv)
 end
 ```
 
-**Important:** Once a plugin has configured command routes, its generic `search(query)` function is **ignored**.
+**Important:** Once a plugin has command routes (either self-declared or from config), its generic `search(query)` function is **ignored**.
 
 ## Search Result Items
 

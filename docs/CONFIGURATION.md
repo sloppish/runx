@@ -37,6 +37,7 @@ Launcher window behavior and geometry.
 | `always_on_top` | boolean | `true` | Keep the launcher above normal windows while it is visible. |
 | `show_on` | one of: `primary`, `cursor` | `"cursor"` | Choose which display Runx appears on when it opens. |
 | `scale` | number | `1` | Multiplier applied to UI typography and spacing tokens. |
+| `show_animation` | boolean | `true` | Play the macOS zoom animation when showing or hiding the launcher window. |
 
 ## [[display_overrides]]
 
@@ -128,6 +129,17 @@ Plugin discovery and subprocess lookup configuration.
 | --- | --- | --- | --- |
 | `directories` | array of string | `[]` | Extra directories that should be scanned for `.lua` plugins. |
 | `search_paths` | array of string | `[]` | Extra PATH entries exposed to plugin subprocess helpers. |
+
+## [[plugins.install]]
+
+A single managed plugin to clone and keep up to date.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `source` | string | - | Git clone URL or local path. |
+| `name` | string | - | Override the directory name (defaults to last path segment of source). |
+| `ref` | string | - | Pin to a specific Git tag. Mutually exclusive with `branch`. |
+| `branch` | string | - | Track a branch. Mutually exclusive with `ref`. |
 
 ## [plugin.<id>]
 

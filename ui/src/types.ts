@@ -52,6 +52,7 @@ export interface DisplayOptionPayload {
 
 export interface PluginInstallEntry {
   source: string;
+  name?: string;
   ref?: string;
   branch?: string;
 }

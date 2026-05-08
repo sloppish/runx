@@ -29,6 +29,11 @@ lint-rust: build-ui
 fmt-rust:
     cargo fmt
 
+docs:
+    cargo run --quiet --manifest-path tools/config-docgen/Cargo.toml
+docs-check:
+    cargo run --quiet --manifest-path tools/config-docgen/Cargo.toml -- --check
+
 install:
     ./scripts/install-macos.sh
 open: install

@@ -70,6 +70,12 @@ const SECTION_ORDER: &[SectionSpec] = &[
         &["plugins"],
     ),
     SectionSpec::new(
+        "[[plugins.install]]",
+        SectionKind::RuleArray,
+        "PluginInstallEntry",
+        &["plugins", "install"],
+    ),
+    SectionSpec::new(
         "[plugin.<id>]",
         SectionKind::PluginTable,
         "Config",
@@ -1112,6 +1118,7 @@ fn render_section_without_defaults(
 
 fn field_filter(path: &str) -> Option<&'static [&'static str]> {
     match path {
+        "[plugins]" => Some(&["directories", "search_paths"]),
         "[providers]" => Some(&["disabled"]),
         "[ranking]" => Some(&["tie_threshold", "provider_order", "result_limit"]),
         "[ui]" => Some(&[

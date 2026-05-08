@@ -215,6 +215,8 @@ pub struct PluginsSettingsDraft {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct PluginInstallSettingsDraft {
     pub source: String,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub name: Option<String>,
     #[serde(rename = "ref", skip_serializing_if = "Option::is_none")]
     pub git_ref: Option<String>,
     #[serde(skip_serializing_if = "Option::is_none")]

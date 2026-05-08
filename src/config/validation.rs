@@ -131,6 +131,7 @@ struct RawPluginsSpans {
 #[allow(dead_code)]
 struct RawPluginInstallSpans {
     source: Spanned<String>,
+    name: Option<String>,
     #[serde(rename = "ref")]
     git_ref: Option<String>,
     branch: Option<String>,
@@ -829,13 +830,21 @@ fn validate_plugin_install_entries(entries: &[PluginInstallEntry]) -> Result<()>
         }
     }
 
-    let mut seen_sources = std::collections::HashSet::new();
+    let mut seen_names = std::collections::HashSet::new();
     for (index, entry) in entries.iter().enumerate() {
-        if !seen_sources.insert(&entry.source) {
+        let resolved = entry.name.as_deref().unwrap_or_else(|| {
+            entry
+                .source
+                .trim_end_matches('/')
+                .trim_end_matches(".git")
+                .rsplit('/')
+                .next()
+                .unwrap_or("plugin")
+        });
+        if !seen_names.insert(resolved) {
             bail!(
-                "[[plugins.install]] entry {} has a duplicate source `{}`",
+                "[[plugins.install]] entry {} has a duplicate install name `{resolved}`",
                 index + 1,
-                entry.source
             );
         }
     }

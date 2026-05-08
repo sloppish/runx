@@ -1182,7 +1182,7 @@ bogus = true
         }
 
         #[test]
-        fn rejects_duplicate_sources() {
+        fn rejects_duplicate_install_names() {
             let toml = r#"
                 [[plugins.install]]
                 source = "https://github.com/user/test.git"
@@ -1191,8 +1191,23 @@ bogus = true
                 source = "https://github.com/user/test.git"
             "#;
             let error = validate_config_toml(Path::new("/tmp/test.toml"), toml)
-                .expect_err("duplicate source should fail");
-            assert!(error.to_string().contains("duplicate source"));
+                .expect_err("duplicate install name should fail");
+            assert!(error.to_string().contains("duplicate install name"));
+        }
+
+        #[test]
+        fn allows_same_source_with_different_names() {
+            let toml = r#"
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+                name = "google"
+
+                [[plugins.install]]
+                source = "https://github.com/user/test.git"
+                name = "brave"
+            "#;
+            validate_config_toml(Path::new("/tmp/test.toml"), toml)
+                .expect("same source with different names should be valid");
         }
 
         #[test]

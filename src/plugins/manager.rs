@@ -119,7 +119,10 @@ fn ensure_single_plugin(
     entry: &PluginInstallEntry,
     lock: &mut HashMap<String, LockEntry>,
 ) -> Result<String> {
-    let dir_name = dir_name_for_source(&entry.source);
+    let dir_name = entry
+        .name
+        .clone()
+        .unwrap_or_else(|| dir_name_for_source(&entry.source));
 
     if let Some(id) = plugin_id_for_entry(plugins_dir, entry) {
         let plugin_path = plugins_dir.join(&id);
@@ -200,27 +203,49 @@ fn update_single_plugin(
     entry: &PluginInstallEntry,
     lock: &mut HashMap<String, LockEntry>,
 ) -> UpdateResult {
-    if entry.git_ref.is_some() {
-        return UpdateResult::Pinned;
-    }
-
     let plugin_path = plugins_dir.join(id);
     if !plugin_path.join(".git").exists() {
         return UpdateResult::Failed("not a git repository".to_owned());
     }
 
+    if let Some(git_ref) = &entry.git_ref
+        && !is_branch(&plugin_path, git_ref)
+    {
+        return UpdateResult::Pinned;
+    }
+
     let before = read_head_commit(&plugin_path).unwrap_or_default();
 
-    let mut cmd = Command::new("git");
-    cmd.arg("pull").arg("--ff-only").current_dir(&plugin_path);
-    let output = match cmd.output() {
+    let fetch_output = match Command::new("git")
+        .args(["fetch", "--prune"])
+        .current_dir(&plugin_path)
+        .output()
+    {
         Ok(output) => output,
-        Err(error) => return UpdateResult::Failed(format!("git pull failed: {error}")),
+        Err(error) => return UpdateResult::Failed(format!("git fetch failed: {error}")),
+    };
+    if !fetch_output.status.success() {
+        let stderr = String::from_utf8_lossy(&fetch_output.stderr);
+        return UpdateResult::Failed(format!("git fetch failed: {stderr}"));
+    }
+
+    let tracking_ref = tracking_branch(&plugin_path);
+    let target = match &tracking_ref {
+        Some(r) => r.as_str(),
+        None => return UpdateResult::Failed("no tracking branch found".to_owned()),
     };
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        return UpdateResult::Failed(format!("git pull failed: {stderr}"));
+    let reset_output = match Command::new("git")
+        .args(["reset", "--hard", target])
+        .current_dir(&plugin_path)
+        .output()
+    {
+        Ok(output) => output,
+        Err(error) => return UpdateResult::Failed(format!("git reset failed: {error}")),
+    };
+    if !reset_output.status.success() {
+        let stderr = String::from_utf8_lossy(&reset_output.stderr);
+        return UpdateResult::Failed(format!("git reset failed: {stderr}"));
     }
 
     let after = read_head_commit(&plugin_path).unwrap_or_default();
@@ -236,6 +261,44 @@ fn update_single_plugin(
         info!(id = %id, from = %&before[..7.min(before.len())], to = %&after[..7.min(after.len())], "updated managed plugin");
         UpdateResult::Updated
     }
+}
+
+fn is_branch(repo_path: &Path, name: &str) -> bool {
+    Command::new("git")
+        .args([
+            "show-ref",
+            "--verify",
+            "--quiet",
+            &format!("refs/heads/{name}"),
+        ])
+        .current_dir(repo_path)
+        .status()
+        .is_ok_and(|s| s.success())
+        || Command::new("git")
+            .args([
+                "show-ref",
+                "--verify",
+                "--quiet",
+                &format!("refs/remotes/origin/{name}"),
+            ])
+            .current_dir(repo_path)
+            .status()
+            .is_ok_and(|s| s.success())
+}
+
+fn tracking_branch(repo_path: &Path) -> Option<String> {
+    let output = Command::new("git")
+        .args(["rev-parse", "--abbrev-ref", "--symbolic-full-name", "@{u}"])
+        .current_dir(repo_path)
+        .output()
+        .ok()?;
+    if output.status.success() {
+        let name = String::from_utf8_lossy(&output.stdout).trim().to_owned();
+        if !name.is_empty() {
+            return Some(name);
+        }
+    }
+    Some("origin/HEAD".to_owned())
 }
 
 fn clone_repo(source: &str, target: &Path, entry: &PluginInstallEntry) -> Result<()> {
@@ -289,12 +352,18 @@ fn prune_removed(
     entries: &[PluginInstallEntry],
     lock: &mut HashMap<String, LockEntry>,
 ) {
-    let active_sources: std::collections::HashSet<&str> =
-        entries.iter().map(|e| e.source.as_str()).collect();
+    let active_dir_names: std::collections::HashSet<String> = entries
+        .iter()
+        .map(|e| {
+            e.name
+                .clone()
+                .unwrap_or_else(|| dir_name_for_source(&e.source))
+        })
+        .collect();
 
     let stale: Vec<String> = lock
         .iter()
-        .filter(|(_, v)| !active_sources.contains(v.source.as_str()))
+        .filter(|(k, _)| !active_dir_names.contains(k.as_str()))
         .map(|(k, _)| k.clone())
         .collect();
 
@@ -314,8 +383,12 @@ fn prune_removed(
 fn plugin_id_for_entry(plugins_dir: &Path, entry: &PluginInstallEntry) -> Option<String> {
     let lockfile_path = plugins_dir.parent()?.join("plugins.lock.toml");
     let lock = read_lockfile(&lockfile_path);
+    let target_name = entry
+        .name
+        .clone()
+        .unwrap_or_else(|| dir_name_for_source(&entry.source));
     lock.into_iter()
-        .find(|(_, v)| v.source == entry.source)
+        .find(|(k, _)| *k == target_name)
         .map(|(k, _)| k)
 }
 

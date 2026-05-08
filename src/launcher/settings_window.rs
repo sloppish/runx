@@ -579,6 +579,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
                 .iter()
                 .map(|e| PluginInstallSettingsDraft {
                     source: e.source.clone(),
+                    name: e.name.clone(),
                     git_ref: e.git_ref.clone(),
                     branch: e.branch.clone(),
                 })
@@ -1032,6 +1033,9 @@ fn set_plugin_install(doc: &mut Document, install: &[PluginInstallSettingsDraft]
     for entry in install {
         let mut table = TomlTable::new();
         table.insert("source", value(&entry.source));
+        if let Some(name) = &entry.name {
+            table.insert("name", value(name));
+        }
         if let Some(git_ref) = &entry.git_ref {
             table.insert("ref", value(git_ref));
         }
