@@ -141,7 +141,7 @@ A single managed plugin to clone and keep up to date.
 | `ref` | string | - | Pin to a specific Git tag. Mutually exclusive with `branch`. |
 | `branch` | string | - | Track a branch. Mutually exclusive with `ref`. |
 
-## [plugin.<id>]
+## [plugin.\<id\>]
 
 Per-plugin configuration lives under `[plugin.<id>]`. Runx passes the full table to the plugin runtime as `runx.plugin_config`, except for the reserved `commands` subtable.
 
@@ -150,7 +150,7 @@ Per-plugin configuration lives under `[plugin.<id>]`. Runx passes the full table
 | `commands` | table | - | Reserved for command routing. See `[plugin.<id>.commands]`. |
 | `<your keys>` | TOML values | - | Arbitrary plugin-specific settings. These are available inside the plugin through `runx.plugin_config`. |
 
-## [plugin.<id>.commands]
+## [plugin.\<id\>.commands]
 
 Command routing maps a typed prefix to a named Lua search handler. A route matches when the query is exactly the command or starts with the command followed by a space. Once a plugin has any configured commands, Runx stops calling its generic `search(query)` function for unrelated queries. Routed plugins are routed-only.
 
@@ -232,7 +232,7 @@ Layout tokens injected into the embedded UI theme.
 | `badge_radius` | integer | `14` | Corner radius of badge containers. |
 | `icon_size` | integer | `46` | Size of icon images inside icon badges. |
 
-## [ui.colorschemes.<name>]
+## [ui.colorschemes.\<name\>]
 
 Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin_dark`, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
 

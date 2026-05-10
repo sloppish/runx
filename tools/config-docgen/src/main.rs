@@ -1075,18 +1075,18 @@ fn render_colorscheme_section(
 
 fn render_section(path: &str, intro: &str, rows: &[(String, String, String, String)]) -> String {
     let mut out = String::new();
-    out.push_str(&format!("## {path}\n\n"));
-    out.push_str(intro);
+    out.push_str(&format!("## {}\n\n", escape_angle_brackets(path)));
+    out.push_str(&escape_angle_brackets(intro));
     out.push_str("\n\n");
     out.push_str("| Option | Type | Default | Description |\n");
     out.push_str("| --- | --- | --- | --- |\n");
     for (option, type_desc, default, description) in rows {
         out.push_str(&format!(
             "| {} | {} | {} | {} |\n",
-            option,
-            escape_pipes(type_desc),
-            escape_pipes(default),
-            escape_pipes(description)
+            escape_angle_brackets(option),
+            escape_angle_brackets(&escape_pipes(type_desc)),
+            escape_angle_brackets(&escape_pipes(default)),
+            escape_angle_brackets(&escape_pipes(description))
         ));
     }
     out.push('\n');
@@ -1099,17 +1099,17 @@ fn render_section_without_defaults(
     rows: &[(String, String, String)],
 ) -> String {
     let mut out = String::new();
-    out.push_str(&format!("## {path}\n\n"));
-    out.push_str(intro);
+    out.push_str(&format!("## {}\n\n", escape_angle_brackets(path)));
+    out.push_str(&escape_angle_brackets(intro));
     out.push_str("\n\n");
     out.push_str("| Option | Type | Description |\n");
     out.push_str("| --- | --- | --- |\n");
     for (option, type_desc, description) in rows {
         out.push_str(&format!(
             "| {} | {} | {} |\n",
-            option,
-            escape_pipes(type_desc),
-            escape_pipes(description)
+            escape_angle_brackets(option),
+            escape_angle_brackets(&escape_pipes(type_desc)),
+            escape_angle_brackets(&escape_pipes(description))
         ));
     }
     out.push('\n');
@@ -1335,4 +1335,23 @@ fn simple_type_name(rust_type: &str) -> String {
 
 fn escape_pipes(value: &str) -> String {
     value.replace('|', "\\|")
+}
+
+fn escape_angle_brackets(value: &str) -> String {
+    let mut result = String::with_capacity(value.len());
+    let mut in_code = false;
+    let mut chars = value.chars().peekable();
+    while let Some(ch) = chars.next() {
+        if ch == '`' {
+            in_code = !in_code;
+            result.push(ch);
+        } else if !in_code && ch == '<' {
+            result.push_str("\\<");
+        } else if !in_code && ch == '>' {
+            result.push_str("\\>");
+        } else {
+            result.push(ch);
+        }
+    }
+    result
 }

@@ -61,12 +61,12 @@ return {
 
 | Key | Required | Type | Default | Meaning |
 | --- | --- | --- | --- | --- |
-| `id` | no | string | Filename stem | Stable identifier used to match `[plugin.<id>]` config and command routes. |
-| `name` | no | string | Filename stem | Display name. Defaults to the filename. |
+| `id` | no | string | Directory name | Stable identifier used to match `[plugin.<id>]` config and command routes. |
+| `name` | no | string | Directory name | Display name shown in the UI. |
 | `badge` | no | string | `"PLG"` | Default badge shown on full-style items. |
 | `search` | no | function | - | Generic search entrypoint for normal queries. |
 | `run` | no | function | - | Called when a plugin item is activated. |
-| `search_*` | no | function | - | Named routed handlers used via config. |
+| `\<handler\>` | no | function | - | Named routed handlers referenced by `commands`. |
 
 ## Search Modes
 
@@ -86,11 +86,18 @@ Plugins can declare their own default commands by exporting a `commands` table. 
 
 ```lua
 return {
-  id = "calc",
-  commands = { calc = "search_calc" },
+  id = "echo",
+  commands = { echo = "handle_echo" },
 
-  search_calc = function(raw, argv)
-    -- return items...
+  handle_echo = function(raw, argv)
+    return {
+      { title = raw, payload = { text = raw } },
+    }
+  end,
+
+  run = function(payload)
+    runx.copy_text(payload.text)
+    return "Copied!"
   end,
 }
 ```
@@ -98,17 +105,17 @@ return {
 Users can override a plugin's default commands in `config.toml`:
 
 ```toml
-[plugin.calc.commands]
-"c" = "search_calc"
+[plugin.echo.commands]
+"e" = "handle_echo"
 ```
 
 When `[plugin.<id>.commands]` is present in the user's config, it completely replaces the plugin's built-in `commands` table.
 
 **Lua handler signature:**
 ```lua
--- raw: everything after "calc " (e.g., "1 + 1")
--- argv: shell-parsed arguments (e.g., {"1", "+", "1"})
-search_calc = function(raw, argv)
+-- raw: everything after "echo " (e.g., "hello world")
+-- argv: shell-parsed arguments (e.g., {"hello", "world"})
+handle_echo = function(raw, argv)
   -- return items...
 end
 ```
@@ -128,7 +135,7 @@ Handlers must return an array of item tables.
 | `badge` | no | string | `""` compact / plugin badge full | Small text tag on the right. |
 | `icon` | no | string | - | URL or `data:` URI (replaces badge). |
 | `style` | no | string | `compact` | `compact` (single line) or `full` (two lines). |
-| `id` | no | string | `plugin:<plugin_id>:<title>` | Stable ID for selection memory. |
+| `id` | no | string | `plugin:\<plugin_id\>:\<title\>` | Stable ID for selection memory. |
 
 ### Visual Styles
 
@@ -148,14 +155,13 @@ payload = {
 
 ## `run(payload)` and Feedback
 
-The `run` function executes the requested action. You can return feedback to be shown in the Runx UI:
+The `run` function executes the requested action. You can return a value to control the feedback message logged by Runx (visible in `debug.log` or terminal output):
 
-| Return Value | UI Feedback |
+| Return Value | Logged Message |
 | --- | --- |
-| `nil` | Shows "Ran <Plugin Name>" |
-| `string` | Shows the returned string. |
-| `{ message = "..." }` | Shows the specified message. |
-| `""` or `{ message = nil }` | No feedback shown. |
+| `nil` | "Ran \<Plugin Name\>" |
+| `string` | The returned string. |
+| `""` | Nothing logged. |
 
 ## Runtime Helpers (`runx.*`)
 

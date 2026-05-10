@@ -352,20 +352,11 @@ fn run_action(
         return Ok(Some(format!("Ran {}", plugin.name)));
     }
 
-    if let Ok(message) = lua.from_value::<String>(result.clone()) {
-        if message.trim().is_empty() {
-            return Ok(None);
-        }
-        return Ok(Some(message));
+    let message: String = lua.from_value(result)?;
+    if message.trim().is_empty() {
+        return Ok(None);
     }
-
-    #[derive(Deserialize)]
-    struct Outcome {
-        message: Option<String>,
-    }
-
-    let outcome: Outcome = lua.from_value(result)?;
-    Ok(outcome.message)
+    Ok(Some(message))
 }
 
 #[cfg(test)]

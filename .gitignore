@@ -2,6 +2,9 @@
 /tools/config-docgen/target
 /dist
 /node_modules
+/site/node_modules
+/site/.vitepress/dist
+/site/.vitepress/cache
 /ui/app.js
 /ui/settings.js
 .redo/
