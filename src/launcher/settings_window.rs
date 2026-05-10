@@ -326,10 +326,7 @@ fn handle_update_plugins(settings: &SettingsWindow) -> Result<()> {
     };
 
     settings.set_status(&status, !failed.is_empty())?;
-
-    if updated > 0 {
-        notify_launcher_reload();
-    }
+    notify_launcher_reload();
 
     Ok(())
 }
