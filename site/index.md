@@ -23,3 +23,7 @@ features:
   - title: Easy to Customize
     details: Configure through the settings UI or a TOML file — your choice.
 ---
+
+<p align="center">
+  <img src="/screenshot.webp" width="780" alt="Runx launcher showing open windows and apps">
+</p>
