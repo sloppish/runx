@@ -3,7 +3,11 @@
 //! The settings surface runs in a standalone process so it can behave like a
 //! regular macOS app, separate from the accessory launcher process.
 
-use std::{collections::HashMap, fs, path::Path};
+use std::{
+    collections::HashMap,
+    fs,
+    path::{Path, PathBuf},
+};
 
 use anyhow::{Context, Result, bail};
 use serde::Serialize;
@@ -408,19 +412,14 @@ fn settings_payload() -> Result<SettingsPayload> {
     let path = ensure_user_config()?;
     let raw =
         fs::read_to_string(&path).with_context(|| format!("failed to read {}", path.display()))?;
-    let (draft, error, custom_colorschemes) = match validate_config_toml(&path, &raw) {
-        Ok(config) => {
-            let mut custom_colorschemes =
-                config.ui.colorschemes.keys().cloned().collect::<Vec<_>>();
-            custom_colorschemes.sort();
-            (
-                Some(settings_draft_from_config(&config, &raw)?),
-                None,
-                custom_colorschemes,
-            )
-        }
-        Err(error) => (None, Some(error.to_string()), Vec::new()),
+    let (draft, error) = match validate_config_toml(&path, &raw) {
+        Ok(config) => (
+            Some(settings_draft_from_config(&config, &raw, &path)?),
+            None,
+        ),
+        Err(error) => (None, Some(error.to_string())),
     };
+    let custom_colorschemes = list_colorscheme_files(&path)?;
 
     let mut colorschemes = vec!["system".to_owned()];
     colorschemes.extend(
@@ -530,7 +529,11 @@ fn settings_ipc_event(payload: &str) -> AppEvent {
     }
 }
 
-fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraft> {
+fn settings_draft_from_config(
+    config: &Config,
+    raw: &str,
+    config_path: &Path,
+) -> Result<SettingsDraft> {
     Ok(SettingsDraft {
         debug_log: config.debug_log,
         hotkey: HotkeySettingsDraft {
@@ -638,21 +641,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
                 focus_window: shortcut_to_text(&config.ui.shortcuts.focus_window),
                 activate_all_windows: shortcut_to_text(&config.ui.shortcuts.activate_all_windows),
             },
-            colorschemes: {
-                let mut names = config.ui.colorschemes.keys().cloned().collect::<Vec<_>>();
-                names.sort();
-                names
-                    .into_iter()
-                    .map(|name| {
-                        let scheme = config.ui.colorscheme_config(&name);
-                        UiColorschemeSettingsDraft {
-                            name,
-                            base: scheme.base.unwrap_or_default(),
-                            tokens: colorscheme_tokens_from_overrides(&scheme.overrides),
-                        }
-                    })
-                    .collect()
-            },
+            colorschemes: load_colorscheme_drafts(config_path)?,
             font_sizes: UiFontSizesSettingsDraft {
                 label: config.ui.font_sizes.label,
                 input: config.ui.font_sizes.input,
@@ -757,7 +746,7 @@ fn apply_settings_draft_to_raw(
         .context("failed to parse config.toml before saving settings")?;
     let current_draft = validate_config_toml(config_path, raw)
         .ok()
-        .and_then(|config| settings_draft_from_config(&config, raw).ok());
+        .and_then(|config| settings_draft_from_config(&config, raw, config_path).ok());
 
     set_item(&mut doc, &[], "debug_log", value(draft.debug_log))?;
 
@@ -967,12 +956,7 @@ fn apply_settings_draft_to_raw(
     )?;
 
     set_ui_shortcuts(&mut doc, &draft.ui.shortcuts)?;
-    if current_draft
-        .as_ref()
-        .is_none_or(|current| current.ui.colorschemes != draft.ui.colorschemes)
-    {
-        set_ui_colorschemes(&mut doc, &draft.ui.colorschemes)?;
-    }
+    save_colorscheme_files(config_path, &draft.ui.colorschemes)?;
     set_ui_font_sizes(&mut doc, &draft.ui.font_sizes)?;
     set_ui_layout(&mut doc, &draft.ui.layout)?;
 
@@ -1137,16 +1121,94 @@ fn set_ui_shortcuts(doc: &mut Document, shortcuts: &UiShortcutsSettingsDraft) ->
     Ok(())
 }
 
-fn set_ui_colorschemes(
-    doc: &mut Document,
+fn colorschemes_dir_from_config_path(config_path: &Path) -> PathBuf {
+    config_path
+        .parent()
+        .unwrap_or(Path::new("."))
+        .join("colorschemes")
+}
+
+fn list_colorscheme_files(config_path: &Path) -> Result<Vec<String>> {
+    let dir = colorschemes_dir_from_config_path(config_path);
+    let mut names = Vec::new();
+    if dir.exists() {
+        for entry in
+            fs::read_dir(&dir).with_context(|| format!("failed to read {}", dir.display()))?
+        {
+            let entry = entry?;
+            let path = entry.path();
+            if path.is_file()
+                && path.extension().and_then(|s| s.to_str()) == Some("toml")
+                && let Some(name) = path.file_stem().and_then(|s| s.to_str())
+            {
+                names.push(name.to_owned());
+            }
+        }
+    }
+    names.sort();
+    Ok(names)
+}
+
+fn load_colorscheme_drafts(config_path: &Path) -> Result<Vec<UiColorschemeSettingsDraft>> {
+    let dir = colorschemes_dir_from_config_path(config_path);
+    let mut drafts = Vec::new();
+    if !dir.exists() {
+        return Ok(drafts);
+    }
+    let mut entries: Vec<_> = fs::read_dir(&dir)
+        .with_context(|| format!("failed to read {}", dir.display()))?
+        .filter_map(|e| e.ok())
+        .filter(|e| {
+            e.path().is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("toml")
+        })
+        .collect();
+    entries.sort_by_key(|e| e.file_name());
+
+    for entry in entries {
+        let path = entry.path();
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .unwrap_or_default()
+            .to_owned();
+        let raw = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let scheme: crate::config::UiColorschemeConfig =
+            toml::from_str(&raw).with_context(|| format!("failed to parse {}", path.display()))?;
+        drafts.push(UiColorschemeSettingsDraft {
+            name,
+            base: scheme.base.unwrap_or_default(),
+            tokens: colorscheme_tokens_from_overrides(&scheme.overrides),
+        });
+    }
+    Ok(drafts)
+}
+
+fn save_colorscheme_files(
+    config_path: &Path,
     colorschemes: &[UiColorschemeSettingsDraft],
 ) -> Result<()> {
-    if colorschemes.is_empty() {
-        remove_item(doc, &["ui", "colorschemes"])?;
-        return Ok(());
-    }
+    let dir = colorschemes_dir_from_config_path(config_path);
+    fs::create_dir_all(&dir).with_context(|| format!("failed to create {}", dir.display()))?;
 
-    let mut root = TomlTable::new();
+    let existing: std::collections::HashSet<String> = if dir.exists() {
+        fs::read_dir(&dir)?
+            .filter_map(|e| e.ok())
+            .filter(|e| {
+                e.path().is_file() && e.path().extension().and_then(|s| s.to_str()) == Some("toml")
+            })
+            .filter_map(|e| {
+                e.path()
+                    .file_stem()
+                    .and_then(|s| s.to_str())
+                    .map(|s| s.to_owned())
+            })
+            .collect()
+    } else {
+        std::collections::HashSet::new()
+    };
+
+    let mut kept = std::collections::HashSet::new();
     for scheme in colorschemes {
         let name = scheme.name.trim();
         if name.is_empty() {
@@ -1156,22 +1218,33 @@ fn set_ui_colorschemes(
             bail!("custom colorscheme name must not be `system` or a built-in name");
         }
 
-        let mut table = TomlTable::new();
+        let mut content = String::new();
         let base = scheme.base.trim();
         if !base.is_empty() {
-            table.insert("base", value(base));
+            content.push_str(&format!("base = \"{base}\"\n"));
         }
         for token in UI_COLOR_TOKEN_NAMES {
-            let Some(value_text) = scheme.tokens.get(token).map(|value| value.trim()) else {
-                continue;
-            };
-            if !value_text.is_empty() {
-                table.insert(token, value(value_text));
+            if let Some(value_text) = scheme.tokens.get(token).map(|v| v.trim())
+                && !value_text.is_empty()
+            {
+                content.push_str(&format!("{token} = \"{value_text}\"\n"));
             }
         }
-        root.insert(name, Item::Table(table));
+
+        let path = dir.join(format!("{name}.toml"));
+        fs::write(&path, &content)
+            .with_context(|| format!("failed to write {}", path.display()))?;
+        kept.insert(name.to_owned());
     }
-    table_mut(doc, &["ui"])?.insert("colorschemes", Item::Table(root));
+
+    for name in &existing {
+        if !kept.contains(name) {
+            let path = dir.join(format!("{name}.toml"));
+            fs::remove_file(&path)
+                .with_context(|| format!("failed to remove {}", path.display()))?;
+        }
+    }
+
     Ok(())
 }
 
@@ -1333,7 +1406,7 @@ mod tests {
         let config = validate_config_toml(Path::new("/tmp/runx-test-config.toml"), raw)
             .expect("debug_log config should validate");
 
-        let draft = settings_draft_from_config(&config, raw)
+        let draft = settings_draft_from_config(&config, raw, Path::new("/tmp/test.toml"))
             .expect("debug_log config should produce a settings draft");
 
         assert!(draft.debug_log);
@@ -1346,8 +1419,9 @@ mod tests {
 [plugin.sample]
 enabled = true
 "#;
-        let mut draft = settings_draft_from_config(&Config::default(), raw)
-            .expect("default config should produce a settings draft");
+        let mut draft =
+            settings_draft_from_config(&Config::default(), raw, Path::new("/tmp/test.toml"))
+                .expect("default config should produce a settings draft");
         draft.debug_log = true;
         draft.window.visible_rows = 8;
         draft.ui.canvas.show = false;
@@ -1375,8 +1449,9 @@ max_width = 9999
 min_height = 1
 max_height = 9999
 "#;
-        let draft = settings_draft_from_config(&Config::default(), raw)
-            .expect("default config should produce a settings draft");
+        let draft =
+            settings_draft_from_config(&Config::default(), raw, Path::new("/tmp/test.toml"))
+                .expect("default config should produce a settings draft");
 
         let saved =
             apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
@@ -1390,10 +1465,14 @@ max_height = 9999
 
     #[test]
     fn structured_save_covers_dynamic_config_sections() {
+        let tmp = tempfile::tempdir().expect("tempdir should be created");
+        let config_path = tmp.path().join("config.toml");
         let raw = r#"[hotkey]
 shortcut = "Option+Space"
 "#;
-        let mut draft = settings_draft_from_config(&Config::default(), raw)
+        std::fs::write(&config_path, raw).expect("write config");
+
+        let mut draft = settings_draft_from_config(&Config::default(), raw, &config_path)
             .expect("default config should produce a settings draft");
 
         draft.display_overrides.push(DisplayOverrideSettingsDraft {
@@ -1445,9 +1524,8 @@ terminal_app = "Alacritty"
             ]),
         });
 
-        let saved =
-            apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
-                .expect("complete draft should save");
+        let saved = apply_settings_draft_to_raw(&config_path, raw, &draft)
+            .expect("complete draft should save");
 
         assert!(saved.contains("[[display_overrides]]"));
         assert!(saved.contains("vendor = 610"));
@@ -1459,8 +1537,14 @@ terminal_app = "Alacritty"
         assert!(saved.contains("[plugin.terminal.commands]"));
         assert!(saved.contains("[ui.shortcuts]"));
         assert!(saved.contains("focus_window = \"Cmd+Enter\""));
-        assert!(saved.contains("[ui.colorschemes.gruvbox]"));
-        assert!(saved.contains("accent = \"#fabd2f\""));
+        assert!(!saved.contains("[ui.colorschemes.gruvbox]"));
+
+        let scheme_path = tmp.path().join("colorschemes/gruvbox.toml");
+        let scheme_content =
+            std::fs::read_to_string(&scheme_path).expect("gruvbox.toml should be written");
+        assert!(scheme_content.contains("base = \"builtin_dark\""));
+        assert!(scheme_content.contains("accent = \"#fabd2f\""));
+        assert!(scheme_content.contains("panel = \"#282828\""));
     }
 
     #[test]

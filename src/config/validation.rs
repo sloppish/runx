@@ -48,20 +48,11 @@ struct RawUiSpans {
     cycle_selection: bool,
     colorscheme: Option<Spanned<String>>,
     font_family: String,
-    colorschemes: HashMap<String, RawUiColorschemeSpans>,
     canvas: RawUiCanvasSpans,
     entries: RawUiEntriesSpans,
     shortcuts: UiShortcutsConfig,
     font_sizes: UiFontSizesConfig,
     layout: UiLayoutConfig,
-}
-
-#[derive(Debug, Deserialize, Default)]
-#[serde(default, deny_unknown_fields)]
-struct RawUiColorschemeSpans {
-    base: Option<Spanned<String>>,
-    #[serde(flatten)]
-    _overrides: UiColorOverridesConfig,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -217,8 +208,7 @@ pub(super) fn validate_config(config: &Config) -> Result<()> {
         config.ui.entries.opacity,
         "[ui.entries].opacity must be between 0.0 and 1.0",
     )?;
-    validate_ui_colorscheme_selector(config)?;
-    validate_ui_colorschemes(&config.ui.colorschemes)?;
+    // Colorscheme selector and definitions are validated after directory loading in config.rs.
 
     for provider in config.ranking.provider_score_boosts.keys() {
         validate_provider_name(provider, "[ranking.provider_score_boosts] key")?;
@@ -511,52 +501,7 @@ pub(super) fn validate_config_with_spans(
         "[ui.entries].opacity must be between 0.0 and 1.0"
     );
 
-    if let Some(colorscheme) = &spans.ui.colorscheme
-        && let Err(error) = validate_ui_colorscheme_name_impl(
-            colorscheme.get_ref(),
-            spans.ui.colorschemes.keys().map(String::as_str),
-        )
-    {
-        return Err(anyhow!(render_config_validation_error(
-            config_path,
-            raw,
-            &error.to_string(),
-            colorscheme.span(),
-        )));
-    }
-
-    for (name, scheme) in &spans.ui.colorschemes {
-        if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
-            let message = readonly_builtin_colorscheme_message(name);
-            let span = scheme
-                .base
-                .as_ref()
-                .map(|base| base.span())
-                .or_else(|| colorscheme_table_header_span(raw, name))
-                .unwrap_or(0..0);
-            return Err(anyhow!(render_config_validation_error(
-                config_path,
-                raw,
-                &message,
-                span,
-            )));
-        }
-
-        if let Some(base) = &scheme.base
-            && !BUILTIN_COLORSCHEME_NAMES.contains(&base.get_ref().as_str())
-        {
-            let message = format!(
-                "[ui.colorschemes.{name}].base must be one of: {}",
-                BUILTIN_COLORSCHEME_NAMES.join(", ")
-            );
-            return Err(anyhow!(render_config_validation_error(
-                config_path,
-                raw,
-                &message,
-                base.span(),
-            )));
-        }
-    }
+    // Colorscheme selector is validated after directory loading (not at TOML parse time).
 
     Ok(())
 }
@@ -777,52 +722,6 @@ fn validate_display_override(config: &DisplayOverrideConfig, context: &str) -> R
     Ok(())
 }
 
-fn validate_ui_colorscheme_selector(config: &Config) -> Result<()> {
-    validate_ui_colorscheme_name_impl(
-        &config.ui.colorscheme,
-        config.ui.colorschemes.keys().map(String::as_str),
-    )
-}
-
-fn validate_ui_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>) -> Result<()> {
-    for (name, scheme) in colorschemes {
-        if BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
-            bail!("{}", readonly_builtin_colorscheme_message(name));
-        }
-
-        if let Some(base) = &scheme.base
-            && !BUILTIN_COLORSCHEME_NAMES.contains(&base.as_str())
-        {
-            bail!(
-                "[ui.colorschemes.{name}].base must be one of: {}",
-                BUILTIN_COLORSCHEME_NAMES.join(", ")
-            );
-        }
-
-        if scheme.base.is_none() {
-            let missing = scheme.overrides.missing_required_fields();
-            if !missing.is_empty() {
-                bail!(
-                    "[ui.colorschemes.{name}] has no base, so it must define every color token. Missing: {}",
-                    missing.join(", ")
-                );
-            }
-        }
-    }
-    Ok(())
-}
-
-fn readonly_builtin_colorscheme_message(name: &str) -> String {
-    format!(
-        "[ui.colorschemes.{name}] is read-only; create a custom colorscheme with base = \"{name}\" to override it"
-    )
-}
-
-fn colorscheme_table_header_span(raw: &str, name: &str) -> Option<std::ops::Range<usize>> {
-    let header = format!("[ui.colorschemes.{name}]");
-    raw.find(&header).map(|start| start..start + header.len())
-}
-
 fn validate_plugin_install_entries(entries: &[PluginInstallEntry]) -> Result<()> {
     for (index, entry) in entries.iter().enumerate() {
         let context = format!("[[plugins.install]] entry {}", index + 1);
@@ -866,7 +765,7 @@ fn validate_plugin_install_entries(entries: &[PluginInstallEntry]) -> Result<()>
     Ok(())
 }
 
-fn validate_ui_colorscheme_name_impl<'a>(
+pub(super) fn validate_ui_colorscheme_name<'a>(
     name: &str,
     available: impl IntoIterator<Item = &'a str>,
 ) -> Result<()> {
@@ -882,7 +781,7 @@ fn validate_ui_colorscheme_name_impl<'a>(
         Ok(())
     } else {
         bail!(
-            "[ui].colorscheme must be `system`, one of the built-ins (`{}`), or a custom name under [ui.colorschemes.<name>]",
+            "[ui].colorscheme must be `system`, one of the built-ins (`{}`), or a custom scheme in colorschemes/",
             BUILTIN_COLORSCHEME_NAMES.join("`, `")
         )
     }

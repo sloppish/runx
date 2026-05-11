@@ -2,7 +2,9 @@
 
 use serde::Serialize;
 
-use crate::config::{UI_COLOR_TOKEN_NAMES, UiColorOverridesConfig, UiConfig};
+use std::collections::HashMap;
+
+use crate::config::{UI_COLOR_TOKEN_NAMES, UiColorOverridesConfig, UiColorschemeConfig, UiConfig};
 
 const HTML_TEMPLATE: &str = include_str!("../ui/index.html");
 const STYLE_TEMPLATE: &str = include_str!("../ui/styles.css");
@@ -263,7 +265,10 @@ pub fn builtin_colorscheme_token_values(name: &str) -> Option<Vec<(&'static str,
         .collect()
 }
 
-fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors, &'static str) {
+fn resolve_theme_colors(
+    theme: &UiConfig,
+    colorschemes: &HashMap<String, UiColorschemeConfig>,
+) -> (ResolvedUiColors, ResolvedUiColors, &'static str) {
     let builtin_light = ResolvedUiColors::builtin_light();
     let builtin_dark = ResolvedUiColors::builtin_dark();
 
@@ -272,7 +277,7 @@ fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors
         "builtin_light" => (builtin_light.clone(), builtin_light, "light"),
         "builtin_dark" => (builtin_dark.clone(), builtin_dark, "dark"),
         other => {
-            let scheme = theme.colorscheme_config(other);
+            let scheme = colorschemes.get(other).cloned().unwrap_or_default();
             let use_light_base = matches!(scheme.base.as_deref(), Some("builtin_light"));
             let resolved = if use_light_base {
                 builtin_light.with_overrides(&scheme.overrides)
@@ -286,7 +291,13 @@ fn resolve_theme_colors(theme: &UiConfig) -> (ResolvedUiColors, ResolvedUiColors
 }
 
 /// Returns the full HTML document served into the embedded webview.
-pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64, scale: f64) -> String {
+pub fn html(
+    theme: &UiConfig,
+    colorschemes: &HashMap<String, UiColorschemeConfig>,
+    visible_rows: usize,
+    layout_version: u64,
+    scale: f64,
+) -> String {
     let cycle_selection_value = if theme.cycle_selection {
         "true"
     } else {
@@ -306,7 +317,7 @@ pub fn html(theme: &UiConfig, visible_rows: usize, layout_version: u64, scale: f
         )
         .replace("__RUNX_VISIBLE_ROWS_VALUE__", &visible_rows.to_string())
         .replace("__RUNX_LAYOUT_VERSION_VALUE__", &layout_version.to_string())
-        .replace("__RUNX_STYLE__", &theme_css(theme, scale))
+        .replace("__RUNX_STYLE__", &theme_css(theme, colorschemes, scale))
         .replace("__RUNX_SCRIPT__", SCRIPT_SOURCE)
 }
 
@@ -332,8 +343,12 @@ pub fn shortcut_value(shortcut: &Option<crate::config::UiShortcutConfig>) -> ser
 }
 
 /// Returns the theme-expanded CSS used by the embedded webview.
-pub fn theme_css(theme: &UiConfig, scale: f64) -> String {
-    let (light, dark, document_color_scheme) = resolve_theme_colors(theme);
+pub fn theme_css(
+    theme: &UiConfig,
+    colorschemes: &HashMap<String, UiColorschemeConfig>,
+    scale: f64,
+) -> String {
+    let (light, dark, document_color_scheme) = resolve_theme_colors(theme, colorschemes);
     let header_display = if theme.show_header { "flex" } else { "none" };
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
     let ui_scale = format_float(scale);
@@ -442,6 +457,7 @@ fn format_float(value: f64) -> String {
 mod tests {
     use super::{html, theme_css};
     use crate::config::{UiColorOverridesConfig, UiColorschemeConfig, UiConfig};
+    use std::collections::HashMap;
 
     #[test]
     fn theme_css_includes_configured_font_sizes() {
@@ -462,7 +478,7 @@ mod tests {
         theme.layout.input_radius = 22;
         theme.layout.badge_size = 52;
 
-        let css = theme_css(&theme, scale);
+        let css = theme_css(&theme, &HashMap::new(), scale);
 
         assert!(css.contains("--header-display: none;"));
         assert!(css.contains("--ui-scale: 1.25;"));
@@ -483,8 +499,9 @@ mod tests {
 
     #[test]
     fn builtin_colorscheme_tables_do_not_override_builtin_palettes() {
-        let mut theme = UiConfig::default();
-        theme.colorschemes.insert(
+        let theme = UiConfig::default();
+        let mut colorschemes = HashMap::new();
+        colorschemes.insert(
             "builtin_light".to_owned(),
             UiColorschemeConfig {
                 base: None,
@@ -495,7 +512,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme, 1.0);
+        let css = theme_css(&theme, &colorschemes, 1.0);
 
         assert!(!css.contains("linear-gradient(180deg, #111111, #222222)"));
         assert!(css.contains("--canvas-bg: linear-gradient(180deg, #fbf1c7, #f2e5bc);"));
@@ -503,11 +520,12 @@ mod tests {
 
     #[test]
     fn explicit_custom_colorscheme_is_pinned_in_both_light_and_dark_css() {
-        let mut theme = UiConfig {
+        let theme = UiConfig {
             colorscheme: "gruvbox".to_owned(),
             ..UiConfig::default()
         };
-        theme.colorschemes.insert(
+        let mut colorschemes = HashMap::new();
+        colorschemes.insert(
             "gruvbox".to_owned(),
             UiColorschemeConfig {
                 base: Some("builtin_dark".to_owned()),
@@ -519,7 +537,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme, 1.0);
+        let css = theme_css(&theme, &colorschemes, 1.0);
 
         assert!(css.contains("--document-color-scheme: dark;"));
         assert!(css.contains("--accent: #fabd2f;"));
@@ -529,11 +547,12 @@ mod tests {
 
     #[test]
     fn custom_accent_derives_highlight_surfaces() {
-        let mut theme = UiConfig {
+        let theme = UiConfig {
             colorscheme: "gruvbox".to_owned(),
             ..UiConfig::default()
         };
-        theme.colorschemes.insert(
+        let mut colorschemes = HashMap::new();
+        colorschemes.insert(
             "gruvbox".to_owned(),
             UiColorschemeConfig {
                 base: Some("builtin_dark".to_owned()),
@@ -544,7 +563,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme, 1.0);
+        let css = theme_css(&theme, &colorschemes, 1.0);
 
         assert!(css.contains("--accent: #ffcc00;"));
         assert!(css.contains("--item-hover: color-mix(in srgb, #ffcc00 14%, transparent);"));
@@ -563,11 +582,12 @@ mod tests {
 
     #[test]
     fn explicit_highlight_tokens_override_accent_derivatives() {
-        let mut theme = UiConfig {
+        let theme = UiConfig {
             colorscheme: "gruvbox".to_owned(),
             ..UiConfig::default()
         };
-        theme.colorschemes.insert(
+        let mut colorschemes = HashMap::new();
+        colorschemes.insert(
             "gruvbox".to_owned(),
             UiColorschemeConfig {
                 base: Some("builtin_dark".to_owned()),
@@ -586,7 +606,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme, 1.0);
+        let css = theme_css(&theme, &colorschemes, 1.0);
 
         assert!(css.contains("--accent: #ffcc00;"));
         assert!(css.contains("--item-hover: #101010;"));
@@ -605,11 +625,12 @@ mod tests {
 
     #[test]
     fn custom_canvas_bg_override_updates_visible_canvas_background() {
-        let mut theme = UiConfig {
+        let theme = UiConfig {
             colorscheme: "gruvbox".to_owned(),
             ..UiConfig::default()
         };
-        theme.colorschemes.insert(
+        let mut colorschemes = HashMap::new();
+        colorschemes.insert(
             "gruvbox".to_owned(),
             UiColorschemeConfig {
                 base: Some("builtin_dark".to_owned()),
@@ -620,7 +641,7 @@ mod tests {
             },
         );
 
-        let css = theme_css(&theme, 1.0);
+        let css = theme_css(&theme, &colorschemes, 1.0);
 
         assert!(css.contains("--canvas-bg: #0000ff;"));
     }
@@ -629,7 +650,7 @@ mod tests {
     fn system_colorscheme_keeps_light_dark_pairing() {
         let theme = UiConfig::default();
 
-        let css = theme_css(&theme, 1.0);
+        let css = theme_css(&theme, &HashMap::new(), 1.0);
 
         assert!(css.contains("--document-color-scheme: light dark;"));
         assert!(!css.contains("--accent: __LIGHT_ACCENT__"));
@@ -643,7 +664,7 @@ mod tests {
         let mut theme = UiConfig::default();
         theme.canvas.show = false;
 
-        let document = html(&theme, 5, 0, 1.0);
+        let document = html(&theme, &HashMap::new(), 5, 0, 1.0);
 
         assert!(document.contains(r#"<main class="shell canvas-hidden">"#));
     }
@@ -655,14 +676,14 @@ mod tests {
             ..UiConfig::default()
         };
 
-        let document = html(&theme, 5, 0, 1.0);
+        let document = html(&theme, &HashMap::new(), 5, 0, 1.0);
 
         assert!(document.contains("window.__RUNX_CYCLE_SELECTION__ = true;"));
     }
 
     #[test]
     fn html_exposes_window_action_shortcuts() {
-        let document = html(&UiConfig::default(), 5, 7, 1.0);
+        let document = html(&UiConfig::default(), &HashMap::new(), 5, 7, 1.0);
 
         assert!(document.contains(
             r#"window.__RUNX_FOCUS_WINDOW_SHORTCUT__ = {"key":"Enter","code":null,"alt":false,"ctrl":false,"meta":false,"shift":false};"#

@@ -520,13 +520,13 @@ function collectProviderOrder(): string[] {
 function syncColorschemeOptions(): void {
   const select = field("ui.colorscheme") as HTMLSelectElement;
   const previous = select.value || state.draft?.ui?.colorscheme || "system";
-  const customNames = collectColorschemes()
+  const known = new Set(state.colorschemes || []);
+  const editedNames = collectColorschemes()
     .map((scheme) => scheme.name)
     .filter(Boolean);
   const names = [
-    "system",
-    ...(state.builtin_colorschemes || []),
-    ...customNames,
+    ...(state.colorschemes || []),
+    ...editedNames.filter((name) => !known.has(name)),
   ];
   select.replaceChildren();
   for (const name of names) {

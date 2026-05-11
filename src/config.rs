@@ -5,11 +5,13 @@
 //! directories, command routes, and search paths.
 
 use std::{
+    collections::HashMap,
     fs,
     path::{Path, PathBuf},
+    time::SystemTime,
 };
 
-use anyhow::{Context, Result, anyhow};
+use anyhow::{Context, Result, anyhow, bail};
 use directories::BaseDirs;
 use tracing::warn;
 
@@ -27,7 +29,9 @@ pub use schema::*;
 use defaults::DEFAULT_CONFIG;
 use errors::render_toml_parse_error;
 use paths::{dedup_paths, resolve_path, runtime_paths};
-use validation::{RawConfigSpans, validate_config, validate_config_with_spans};
+use validation::{
+    RawConfigSpans, validate_config, validate_config_with_spans, validate_ui_colorscheme_name,
+};
 
 const LUA_LS_CONFIG: &str = include_str!("../.luarc.json");
 const RUNX_LUA_TYPES: &str = include_str!("../types/runx.lua");
@@ -35,6 +39,7 @@ const RUNX_LUA_TYPES: &str = include_str!("../types/runx.lua");
 /// Fully loaded configuration together with derived filesystem paths.
 pub struct LoadedConfig {
     pub config: Config,
+    pub colorschemes: HashMap<String, UiColorschemeConfig>,
     pub config_path: PathBuf,
     pub plugin_dirs: Vec<PathBuf>,
     pub plugin_search_paths: Vec<PathBuf>,
@@ -70,6 +75,13 @@ impl LoadedConfig {
         fs::create_dir_all(&plugin_dir)
             .with_context(|| format!("failed to create {}", plugin_dir.display()))?;
 
+        let colorschemes = load_colorschemes(&root_dir)?;
+        validate_colorschemes(&colorschemes)?;
+        validate_ui_colorscheme_name(
+            &config.ui.colorscheme,
+            colorschemes.keys().map(String::as_str),
+        )?;
+
         let mut plugin_dirs = vec![plugin_dir];
         for configured in &config.plugins.directories {
             plugin_dirs.push(resolve_path(&root_dir, base_dirs.home_dir(), configured));
@@ -84,6 +96,7 @@ impl LoadedConfig {
 
         Ok(Self {
             config,
+            colorschemes,
             config_path,
             plugin_dirs,
             plugin_search_paths,
@@ -96,6 +109,12 @@ pub fn ensure_user_config() -> Result<PathBuf> {
     let (root_dir, _, config_path) = runtime_paths()?;
     fs::create_dir_all(&root_dir)
         .with_context(|| format!("failed to create {}", root_dir.display()))?;
+    fs::create_dir_all(root_dir.join("colorschemes")).with_context(|| {
+        format!(
+            "failed to create {}",
+            root_dir.join("colorschemes").display()
+        )
+    })?;
     if let Err(error) = ensure_lua_ls_files(&root_dir) {
         warn!(error = %format!("{error:#}"), "failed to install Lua language server files");
     }
@@ -104,6 +123,90 @@ pub fn ensure_user_config() -> Result<PathBuf> {
             .with_context(|| format!("failed to write {}", config_path.display()))?;
     }
     Ok(config_path)
+}
+
+/// Loads custom colorscheme definitions from `<root>/colorschemes/*.toml`.
+fn load_colorschemes(root_dir: &Path) -> Result<HashMap<String, UiColorschemeConfig>> {
+    let colorschemes_dir = root_dir.join("colorschemes");
+    let mut schemes = HashMap::new();
+
+    fs::create_dir_all(&colorschemes_dir)
+        .with_context(|| format!("failed to create {}", colorschemes_dir.display()))?;
+
+    let entries = fs::read_dir(&colorschemes_dir)
+        .with_context(|| format!("failed to read {}", colorschemes_dir.display()))?;
+
+    for entry in entries {
+        let entry = entry
+            .with_context(|| format!("failed to read entry in {}", colorschemes_dir.display()))?;
+        let path = entry.path();
+
+        if !path.is_file() || path.extension().and_then(|s| s.to_str()) != Some("toml") {
+            continue;
+        }
+
+        let name = path
+            .file_stem()
+            .and_then(|s| s.to_str())
+            .ok_or_else(|| anyhow!("invalid colorscheme filename: {}", path.display()))?
+            .to_owned();
+
+        if name == "system" || BUILTIN_COLORSCHEME_NAMES.contains(&name.as_str()) {
+            bail!(
+                "colorscheme file name must not be `system` or a built-in name: {}",
+                path.display()
+            );
+        }
+
+        let raw = fs::read_to_string(&path)
+            .with_context(|| format!("failed to read {}", path.display()))?;
+        let scheme: UiColorschemeConfig = toml::from_str(&raw)
+            .map_err(|error| anyhow!(render_toml_parse_error(&path, &raw, &error)))?;
+
+        schemes.insert(name, scheme);
+    }
+
+    Ok(schemes)
+}
+
+/// Validates loaded colorscheme definitions (base references, required fields).
+fn validate_colorschemes(colorschemes: &HashMap<String, UiColorschemeConfig>) -> Result<()> {
+    for (name, scheme) in colorschemes {
+        if let Some(base) = &scheme.base
+            && !BUILTIN_COLORSCHEME_NAMES.contains(&base.as_str())
+        {
+            bail!(
+                "colorschemes/{name}.toml: `base` must be one of: {}",
+                BUILTIN_COLORSCHEME_NAMES.join(", ")
+            );
+        }
+
+        if scheme.base.is_none() {
+            let missing = scheme.overrides.missing_required_fields();
+            if !missing.is_empty() {
+                bail!(
+                    "colorschemes/{name}.toml has no `base`, so every color token must be set. Missing: {}",
+                    missing.join(", ")
+                );
+            }
+        }
+    }
+    Ok(())
+}
+
+/// Returns the most recent modification time of any `.toml` file in the colorschemes directory.
+pub fn colorschemes_dir_modified_at(root_dir: &Path) -> Option<SystemTime> {
+    let dir = root_dir.join("colorschemes");
+    let entries = fs::read_dir(&dir).ok()?;
+    let mut latest: Option<SystemTime> = None;
+    for entry in entries.flatten() {
+        if entry.path().extension().and_then(|s| s.to_str()) == Some("toml")
+            && let Ok(mtime) = entry.metadata().and_then(|m| m.modified())
+        {
+            latest = Some(latest.map_or(mtime, |prev: SystemTime| prev.max(mtime)));
+        }
+    }
+    latest
 }
 
 fn ensure_lua_ls_files(root_dir: &Path) -> Result<()> {
@@ -542,54 +645,6 @@ mod tests {
 
     mod ui_tests {
         use super::Config;
-        use crate::config::{UiColorOverridesConfig, UiColorschemeConfig, validate_config};
-
-        fn complete_color_overrides() -> UiColorOverridesConfig {
-            macro_rules! token {
-                () => {
-                    Some("#000000".to_owned())
-                };
-            }
-
-            UiColorOverridesConfig {
-                accent: token!(),
-                panel: token!(),
-                text: token!(),
-                muted: token!(),
-                canvas_bg: token!(),
-                canvas_shadow: token!(),
-                canvas_border: token!(),
-                label_strong: token!(),
-                input_bg: token!(),
-                input_border: token!(),
-                input_shadow: token!(),
-                placeholder: token!(),
-                scrollbar: token!(),
-                item_bg: token!(),
-                item_hover: token!(),
-                item_selected_bg: token!(),
-                item_selected_shadow: token!(),
-                badge_bg: token!(),
-                badge_border: token!(),
-                badge_text: token!(),
-                badge_icon_bg: token!(),
-                chip_text: token!(),
-                chip_bg: token!(),
-                chip_border: token!(),
-                config_error_bg: token!(),
-                config_error_border: token!(),
-                config_error_shadow: token!(),
-                config_error_title: token!(),
-                config_error_copy: token!(),
-                canvas_hidden_input_bg: token!(),
-                canvas_hidden_input_border: token!(),
-                canvas_hidden_input_shadow: token!(),
-                canvas_hidden_item_bg: token!(),
-                canvas_hidden_item_hover: token!(),
-                canvas_hidden_item_selected_bg: token!(),
-                canvas_hidden_config_error_bg: token!(),
-            }
-        }
 
         #[test]
         fn defaults_to_current_ui_font_sizes() {
@@ -625,7 +680,6 @@ mod tests {
                     shift: false,
                 })
             );
-            assert!(config.ui.colorschemes.is_empty());
             assert_eq!(config.ui.font_sizes.label, 10);
             assert_eq!(config.ui.font_sizes.input, 30);
             assert_eq!(config.ui.font_sizes.title, 16);
@@ -738,126 +792,16 @@ mod tests {
         }
 
         #[test]
-        fn accepts_custom_ui_color_overrides() {
-            let config: Config = toml::from_str(
-                "[ui]\ncolorscheme = \"gruvbox\"\n[ui.colorschemes.gruvbox]\nbase = \"builtin_dark\"\npanel = \"#282828\"\ntext = \"#ebdbb2\"\n",
-            )
-            .expect("custom ui colorscheme should parse");
-
-            assert_eq!(config.ui.colorscheme, "gruvbox");
-            assert_eq!(
-                config.ui.colorschemes.get("gruvbox"),
-                Some(&UiColorschemeConfig {
-                    base: Some("builtin_dark".to_owned()),
-                    overrides: UiColorOverridesConfig {
-                        panel: Some("#282828".to_owned()),
-                        text: Some("#ebdbb2".to_owned()),
-                        ..UiColorOverridesConfig::default()
-                    },
-                })
-            );
-        }
-
-        #[test]
-        fn rejects_builtin_colorscheme_tables() {
-            let mut config = Config::default();
-            config.ui.colorschemes.insert(
-                "builtin_dark".to_owned(),
-                UiColorschemeConfig {
-                    base: None,
-                    overrides: UiColorOverridesConfig {
-                        accent: Some("#fabd2f".to_owned()),
-                        ..UiColorOverridesConfig::default()
-                    },
-                },
-            );
-
-            let error = validate_config(&config).expect_err("builtin override should fail");
-            assert!(error.to_string().contains(
-                "[ui.colorschemes.builtin_dark] is read-only; create a custom colorscheme with base = \"builtin_dark\""
-            ));
-        }
-
-        #[test]
         fn rejects_legacy_color_override_fields() {
             for raw in [
                 "[ui]\naccent = \"#333333\"\n",
                 "[ui.colors]\naccent = \"#111111\"\n",
                 "[ui.dark_colors]\nitem_bg = \"rgba(1,2,3,0.4)\"\n",
-                "[ui.colorschemes.gruvbox]\nbase = \"builtin_dark\"\nbackground = \"#000000\"\n",
             ] {
                 let error =
                     toml::from_str::<Config>(raw).expect_err("legacy color override should fail");
                 assert!(error.message().contains("unknown field"));
             }
-        }
-
-        #[test]
-        fn rejects_unknown_selected_colorscheme() {
-            let mut config = Config::default();
-            config.ui.colorscheme = "gruvbox".to_owned();
-
-            let error = validate_config(&config).expect_err("unknown colorscheme should fail");
-            assert!(
-                error
-                    .to_string()
-                    .contains("[ui].colorscheme must be `system`")
-            );
-        }
-
-        #[test]
-        fn rejects_invalid_custom_colorscheme_base() {
-            let mut config = Config::default();
-            config.ui.colorschemes.insert(
-                "gruvbox".to_owned(),
-                UiColorschemeConfig {
-                    base: Some("nope".to_owned()),
-                    ..UiColorschemeConfig::default()
-                },
-            );
-
-            let error = validate_config(&config).expect_err("invalid colorscheme base should fail");
-            assert!(error.to_string().contains(
-                "[ui.colorschemes.gruvbox].base must be one of: builtin_light, builtin_dark"
-            ));
-        }
-
-        #[test]
-        fn accepts_complete_custom_colorscheme_without_base() {
-            let mut config = Config::default();
-            config.ui.colorschemes.insert(
-                "gruvbox".to_owned(),
-                UiColorschemeConfig {
-                    base: None,
-                    overrides: complete_color_overrides(),
-                },
-            );
-
-            validate_config(&config).expect("complete custom colorscheme should pass");
-        }
-
-        #[test]
-        fn rejects_partial_custom_colorscheme_without_base() {
-            let mut config = Config::default();
-            config.ui.colorschemes.insert(
-                "gruvbox".to_owned(),
-                UiColorschemeConfig {
-                    base: None,
-                    overrides: UiColorOverridesConfig {
-                        accent: Some("#fabd2f".to_owned()),
-                        ..UiColorOverridesConfig::default()
-                    },
-                },
-            );
-
-            let error = validate_config(&config)
-                .expect_err("partial custom colorscheme without base should fail");
-            assert!(
-                error
-                    .to_string()
-                    .contains("[ui.colorschemes.gruvbox] has no base")
-            );
-            assert!(error.to_string().contains("canvas_bg"));
         }
     }
 
@@ -1011,36 +955,13 @@ mod tests {
         }
 
         #[test]
-        fn colorscheme_validation_errors_include_source_context() {
-            let raw = "[ui]\ncolorscheme = \"gruvbox\"\n";
-            let spans: RawConfigSpans =
-                toml::from_str(raw).expect("raw spans config should parse structurally");
-            let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
-                    .expect_err("validation should fail")
-                    .to_string();
-
-            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
-            assert!(rendered.contains("colorscheme = \"gruvbox\""));
-            assert!(rendered.contains("[ui].colorscheme must be `system`"));
-        }
-
-        #[test]
         fn raw_spans_accept_full_ui_block_for_validation() {
             let raw = r##"
 [ui]
 show_header = true
 cycle_selection = false
-colorscheme = "gruvbox"
+colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
-
-[ui.colorschemes.gruvbox]
-base = "builtin_light"
-accent = "#c77b49"
-canvas_bg = "#f3ede5"
-panel = "#fffaf3"
-text = "#1f1a16"
-muted = "#756759"
 
 [ui.canvas]
 show = true
@@ -1079,22 +1000,6 @@ icon_size = 46
                 toml::from_str(raw).expect("raw spans should accept a valid ui block");
             validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
                 .expect("validation should pass");
-        }
-
-        #[test]
-        fn readonly_builtin_colorscheme_errors_include_source_context() {
-            let raw = "[ui.colorschemes.builtin_dark]\naccent = \"#fabd2f\"\n";
-            let spans: RawConfigSpans =
-                toml::from_str(raw).expect("raw spans config should parse structurally");
-            let rendered =
-                validate_config_with_spans(Path::new("/tmp/runx-test-config.toml"), raw, &spans)
-                    .expect_err("validation should fail")
-                    .to_string();
-
-            assert!(rendered.contains("invalid configuration /tmp/runx-test-config.toml"));
-            assert!(rendered.contains("[ui.colorschemes.builtin_dark]"));
-            assert!(rendered.contains("is read-only"));
-            assert!(rendered.contains("base = \"builtin_dark\""));
         }
 
         #[test]

@@ -80,9 +80,8 @@ show_header = true
 cycle_selection = false
 colorscheme = "system"
 font_family = "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
-# Custom schemes live under:
-# [ui.colorschemes.gruvbox]
-# base = "builtin_dark"
+# Custom schemes are individual files in the colorschemes/ directory.
+# Example: colorschemes/gruvbox.toml with base = "builtin_dark"
 
 [ui.canvas]
 show = true

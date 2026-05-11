@@ -100,6 +100,7 @@ pub struct Launcher {
     resolved_window_config: config::WindowConfig,
     resolved_ui_config: config::UiConfig,
     last_config_modified: Option<SystemTime>,
+    last_colorschemes_modified: Option<SystemTime>,
     hotkey_manager: GlobalHotKeyManager,
     hotkey: Option<HotKey>,
     quick_switch_hotkey: Option<HotKey>,
@@ -140,6 +141,9 @@ impl Launcher {
             warn!(error = %error, "startup config invalid; using defaults");
         }
         let last_config_modified = config::config_modified_at(&loaded.config_path);
+        let last_colorschemes_modified = config::colorschemes_dir_modified_at(
+            loaded.config_path.parent().unwrap_or(Path::new(".")),
+        );
         let quick_switch_hotkey = loaded.config.hotkey.quick_switch_hotkey()?;
         let hotkey_manager =
             GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
@@ -170,6 +174,7 @@ impl Launcher {
         let window = build_window(event_loop, &config)?;
         let html = ui::html(
             &config.ui,
+            &loaded.colorschemes,
             config.window.visible_rows,
             INITIAL_LAYOUT_VERSION,
             config.window.scale,
@@ -201,6 +206,7 @@ impl Launcher {
             resolved_ui_config: loaded.config.ui.clone(),
             loaded,
             last_config_modified,
+            last_colorschemes_modified,
             hotkey_manager,
             hotkey,
             quick_switch_hotkey,
@@ -660,7 +666,11 @@ impl Launcher {
 
     fn reload_config_if_needed(&mut self) -> Result<()> {
         let current_modified = config::config_modified_at(&self.loaded.config_path);
-        if current_modified == self.last_config_modified {
+        let root_dir = self.loaded.config_path.parent().unwrap_or(Path::new("."));
+        let current_colorschemes_modified = config::colorschemes_dir_modified_at(root_dir);
+        if current_modified == self.last_config_modified
+            && current_colorschemes_modified == self.last_colorschemes_modified
+        {
             return Ok(());
         }
         self.try_reload_config("Config reload failed; keeping previous config");
@@ -676,6 +686,8 @@ impl Launcher {
         match self.reload_config() {
             Ok(()) => {
                 self.last_config_modified = config::config_modified_at(&self.loaded.config_path);
+                let root_dir = self.loaded.config_path.parent().unwrap_or(Path::new("."));
+                self.last_colorschemes_modified = config::colorschemes_dir_modified_at(root_dir);
                 clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
             }
             Err(error) => {
@@ -845,7 +857,8 @@ impl Launcher {
         theme: &config::UiConfig,
         layout_version: u64,
     ) -> Result<()> {
-        let script = frontend_config_script(window, theme, layout_version)?;
+        let script =
+            frontend_config_script(window, theme, &self.loaded.colorschemes, layout_version)?;
         self.readiness
             .eval_config(&self.webview, script, &self.runtime, &self.proxy)
     }
@@ -1057,10 +1070,11 @@ fn settings_app_bundle_path_from_executable(executable: &Path) -> Option<PathBuf
 fn frontend_config_script(
     window: &config::WindowConfig,
     theme: &config::UiConfig,
+    colorschemes: &std::collections::HashMap<String, config::UiColorschemeConfig>,
     layout_version: u64,
 ) -> Result<String> {
     let config = serde_json::json!({
-        "css": ui::theme_css(theme, window.scale),
+        "css": ui::theme_css(theme, colorschemes, window.scale),
         "shellClass": ui::shell_class(theme),
         "cycleSelection": theme.cycle_selection,
         "focusWindowShortcut": ui::shortcut_value(&theme.shortcuts.focus_window),
@@ -1158,7 +1172,8 @@ mod tests {
         let mut theme = config::UiConfig::default();
         theme.canvas.show = false;
 
-        let script = frontend_config_script(&window, &theme, 3).expect("script should render");
+        let script = frontend_config_script(&window, &theme, &std::collections::HashMap::new(), 3)
+            .expect("script should render");
 
         assert!(script.contains(r#""shellClass":"shell canvas-hidden""#));
         assert!(script.contains(r#""layoutVersion":3"#));

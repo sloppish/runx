@@ -119,10 +119,10 @@ const SECTION_ORDER: &[SectionSpec] = &[
         &["ui", "layout"],
     ),
     SectionSpec::new(
-        "[ui.colorschemes.<name>]",
+        "colorschemes/<name>.toml",
         SectionKind::Colorscheme,
         "UiColorschemeConfig",
-        &["ui", "colorschemes"],
+        &[],
     ),
 ];
 
@@ -810,7 +810,7 @@ fn validate_colorscheme_section(docs: &DocMap, color_token_names: &[String]) -> 
 
     let overrides = expect_struct(docs, "UiColorOverridesConfig")?;
     if overrides.fields.is_empty() {
-        bail!("[ui.colorschemes.<name>] does not render any override fields");
+        bail!("colorschemes/<name>.toml does not render any override fields");
     }
     let override_fields = overrides
         .fields
@@ -827,7 +827,7 @@ fn validate_colorscheme_section(docs: &DocMap, color_token_names: &[String]) -> 
     for field in &overrides.fields {
         if field.doc.trim().is_empty() {
             bail!(
-                "[ui.colorschemes.<name>] field `{}` is missing a source doc comment",
+                "colorschemes/<name>.toml field `{}` is missing a source doc comment",
                 field.rust_name
             );
         }
@@ -1051,7 +1051,7 @@ fn render_colorscheme_section(
     builtin_schemes: &[String],
 ) -> String {
     let intro = format!(
-        "Named colorscheme definitions. Runx always knows about {}, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.",
+        "Custom colorschemes live as individual `.toml` files in the `colorschemes/` directory next to `config.toml`. The file name (minus `.toml`) becomes the scheme name. Runx always knows about {}, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.",
         builtin_schemes
             .iter()
             .map(|name| format!("`{name}`"))
@@ -1181,7 +1181,7 @@ fn should_render_field(section: &SectionSpec, field: &FieldDef) -> bool {
 fn is_ui_nested_table_field(field: &FieldDef) -> bool {
     matches!(
         field.rust_name.as_str(),
-        "colorschemes" | "canvas" | "entries" | "shortcuts" | "font_sizes" | "layout"
+        "canvas" | "entries" | "shortcuts" | "font_sizes" | "layout"
     )
 }
 
@@ -1267,7 +1267,7 @@ fn describe_type(
                 .map(|value| format!("`{value}`"))
                 .collect::<Vec<_>>()
                 .join(", ");
-            format!("string ({values}, or a custom name under `[ui.colorschemes.<name>]`)")
+            format!("string ({values}, or a custom name matching a file in `colorschemes/`)")
         }
         _ => {
             if let Some(values) = enum_values.get(&field.rust_type) {

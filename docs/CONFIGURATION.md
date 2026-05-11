@@ -169,7 +169,7 @@ Theme tokens injected into the embedded HTML/CSS UI templates.
 | --- | --- | --- | --- |
 | `show_header` | boolean | `true` | Show the small header label at the top of the launcher. |
 | `cycle_selection` | boolean | `false` | Wrap selection movement from end to start with arrows and Ctrl-N/Ctrl-P. |
-| `colorscheme` | string (`system`, `builtin_light`, `builtin_dark`, or a custom name under `[ui.colorschemes.<name>]`) | `"system"` | Selected UI colorscheme: `system`, a built-in name, or a custom scheme name. |
+| `colorscheme` | string (`system`, `builtin_light`, `builtin_dark`, or a custom name matching a file in `colorschemes/`) | `"system"` | Selected UI colorscheme: `system`, a built-in name, or a custom scheme name. |
 | `font_family` | string | `"\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"` | CSS font-family stack used by the launcher UI. |
 
 ## [ui.canvas]
@@ -234,9 +234,9 @@ Layout tokens injected into the embedded UI theme.
 | `badge_radius` | integer | `14` | Corner radius of badge containers. |
 | `icon_size` | integer | `46` | Size of icon images inside icon badges. |
 
-## [ui.colorschemes.\<name\>]
+## colorschemes/\<name\>.toml
 
-Named colorscheme definitions. Runx always knows about `builtin_light`, `builtin_dark`, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
+Custom colorschemes live as individual `.toml` files in the `colorschemes/` directory next to `config.toml`. The file name (minus `.toml`) becomes the scheme name. Runx always knows about `builtin_light`, `builtin_dark`, and those built-in schemes are read-only. Custom schemes can use any other name and are selected through `[ui].colorscheme`. Set `base` to inherit from a built-in palette and make the other tokens optional; without `base`, every color token must be set. Most users only need `accent`, `canvas_bg`, `panel`, `text`, and `muted`; the remaining keys are lower-level UI tokens for precise theme work.
 
 | Option | Type | Description |
 | --- | --- | --- |

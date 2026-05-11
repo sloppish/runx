@@ -258,8 +258,6 @@ pub struct UiConfig {
     pub colorscheme: String,
     /// CSS font-family stack used by the launcher UI.
     pub font_family: String,
-    /// Named built-in and custom colorscheme definitions.
-    pub colorschemes: HashMap<String, UiColorschemeConfig>,
     /// Canvas styling for the outer launcher panel.
     pub canvas: UiCanvasConfig,
     /// Styling for individual result-row surfaces.
@@ -572,11 +570,6 @@ impl UiConfig {
     /// Returns the selected colorscheme name, or `system` to follow the built-in light/dark pair.
     pub fn colorscheme(&self) -> &str {
         self.colorscheme.as_str()
-    }
-
-    /// Returns a named colorscheme, or an empty override set when it is not configured.
-    pub fn colorscheme_config(&self, name: &str) -> UiColorschemeConfig {
-        self.colorschemes.get(name).cloned().unwrap_or_default()
     }
 
     /// Estimates the launcher height for a fixed number of visible result rows.
@@ -932,7 +925,6 @@ impl Default for UiConfig {
             colorscheme: "system".to_owned(),
             font_family: "\"SF Pro Display\", \"Avenir Next\", \"Helvetica Neue\", sans-serif"
                 .to_owned(),
-            colorschemes: HashMap::new(),
             canvas: UiCanvasConfig::default(),
             entries: UiEntriesConfig::default(),
             shortcuts: UiShortcutsConfig::default(),
