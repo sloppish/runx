@@ -1239,8 +1239,11 @@ fn save_colorscheme_files(
         }
 
         let path = dir.join(format!("{name}.toml"));
-        fs::write(&path, &content)
-            .with_context(|| format!("failed to write {}", path.display()))?;
+        let current = fs::read_to_string(&path).unwrap_or_default();
+        if current != content {
+            fs::write(&path, &content)
+                .with_context(|| format!("failed to write {}", path.display()))?;
+        }
         kept.insert(name.to_owned());
     }
 
