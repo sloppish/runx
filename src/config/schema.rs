@@ -421,6 +421,8 @@ pub struct UiCanvasConfig {
 pub struct UiEntriesConfig {
     /// Opacity multiplier applied to result-row background surfaces.
     pub opacity: f64,
+    /// Show a hover highlight when the mouse is over a result row.
+    pub show_hover: bool,
 }
 
 /// Keyboard shortcuts handled inside the launcher UI.
@@ -956,7 +958,10 @@ impl Default for UiCanvasConfig {
 
 impl Default for UiEntriesConfig {
     fn default() -> Self {
-        Self { opacity: 1.0 }
+        Self {
+            opacity: 1.0,
+            show_hover: true,
+        }
     }
 }
 

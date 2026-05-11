@@ -127,7 +127,7 @@ export interface SettingsDraft {
       background_opacity: number;
       chrome_opacity: number;
     };
-    entries: { opacity: number };
+    entries: { opacity: number; show_hover: boolean };
     shortcuts: {
       focus_window: string;
       activate_all_windows: string;

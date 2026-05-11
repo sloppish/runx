@@ -261,6 +261,7 @@ pub struct UiCanvasSettingsDraft {
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]
 pub struct UiEntriesSettingsDraft {
     pub opacity: f64,
+    pub show_hover: bool,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

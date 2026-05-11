@@ -69,6 +69,7 @@ struct RawUiCanvasSpans {
 #[serde(default, deny_unknown_fields)]
 struct RawUiEntriesSpans {
     opacity: Option<Spanned<f64>>,
+    show_hover: Option<Spanned<bool>>,
 }
 
 #[derive(Debug, Deserialize, Default)]

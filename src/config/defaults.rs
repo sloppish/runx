@@ -91,6 +91,7 @@ chrome_opacity = 1.0
 
 [ui.entries]
 opacity = 1.0
+show_hover = true
 
 [ui.shortcuts]
 focus_window = "Enter"

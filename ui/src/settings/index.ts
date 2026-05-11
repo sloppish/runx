@@ -1275,7 +1275,10 @@ function collectDraft(): SettingsDraft {
         background_opacity: float("ui.canvas.background_opacity"),
         chrome_opacity: float("ui.canvas.chrome_opacity"),
       },
-      entries: { opacity: float("ui.entries.opacity") },
+      entries: {
+        opacity: float("ui.entries.opacity"),
+        show_hover: bool("ui.entries.show_hover"),
+      },
       shortcuts: {
         focus_window: text("ui.shortcuts.focus_window"),
         activate_all_windows: text("ui.shortcuts.activate_all_windows"),

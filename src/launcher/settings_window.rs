@@ -636,6 +636,7 @@ fn settings_draft_from_config(
             },
             entries: UiEntriesSettingsDraft {
                 opacity: config.ui.entries.opacity,
+                show_hover: config.ui.entries.show_hover,
             },
             shortcuts: UiShortcutsSettingsDraft {
                 focus_window: shortcut_to_text(&config.ui.shortcuts.focus_window),
@@ -953,6 +954,12 @@ fn apply_settings_draft_to_raw(
         &["ui", "entries"],
         "opacity",
         value(draft.ui.entries.opacity),
+    )?;
+    set_item(
+        &mut doc,
+        &["ui", "entries"],
+        "show_hover",
+        value(draft.ui.entries.show_hover),
     )?;
 
     set_ui_shortcuts(&mut doc, &draft.ui.shortcuts)?;

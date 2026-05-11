@@ -348,7 +348,13 @@ pub fn theme_css(
     colorschemes: &HashMap<String, UiColorschemeConfig>,
     scale: f64,
 ) -> String {
-    let (light, dark, document_color_scheme) = resolve_theme_colors(theme, colorschemes);
+    let (mut light, mut dark, document_color_scheme) = resolve_theme_colors(theme, colorschemes);
+    if !theme.entries.show_hover {
+        light.item_hover = "transparent".to_owned();
+        light.canvas_hidden_item_hover = "transparent".to_owned();
+        dark.item_hover = "transparent".to_owned();
+        dark.canvas_hidden_item_hover = "transparent".to_owned();
+    }
     let header_display = if theme.show_header { "flex" } else { "none" };
     let canvas_display = if theme.canvas.show { "block" } else { "none" };
     let ui_scale = format_float(scale);
