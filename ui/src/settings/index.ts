@@ -1254,7 +1254,10 @@ function collectDraft(): SettingsDraft {
       score_rules: collectScoreRules(),
       result_limit: int("ranking.result_limit"),
     },
-    timing: { search_debounce_ms: int("timing.search_debounce_ms") },
+    timing: {
+      search_debounce_ms: int("timing.search_debounce_ms"),
+      quick_switch_show_delay_ms: int("timing.quick_switch_show_delay_ms"),
+    },
     plugins: {
       directories: lineList("plugins.directories"),
       search_paths: lineList("plugins.search_paths"),

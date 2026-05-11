@@ -109,7 +109,7 @@ export interface SettingsDraft {
     score_rules: ScoreRule[];
     result_limit: number;
   };
-  timing: { search_debounce_ms: number };
+  timing: { search_debounce_ms: number; quick_switch_show_delay_ms: number };
   plugins: {
     directories: string[];
     search_paths: string[];

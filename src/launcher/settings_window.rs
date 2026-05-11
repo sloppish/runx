@@ -602,6 +602,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
         },
         timing: TimingSettingsDraft {
             search_debounce_ms: config.timing.search_debounce_ms,
+            quick_switch_show_delay_ms: config.timing.quick_switch_show_delay_ms,
         },
         plugins: PluginsSettingsDraft {
             directories: config.plugins.directories.clone(),
@@ -882,6 +883,15 @@ fn apply_settings_draft_to_raw(
         value(
             i64::try_from(draft.timing.search_debounce_ms)
                 .context("search_debounce_ms is too large")?,
+        ),
+    )?;
+    set_item(
+        &mut doc,
+        &["timing"],
+        "quick_switch_show_delay_ms",
+        value(
+            i64::try_from(draft.timing.quick_switch_show_delay_ms)
+                .context("quick_switch_show_delay_ms is too large")?,
         ),
     )?;
     set_plugin_paths(&mut doc, &draft.plugins)?;
