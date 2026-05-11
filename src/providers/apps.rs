@@ -44,7 +44,7 @@ struct AppIndex {
 const APP_INDEX_REFRESH_COOLDOWN: Duration = Duration::from_secs(10);
 
 impl AppProvider {
-    /// Scans well-known application directories and builds the in-memory index.
+    /// Builds the provider and kicks off an initial background scan.
     pub fn new(icons: Arc<IconCache>, config: AppsProviderConfig) -> Result<Self> {
         let base_dirs = BaseDirs::new().context("could not determine the home directory")?;
         let mut roots = vec![
@@ -56,15 +56,27 @@ impl AppProvider {
         ];
         roots.retain(|path| path.exists());
 
-        let apps = scan_apps(&roots);
+        let index = Arc::new(Mutex::new(AppIndex {
+            apps: Vec::new(),
+            scanned_at: Instant::now(),
+            refreshing: true,
+        }));
+
+        let shared_index = Arc::clone(&index);
+        let scan_roots = roots.clone();
+        let _ = thread::Builder::new()
+            .name("runx-app-index-init".to_owned())
+            .spawn(move || {
+                let apps = scan_apps(&scan_roots);
+                let mut guard = lock_or_recover(&shared_index);
+                guard.apps = apps;
+                guard.scanned_at = Instant::now();
+                guard.refreshing = false;
+            });
 
         Ok(Self {
             roots,
-            index: Arc::new(Mutex::new(AppIndex {
-                apps,
-                scanned_at: Instant::now(),
-                refreshing: false,
-            })),
+            index,
             icons,
             config,
         })
@@ -123,8 +135,8 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
 }
 
 fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
-    let mut seen = HashSet::new();
-    let mut apps = Vec::new();
+    let mut seen = HashSet::with_capacity(512);
+    let mut apps = Vec::with_capacity(512);
 
     for root in roots {
         for entry in WalkDir::new(root)
@@ -244,27 +256,41 @@ fn filter_entry(entry: &DirEntry) -> bool {
 }
 
 fn app_score_adjustment(path: &Path) -> i64 {
-    let mut adjustment = 0;
     let path_text = path.to_string_lossy();
     let info_path = path.join("Contents/Info.plist");
-    let Ok(plist) = Value::from_file(&info_path) else {
-        return path_penalty(&path_text);
-    };
-    let Some(dict) = plist.as_dictionary() else {
-        return path_penalty(&path_text);
-    };
+
+    let is_hidden = is_background_or_agent(&info_path).unwrap_or(false);
+    let mut adjustment = if is_hidden { -180 } else { 0 };
+    adjustment += path_penalty(&path_text);
+    adjustment
+}
+
+/// Checks LSUIElement, NSUIElement, and LSBackgroundOnly in the plist.
+/// Performs a cheap byte scan first — only does a full parse for the ~20%
+/// of apps whose plist actually contains one of these keys.
+fn is_background_or_agent(info_path: &Path) -> Option<bool> {
+    let raw = std::fs::read(info_path).ok()?;
+
+    let has_relevant_key = memchr::memmem::find(&raw, b"LSUIElement").is_some()
+        || memchr::memmem::find(&raw, b"LSBackgroundOnly").is_some();
+
+    if !has_relevant_key {
+        return Some(false);
+    }
+
+    let value = Value::from_reader(std::io::Cursor::new(&raw)).ok()?;
+    let dict = value.as_dictionary()?;
 
     let is_agent = dict
         .get("LSUIElement")
         .or_else(|| dict.get("NSUIElement"))
         .is_some_and(plist_truthy);
-    let is_background = dict.get("LSBackgroundOnly").is_some_and(plist_truthy);
-
-    if is_agent || is_background {
-        adjustment -= 180;
+    if is_agent {
+        return Some(true);
     }
 
-    adjustment + path_penalty(&path_text)
+    let is_background = dict.get("LSBackgroundOnly").is_some_and(plist_truthy);
+    Some(is_background)
 }
 
 fn path_penalty(path: &str) -> i64 {
