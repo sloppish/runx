@@ -3,6 +3,7 @@
 use std::{
     collections::{HashMap, HashSet},
     sync::{Arc, Mutex},
+    thread,
 };
 
 use anyhow::{Result, bail};
@@ -46,6 +47,7 @@ struct WindowRecord {
 struct WindowSession {
     active: bool,
     windows: Option<Vec<WindowRecord>>,
+    pending: Option<thread::JoinHandle<Vec<WindowRecord>>>,
 }
 
 struct AccessibilityWindowRecord {
@@ -66,11 +68,19 @@ impl WindowsProvider {
         }
     }
 
-    /// Starts a new launcher-visible session.
+    /// Starts a new launcher-visible session and begins fetching windows in the background.
     pub fn begin_session(&self) {
         let mut session = lock_or_recover(&self.session);
         session.active = true;
         session.windows = None;
+        session.pending = None;
+
+        if !self.has_required_permissions() {
+            return;
+        }
+
+        let include_other_desktops = self.include_other_desktops;
+        session.pending = Some(thread::spawn(move || read_windows(include_other_desktops)));
     }
 
     /// Ends the current launcher-visible session and clears the cached snapshot.
@@ -78,6 +88,7 @@ impl WindowsProvider {
         let mut session = lock_or_recover(&self.session);
         session.active = false;
         session.windows = None;
+        session.pending = None;
         self.icons.clear_process_bundle_cache();
     }
 
@@ -111,26 +122,42 @@ impl WindowsProvider {
     }
 
     fn session_windows(&self) -> Result<Option<Vec<WindowRecord>>> {
-        {
-            let session = lock_or_recover(&self.session);
+        let pending = {
+            let mut session = lock_or_recover(&self.session);
             if !session.active {
                 return Ok(None);
             }
             if let Some(windows) = &session.windows {
                 return Ok(Some(windows.clone()));
             }
-        }
+            session.pending.take()
+        };
 
-        if !self.ensure_required_permissions(true)? {
-            return Ok(None);
-        }
+        let windows = match pending {
+            Some(handle) => handle.join().unwrap_or_default(),
+            None => {
+                if !self.ensure_required_permissions(true)? {
+                    return Ok(None);
+                }
+                read_windows(self.include_other_desktops)
+            }
+        };
 
-        let windows = read_windows(self.include_other_desktops);
         let mut session = lock_or_recover(&self.session);
         if session.active {
             session.windows = Some(windows.clone());
         }
         Ok(Some(windows))
+    }
+
+    fn has_required_permissions(&self) -> bool {
+        if !macos::ensure_accessibility_trusted(false) {
+            return false;
+        }
+        if self.include_other_desktops && !macos::ensure_screen_recording_trusted(false) {
+            return false;
+        }
+        true
     }
 
     fn ensure_required_permissions(&self, prompt: bool) -> Result<bool> {
