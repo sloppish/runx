@@ -196,9 +196,15 @@ fn score_apps(
     limit: usize,
     config: &AppsProviderConfig,
 ) -> Vec<(i64, AppRecord)> {
+    let query = query.trim();
+    if query.is_empty() {
+        return Vec::new();
+    }
+    let query_lower = query.to_ascii_lowercase();
+
     let mut matches = Vec::new();
     for app in apps {
-        let score = app_match_score(app, query, config);
+        let score = app_match_score(app, &query_lower, config);
         if score <= 0 {
             continue;
         }
@@ -211,15 +217,13 @@ fn score_apps(
     matches
 }
 
-fn app_match_score(app: &AppRecord, query: &str, config: &AppsProviderConfig) -> i64 {
-    let query = query.trim();
-    let mut score = fuzzy_score(&app.name, query) + app.score_adjustment;
+fn app_match_score(app: &AppRecord, query_lower: &str, config: &AppsProviderConfig) -> i64 {
+    let mut score = fuzzy_score(&app.name, query_lower) + app.score_adjustment;
     let app_name = app.name.to_ascii_lowercase();
-    let query = query.to_ascii_lowercase();
 
-    if app_name == query {
+    if app_name == query_lower {
         score += config.exact_name_boost;
-    } else if app_name.starts_with(&query) {
+    } else if app_name.starts_with(query_lower) {
         score += config.prefix_name_boost;
     }
 

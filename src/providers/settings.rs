@@ -72,10 +72,11 @@ impl SettingsProvider {
         if query.is_empty() {
             return Ok(Vec::new());
         }
+        let query_lower = query.to_ascii_lowercase();
 
         let mut items = Vec::new();
         for setting in &self.items {
-            let score = setting_score(setting, query);
+            let score = setting_score(setting, &query_lower);
             if score <= 0 {
                 continue;
             }
@@ -112,16 +113,16 @@ impl SettingsProvider {
     }
 }
 
-fn setting_score(setting: &SettingRecord, query: &str) -> i64 {
-    let mut score = fuzzy_score(&setting.title, query) + (fuzzy_score(&setting.id, query) / 3);
+fn setting_score(setting: &SettingRecord, query_lower: &str) -> i64 {
+    let mut score =
+        fuzzy_score(&setting.title, query_lower) + (fuzzy_score(&setting.id, query_lower) / 3);
     let title_lower = setting.title.to_ascii_lowercase();
-    let query_lower = query.to_ascii_lowercase();
 
     if title_lower == query_lower {
         score += 260;
-    } else if title_lower.starts_with(&query_lower) {
+    } else if title_lower.starts_with(query_lower) {
         score += 180;
-    } else if title_lower.contains(&query_lower) {
+    } else if title_lower.contains(query_lower) {
         score += 90;
     }
 

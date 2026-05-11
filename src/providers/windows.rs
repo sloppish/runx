@@ -359,6 +359,7 @@ fn get_number(dict: &CFDictionary<CFString, CFType>, key: CFStringRef) -> Option
 fn rank_windows(windows: &[WindowRecord], query: &str, limit: usize) -> Vec<(i64, WindowRecord)> {
     let query = query.trim();
     let empty_query = query.is_empty();
+    let query_lower = query.to_ascii_lowercase();
     let mut items = Vec::new();
 
     for window in windows.iter() {
@@ -370,7 +371,7 @@ fn rank_windows(windows: &[WindowRecord], query: &str, limit: usize) -> Vec<(i64
             empty_query_score(window)
         } else {
             let combined = format!("{} {}", window.title, window.owner);
-            fuzzy_score(&combined, query) + (fuzzy_score(&window.title, query) / 2)
+            fuzzy_score(&combined, &query_lower) + (fuzzy_score(&window.title, &query_lower) / 2)
         };
 
         if score <= 0 {

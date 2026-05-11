@@ -76,7 +76,8 @@ fn install_runtime(
     runtime.set(
         "fuzzy_score",
         lua.create_function(|_, (candidate, query): (String, String)| {
-            Ok(fuzzy_score(&candidate, &query))
+            let query_lower = query.trim().to_ascii_lowercase();
+            Ok(fuzzy_score(&candidate, &query_lower))
         })?,
     )?;
 

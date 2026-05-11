@@ -13,20 +13,19 @@ use crate::{
     types::SearchItem,
 };
 
-/// Returns an Arinae fuzzy score for `candidate` against `query`.
-pub fn fuzzy_score(candidate: &str, query: &str) -> i64 {
-    let query = query.trim();
-    if query.is_empty() {
+/// Returns an Arinae fuzzy score for `candidate` against `query_lower`.
+/// Both inputs should be pre-trimmed; `query_lower` must be pre-lowercased.
+pub fn fuzzy_score(candidate: &str, query_lower: &str) -> i64 {
+    if query_lower.is_empty() {
         return 1;
     }
 
     let candidate_lower = candidate.to_ascii_lowercase();
-    let query_lower = query.to_ascii_lowercase();
-    let Some(mut score) = matcher().fuzzy_match(&candidate_lower, &query_lower) else {
+    let Some(mut score) = matcher().fuzzy_match(&candidate_lower, query_lower) else {
         return 0;
     };
 
-    if candidate_lower.contains(&query_lower) {
+    if candidate_lower.contains(query_lower) {
         score *= 2;
     }
 
