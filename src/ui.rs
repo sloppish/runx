@@ -362,6 +362,7 @@ pub fn theme_css(
     let canvas_background_opacity = format!("{}", theme.canvas.background_opacity);
     let canvas_chrome_opacity = format!("{}", theme.canvas.chrome_opacity);
     let entry_opacity = format!("{}", theme.entries.opacity);
+    let transition_duration = format!("{}ms", theme.entries.transition_ms);
     let label_font_size = scaled_px(theme.font_sizes.label, scale);
     let input_font_size = scaled_px(theme.font_sizes.input, scale);
     let title_font_size = scaled_px(theme.font_sizes.title, scale);
@@ -398,6 +399,7 @@ pub fn theme_css(
         ),
         ("__CANVAS_CHROME_OPACITY__", canvas_chrome_opacity.as_str()),
         ("__ENTRY_OPACITY__", entry_opacity.as_str()),
+        ("__TRANSITION_DURATION__", transition_duration.as_str()),
         ("__LABEL_FONT_SIZE__", label_font_size.as_str()),
         ("__INPUT_FONT_SIZE__", input_font_size.as_str()),
         ("__TITLE_FONT_SIZE__", title_font_size.as_str()),

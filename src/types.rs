@@ -262,6 +262,7 @@ pub struct UiCanvasSettingsDraft {
 pub struct UiEntriesSettingsDraft {
     pub opacity: f64,
     pub show_hover: bool,
+    pub transition_ms: u16,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

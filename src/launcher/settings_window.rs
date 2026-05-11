@@ -637,6 +637,7 @@ fn settings_draft_from_config(
             entries: UiEntriesSettingsDraft {
                 opacity: config.ui.entries.opacity,
                 show_hover: config.ui.entries.show_hover,
+                transition_ms: config.ui.entries.transition_ms,
             },
             shortcuts: UiShortcutsSettingsDraft {
                 focus_window: shortcut_to_text(&config.ui.shortcuts.focus_window),
@@ -960,6 +961,12 @@ fn apply_settings_draft_to_raw(
         &["ui", "entries"],
         "show_hover",
         value(draft.ui.entries.show_hover),
+    )?;
+    set_item(
+        &mut doc,
+        &["ui", "entries"],
+        "transition_ms",
+        value(i64::from(draft.ui.entries.transition_ms)),
     )?;
 
     set_ui_shortcuts(&mut doc, &draft.ui.shortcuts)?;

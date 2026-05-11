@@ -70,6 +70,7 @@ struct RawUiCanvasSpans {
 struct RawUiEntriesSpans {
     opacity: Option<Spanned<f64>>,
     show_hover: Option<Spanned<bool>>,
+    transition_ms: Option<Spanned<u16>>,
 }
 
 #[derive(Debug, Deserialize, Default)]

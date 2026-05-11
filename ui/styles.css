@@ -11,6 +11,7 @@
   --canvas-background-opacity: __CANVAS_BACKGROUND_OPACITY__;
   --canvas-chrome-opacity: __CANVAS_CHROME_OPACITY__;
   --entry-opacity: __ENTRY_OPACITY__;
+  --transition-duration: __TRANSITION_DURATION__;
   --entry-base-bg: var(--panel);
   --label-font-size: __LABEL_FONT_SIZE__;
   --input-font-size: __INPUT_FONT_SIZE__;
@@ -296,7 +297,7 @@ input::placeholder {
   border-radius: var(--row-radius);
   background: transparent;
   cursor: pointer;
-  transition: box-shadow 120ms ease;
+  transition: box-shadow var(--transition-duration) ease;
   text-align: left;
   color: inherit;
   font: inherit;
@@ -309,7 +310,7 @@ input::placeholder {
   position: absolute;
   inset: 0;
   border-radius: inherit;
-  transition: background 120ms ease, box-shadow 120ms ease;
+  transition: background var(--transition-duration) ease, box-shadow var(--transition-duration) ease;
   pointer-events: none;
   z-index: 0;
 }

@@ -423,6 +423,8 @@ pub struct UiEntriesConfig {
     pub opacity: f64,
     /// Show a hover highlight when the mouse is over a result row.
     pub show_hover: bool,
+    /// Duration of selection/hover transitions in milliseconds (0 = instant).
+    pub transition_ms: u16,
 }
 
 /// Keyboard shortcuts handled inside the launcher UI.
@@ -961,6 +963,7 @@ impl Default for UiEntriesConfig {
         Self {
             opacity: 1.0,
             show_hover: true,
+            transition_ms: 0,
         }
     }
 }

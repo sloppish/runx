@@ -191,6 +191,7 @@ Entry background tokens injected into the embedded UI theme.
 | --- | --- | --- | --- |
 | `opacity` | number | `1` | Opacity multiplier applied to result-row background surfaces. |
 | `show_hover` | boolean | `true` | Show a hover highlight when the mouse is over a result row. |
+| `transition_ms` | integer | `0` | Duration of selection/hover transitions in milliseconds (0 = instant). |
 
 ## [ui.shortcuts]
 

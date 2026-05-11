@@ -1278,6 +1278,7 @@ function collectDraft(): SettingsDraft {
       entries: {
         opacity: float("ui.entries.opacity"),
         show_hover: bool("ui.entries.show_hover"),
+        transition_ms: int("ui.entries.transition_ms"),
       },
       shortcuts: {
         focus_window: text("ui.shortcuts.focus_window"),
