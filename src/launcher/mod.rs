@@ -10,6 +10,7 @@
 mod action_runner;
 mod config_reload_ipc;
 mod frontend_readiness;
+mod quick_switch_monitor;
 mod search_controller;
 mod settings_window;
 mod window_controller;
@@ -22,8 +23,7 @@ use std::{
         atomic::{AtomicBool, Ordering},
     },
     thread,
-    time::Duration,
-    time::SystemTime,
+    time::{Duration, SystemTime},
 };
 
 use crate::{
@@ -118,6 +118,7 @@ pub struct Launcher {
     state: AppState,
     mode: LauncherMode,
     quick_switch_poll_active: Option<Arc<AtomicBool>>,
+    quick_switch_monitor: Option<quick_switch_monitor::QuickSwitchMonitor>,
     tray: Option<tray::TrayState>,
 }
 
@@ -224,6 +225,7 @@ impl Launcher {
             state: AppState::new(),
             mode: LauncherMode::Regular,
             quick_switch_poll_active: None,
+            quick_switch_monitor: None,
             tray: None,
         })
     }
@@ -359,6 +361,17 @@ impl Launcher {
             }
             AppEvent::QuickSwitchPoll => self.handle_quick_switch_poll()?,
             AppEvent::QuickSwitchShow => self.handle_quick_switch_show()?,
+            AppEvent::QuickSwitchTabCycle => {
+                if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+                    self.state.session_mut().cycle_selection(1);
+                    self.render()?;
+                }
+            }
+            AppEvent::QuickSwitchModifierReleased => {
+                if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+                    self.quick_switch_commit()?;
+                }
+            }
         }
         if should_check_commit {
             self.quick_switch_maybe_commit_on_results()?;
@@ -463,6 +476,8 @@ impl Launcher {
 
     fn hide_without_focus_restore(&mut self) -> Result<()> {
         self.stop_quick_switch_poll_loop();
+        self.quick_switch_monitor = None;
+        self.reregister_quick_switch_hotkey();
         self.mode = LauncherMode::Regular;
         self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
@@ -911,6 +926,13 @@ impl Launcher {
         self.mode = LauncherMode::QuickSwitch {
             pending_commit: false,
         };
+        if let Some(hk) = self.quick_switch_hotkey {
+            let _ = self.hotkey_manager.unregister(hk);
+            if let Some(key_code) = quick_switch_monitor::code_to_macos_keycode(hk.key) {
+                self.quick_switch_monitor =
+                    quick_switch_monitor::QuickSwitchMonitor::install(self.proxy.clone(), key_code);
+            }
+        }
         self.show_quick_switch_hidden()?;
         self.state.session_mut().select_first();
         self.start_quick_switch_poll_loop();
@@ -928,8 +950,18 @@ impl Launcher {
         Ok(())
     }
 
+    fn reregister_quick_switch_hotkey(&self) {
+        if let Some(hk) = self.quick_switch_hotkey
+            && let Err(error) = self.hotkey_manager.register(hk)
+        {
+            warn!(?error, "failed to re-register quick-switch hotkey");
+        }
+    }
+
     fn quick_switch_commit(&mut self) -> Result<()> {
         self.stop_quick_switch_poll_loop();
+        self.quick_switch_monitor = None;
+        self.reregister_quick_switch_hotkey();
         let LauncherMode::QuickSwitch {
             ref mut pending_commit,
         } = self.mode
