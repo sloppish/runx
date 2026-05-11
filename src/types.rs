@@ -72,6 +72,7 @@ pub enum AppEvent {
     Quit,
     FrontendReadyWatchdog,
     QuickSwitchPoll,
+    QuickSwitchShow,
     ProviderItems {
         generation: u64,
         provider: String,

@@ -64,6 +64,7 @@ const SETTINGS_MODE_ARG: &str = "--settings";
 const SETTINGS_EXECUTABLE_NAME: &str = "runx-settings";
 const SETTINGS_APP_BUNDLE_NAME: &str = "Runx Settings.app";
 const QUICK_SWITCH_POLL_INTERVAL: Duration = Duration::from_millis(30);
+const QUICK_SWITCH_SHOW_DELAY: Duration = Duration::from_millis(90);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LauncherMode {
@@ -349,6 +350,7 @@ impl Launcher {
                 self.log_outcome(message, is_error);
             }
             AppEvent::QuickSwitchPoll => self.handle_quick_switch_poll()?,
+            AppEvent::QuickSwitchShow => self.handle_quick_switch_show()?,
         }
         if should_check_commit {
             self.quick_switch_maybe_commit_on_results()?;
@@ -419,6 +421,33 @@ impl Launcher {
         }
 
         self.show()
+    }
+
+    fn show_quick_switch_hidden(&mut self) -> Result<()> {
+        self.reload_config_if_needed()?;
+        self.providers.begin_session();
+        self.refresh_display_config()?;
+        let window_config = self.resolved_window_config.clone();
+        let ui_config = self.resolved_ui_config.clone();
+        self.apply_window_config(&window_config, &ui_config);
+        self.windows.note_shown(&mut self.state);
+        self.windows.hide_window(&self.window);
+        if let Some(message) = self.config_reload_error.clone() {
+            self.state.session_mut().set_config_error(message);
+            self.render()?;
+            return Ok(());
+        }
+
+        clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
+        self.render()?;
+        let token = self.state.session().search_token();
+        self.search.handle_start_search(
+            &mut self.state,
+            token,
+            &self.providers,
+            self.proxy.clone(),
+        );
+        Ok(())
     }
 
     fn hide_without_focus_restore(&mut self) -> Result<()> {
@@ -828,6 +857,9 @@ impl Launcher {
         }
 
         if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+            if !self.window.is_visible() {
+                self.reveal_quick_switch_window()?;
+            }
             self.state.session_mut().cycle_selection(1);
             self.render()?;
             return Ok(());
@@ -837,11 +869,10 @@ impl Launcher {
         self.mode = LauncherMode::QuickSwitch {
             pending_commit: false,
         };
-        self.show()?;
+        self.show_quick_switch_hidden()?;
         self.state.session_mut().select_first();
-        self.windows.focus_window(&self.window);
-        self.windows.focus_webview(&self.webview)?;
         self.start_quick_switch_poll_loop();
+        self.schedule_quick_switch_show();
         Ok(())
     }
 
@@ -905,6 +936,31 @@ impl Launcher {
             self.quick_switch_commit()?;
         }
         Ok(())
+    }
+
+    fn handle_quick_switch_show(&mut self) -> Result<()> {
+        if !matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+            return Ok(());
+        }
+        if !macos::option_key_pressed() || self.window.is_visible() {
+            return Ok(());
+        }
+        self.reveal_quick_switch_window()
+    }
+
+    fn reveal_quick_switch_window(&mut self) -> Result<()> {
+        self.windows.show_window(&self.window);
+        self.windows.focus_window(&self.window);
+        self.windows.focus_webview(&self.webview)?;
+        self.render()
+    }
+
+    fn schedule_quick_switch_show(&self) {
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            thread::sleep(QUICK_SWITCH_SHOW_DELAY);
+            let _ = proxy.send_event(AppEvent::QuickSwitchShow);
+        });
     }
 
     fn start_quick_switch_poll_loop(&mut self) {
