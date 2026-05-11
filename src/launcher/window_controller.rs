@@ -142,10 +142,15 @@ impl WindowController {
     }
 
     /// Focuses the search input inside the webview.
-    pub(crate) fn focus_input(&self, webview: &WebView) -> Result<()> {
+    pub(crate) fn focus_webview(&self, webview: &WebView) -> Result<()> {
         webview
             .focus()
-            .context("failed to focus the launcher webview")?;
+            .context("failed to focus the launcher webview")
+    }
+
+    /// Focuses the search input inside the webview.
+    pub(crate) fn focus_input(&self, webview: &WebView) -> Result<()> {
+        self.focus_webview(webview)?;
         webview
             .evaluate_script("window.__RUNX_FOCUS && window.__RUNX_FOCUS();")
             .context("failed to focus the launcher input")

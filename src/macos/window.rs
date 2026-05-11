@@ -6,7 +6,7 @@ use core_foundation::number::CFNumber;
 use core_foundation::string::CFString;
 use core_graphics::{
     display::CGDisplay,
-    event::CGEvent,
+    event::{CGEvent, CGEventFlags},
     event_source::{CGEventSource, CGEventSourceStateID},
     window::{copy_window_info, kCGNullWindowID, kCGWindowListOptionOnScreenOnly, kCGWindowNumber},
 };
@@ -53,6 +53,20 @@ pub fn cursor_display_location() -> Option<CursorDisplayLocation> {
         .next()?;
 
     Some(CursorDisplayLocation { display_id })
+}
+
+pub fn option_key_pressed() -> bool {
+    let source = match CGEventSource::new(CGEventSourceStateID::CombinedSessionState) {
+        Ok(source) => source,
+        Err(()) => return false,
+    };
+    let event = match CGEvent::new(source) {
+        Ok(event) => event,
+        Err(()) => return false,
+    };
+    event
+        .get_flags()
+        .contains(CGEventFlags::CGEventFlagAlternate)
 }
 
 /// Configures the launcher window to behave like a non-activating panel.

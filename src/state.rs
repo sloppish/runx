@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::{
     config::RankingConfig,
     scoring::sort_and_trim,
-    types::{Action, SearchItem, ViewItem, ViewState},
+    types::{Action, SearchItem, ViewItem, ViewMode, ViewState},
 };
 
 /// Top-level visibility and search-session state for the launcher.
@@ -79,6 +79,7 @@ pub struct SearchSession {
     rendered_items: Vec<SearchItem>,
     rendered_query: String,
     pending_providers: usize,
+    selected_index: usize,
 }
 
 impl SearchSession {
@@ -92,6 +93,7 @@ impl SearchSession {
         self.rendered_items.clear();
         self.rendered_query.clear();
         self.pending_providers = 0;
+        self.selected_index = 0;
     }
 
     /// Returns the user-visible query string.
@@ -118,6 +120,7 @@ impl SearchSession {
         self.provider_items.clear();
         self.rendered_items.clear();
         self.pending_providers = 0;
+        self.selected_index = 0;
         self.search_token
     }
 
@@ -184,6 +187,24 @@ impl SearchSession {
         self.rendered_items.get(index)
     }
 
+    pub fn selected_index(&self) -> usize {
+        self.selected_index
+    }
+
+    pub fn select_first(&mut self) {
+        self.selected_index = 0;
+    }
+
+    pub fn cycle_selection(&mut self, delta: i32) {
+        if self.rendered_items.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+        let count = self.rendered_items.len() as i32;
+        let next = (self.selected_index as i32 + delta).rem_euclid(count) as usize;
+        self.selected_index = next;
+    }
+
     /// Rebuilds the rendered item list from current provider results.
     pub fn refresh_rendered_items(&mut self, ranking: &RankingConfig) {
         let all_items = self
@@ -199,6 +220,7 @@ impl SearchSession {
             self.rendered_items = next_items;
             self.rendered_query = self.query.clone();
         }
+        self.clamp_selected_index();
     }
 
     /// Returns whether the rendered items correspond to a query older than the current one.
@@ -207,7 +229,8 @@ impl SearchSession {
     }
 
     /// Converts the session into the frontend-facing serialized view model.
-    pub fn view_state(&self) -> ViewState {
+    pub fn view_state(&self, mode: ViewMode) -> ViewState {
+        let is_quick_switch = mode == ViewMode::QuickSwitch;
         let items = self
             .rendered_items
             .iter()
@@ -217,16 +240,26 @@ impl SearchSession {
                 subtitle: item.subtitle.clone(),
                 badge: item.badge.clone(),
                 icon: item.icon.clone(),
-                accelerator: (index < 9).then(|| format!("⌥{}", index + 1)),
+                accelerator: (!is_quick_switch && index < 9).then(|| format!("⌥{}", index + 1)),
                 compact: item.compact,
             })
             .collect();
 
         ViewState {
+            mode,
             query: self.query.clone(),
             config_error: self.config_error.clone(),
+            selected_index: self.selected_index,
             items,
         }
+    }
+
+    fn clamp_selected_index(&mut self) {
+        if self.rendered_items.is_empty() {
+            self.selected_index = 0;
+            return;
+        }
+        self.selected_index = self.selected_index.min(self.rendered_items.len() - 1);
     }
 }
 
@@ -259,7 +292,7 @@ mod tests {
     use super::AppState;
     use crate::{
         config::RankingConfig,
-        types::{Action, SearchItem},
+        types::{Action, SearchItem, ViewMode},
     };
 
     #[test]
@@ -403,7 +436,7 @@ mod tests {
             .set_config_error("bad syntax".to_owned());
         populate(&mut state, "alpha");
 
-        let view = state.session().view_state();
+        let view = state.session().view_state(ViewMode::Regular);
         assert_eq!(view.config_error.as_deref(), Some("bad syntax"));
         assert_eq!(view.items[0].title, "alpha");
     }
@@ -418,7 +451,46 @@ mod tests {
 
         state.session_mut().clear_config_error();
 
-        assert!(state.session().view_state().config_error.is_none());
+        assert!(
+            state
+                .session()
+                .view_state(ViewMode::Regular)
+                .config_error
+                .is_none()
+        );
+    }
+
+    #[test]
+    fn quick_switch_view_state_hides_accelerators() {
+        let mut state = AppState::new();
+        state.show();
+        populate(&mut state, "alpha");
+
+        let view = state.session().view_state(ViewMode::QuickSwitch);
+        assert_eq!(view.mode, ViewMode::QuickSwitch);
+        assert_eq!(view.items.len(), 1);
+        assert!(view.items[0].accelerator.is_none());
+    }
+
+    #[test]
+    fn cycle_selection_wraps() {
+        let mut state = AppState::new();
+        state.show();
+        state.session_mut().set_query("alpha".to_owned());
+        let generation = state.session_mut().begin_search(1);
+        assert!(state.session_mut().apply_provider_items(
+            generation,
+            "windows".to_owned(),
+            vec![item("a", 100), item("b", 90)],
+        ));
+        state
+            .session_mut()
+            .refresh_rendered_items(&default_ranking());
+
+        state.session_mut().cycle_selection(-1);
+        assert_eq!(state.session().selected_index(), 1);
+        state.session_mut().cycle_selection(1);
+        assert_eq!(state.session().selected_index(), 0);
     }
 
     fn populate(state: &mut AppState, query: &str) {

@@ -17,7 +17,12 @@ mod window_controller;
 use std::{
     path::{Path, PathBuf},
     process::{Command, Stdio},
-    sync::Arc,
+    sync::{
+        Arc,
+        atomic::{AtomicBool, Ordering},
+    },
+    thread,
+    time::Duration,
     time::SystemTime,
 };
 
@@ -35,6 +40,7 @@ use crate::{
 };
 use action_runner::ActionRunner;
 use anyhow::{Context, Result};
+use global_hotkey::hotkey::{Code, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
@@ -57,6 +63,13 @@ const INITIAL_LAYOUT_VERSION: u64 = 0;
 const SETTINGS_MODE_ARG: &str = "--settings";
 const SETTINGS_EXECUTABLE_NAME: &str = "runx-settings";
 const SETTINGS_APP_BUNDLE_NAME: &str = "Runx Settings.app";
+const QUICK_SWITCH_POLL_INTERVAL: Duration = Duration::from_millis(30);
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LauncherMode {
+    Regular,
+    QuickSwitch { pending_commit: bool },
+}
 
 /// Returns whether this process should run the standalone Settings app.
 pub(crate) fn is_settings_app_invocation() -> bool {
@@ -90,6 +103,7 @@ pub struct Launcher {
     last_config_modified: Option<SystemTime>,
     hotkey_manager: GlobalHotKeyManager,
     hotkey: HotKey,
+    quick_switch_hotkey: HotKey,
     runtime: Runtime,
     icons: Arc<IconCache>,
     providers: ProviderSet,
@@ -102,6 +116,8 @@ pub struct Launcher {
     window: Window,
     webview: WebView,
     state: AppState,
+    mode: LauncherMode,
+    quick_switch_poll_active: Option<Arc<AtomicBool>>,
     tray: Option<tray::TrayState>,
 }
 
@@ -125,11 +141,15 @@ impl Launcher {
             warn!(error = %error, "startup config invalid; using defaults");
         }
         let last_config_modified = config::config_modified_at(&loaded.config_path);
+        let quick_switch_hotkey = HotKey::new(Some(Modifiers::ALT), Code::Tab);
         let hotkey_manager =
             GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
         hotkey_manager
             .register(hotkey)
             .context("failed to register the global hotkey from config.toml")?;
+        hotkey_manager
+            .register(quick_switch_hotkey)
+            .context("failed to register quick-switch hotkey")?;
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -180,6 +200,7 @@ impl Launcher {
             last_config_modified,
             hotkey_manager,
             hotkey,
+            quick_switch_hotkey,
             runtime,
             icons,
             providers,
@@ -192,6 +213,8 @@ impl Launcher {
             window,
             webview,
             state: AppState::new(),
+            mode: LauncherMode::Regular,
+            quick_switch_poll_active: None,
             tray: None,
         })
     }
@@ -245,6 +268,10 @@ impl Launcher {
 
     /// Handles app-specific events emitted by the frontend, tray, and providers.
     pub fn handle_user_event(&mut self, event: AppEvent) -> Result<()> {
+        let should_check_commit = matches!(
+            &event,
+            AppEvent::ProviderItems { .. } | AppEvent::ProviderError { .. } | AppEvent::Render
+        );
         match event {
             AppEvent::GlobalHotKey(global_event) => {
                 self.handle_global_hotkey_event(global_event)?;
@@ -321,6 +348,10 @@ impl Launcher {
             AppEvent::ActionOutcome { message, is_error } => {
                 self.log_outcome(message, is_error);
             }
+            AppEvent::QuickSwitchPoll => self.handle_quick_switch_poll()?,
+        }
+        if should_check_commit {
+            self.quick_switch_maybe_commit_on_results()?;
         }
         Ok(())
     }
@@ -332,8 +363,20 @@ impl Launcher {
 
     /// Applies a global hotkey event emitted by the `global-hotkey` crate.
     pub fn handle_global_hotkey_event(&mut self, event: GlobalHotKeyEvent) -> Result<()> {
-        if event.id == self.hotkey.id() && event.state == HotKeyState::Pressed {
+        if event.state != HotKeyState::Pressed {
+            return Ok(());
+        }
+
+        if event.id == self.hotkey.id() {
+            if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+                self.hide_without_focus_restore()?;
+            }
             self.toggle()?;
+            return Ok(());
+        }
+
+        if event.id == self.quick_switch_hotkey.id() {
+            self.handle_quick_switch_hotkey()?;
         }
         Ok(())
     }
@@ -362,7 +405,9 @@ impl Launcher {
             &self.providers,
             self.proxy.clone(),
         );
-        self.ensure_launcher_key_focus()?;
+        if matches!(self.mode, LauncherMode::Regular) {
+            self.ensure_launcher_key_focus()?;
+        }
         Ok(())
     }
 
@@ -377,6 +422,8 @@ impl Launcher {
     }
 
     fn hide_without_focus_restore(&mut self) -> Result<()> {
+        self.stop_quick_switch_poll_loop();
+        self.mode = LauncherMode::Regular;
         self.providers.end_session();
         self.windows.note_hidden(&mut self.state);
 
@@ -394,7 +441,11 @@ impl Launcher {
                 }
                 if self.state.is_visible() {
                     self.windows.focus_window(&self.window);
-                    self.windows.focus_input(&self.webview)?;
+                    if matches!(self.mode, LauncherMode::Regular) {
+                        self.windows.focus_input(&self.webview)?;
+                    } else {
+                        self.windows.focus_webview(&self.webview)?;
+                    }
                 }
             }
             FrontendCommand::PreferredHeight {
@@ -407,12 +458,17 @@ impl Launcher {
                     self.apply_window_config(&window_config, &ui_config);
                 }
             }
-            FrontendCommand::QueryChanged { query } => self.search.handle_query_changed(
-                &mut self.state,
-                query,
-                &self.runtime,
-                self.proxy.clone(),
-            ),
+            FrontendCommand::QueryChanged { query } => {
+                if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+                    return Ok(());
+                }
+                self.search.handle_query_changed(
+                    &mut self.state,
+                    query,
+                    &self.runtime,
+                    self.proxy.clone(),
+                );
+            }
             FrontendCommand::Activate { index, all_windows } => self.activate(index, all_windows),
             FrontendCommand::CopyText { text } => {
                 let _ = macos::copy_text_to_clipboard(&text)?;
@@ -433,6 +489,12 @@ impl Launcher {
                 }
             }
             FrontendCommand::Hide => self.hide_without_focus_restore()?,
+            FrontendCommand::QuickSwitchCycle => {
+                if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+                    self.state.session_mut().cycle_selection(1);
+                    self.render()?;
+                }
+            }
         }
         Ok(())
     }
@@ -653,7 +715,9 @@ impl Launcher {
                 &self.resolved_window_config,
                 &self.resolved_ui_config,
             );
-            self.ensure_launcher_key_focus()?;
+            if matches!(self.mode, LauncherMode::Regular) {
+                self.ensure_launcher_key_focus()?;
+            }
         }
 
         macro_rules! diff_field {
@@ -684,9 +748,10 @@ impl Launcher {
     }
 
     fn render(&mut self) -> Result<()> {
-        let script = self
-            .search
-            .render_script(&mut self.state, &self.loaded.config.ranking)?;
+        let mode = self.view_mode();
+        let script =
+            self.search
+                .render_script(&mut self.state, &self.loaded.config.ranking, mode)?;
         self.readiness
             .eval_render(&self.webview, script, &self.runtime, &self.proxy)
     }
@@ -748,6 +813,120 @@ impl Launcher {
             "launcher key focus after panel-native focus"
         );
         Ok(())
+    }
+
+    fn view_mode(&self) -> crate::types::ViewMode {
+        match self.mode {
+            LauncherMode::Regular => crate::types::ViewMode::Regular,
+            LauncherMode::QuickSwitch { .. } => crate::types::ViewMode::QuickSwitch,
+        }
+    }
+
+    fn handle_quick_switch_hotkey(&mut self) -> Result<()> {
+        if matches!(self.mode, LauncherMode::Regular) && self.state.is_visible() {
+            return Ok(());
+        }
+
+        if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+            self.state.session_mut().cycle_selection(1);
+            self.render()?;
+            return Ok(());
+        }
+
+        self.windows.capture_previous_app();
+        self.mode = LauncherMode::QuickSwitch {
+            pending_commit: false,
+        };
+        self.show()?;
+        self.state.session_mut().select_first();
+        self.windows.focus_window(&self.window);
+        self.windows.focus_webview(&self.webview)?;
+        self.start_quick_switch_poll_loop();
+        Ok(())
+    }
+
+    fn handle_quick_switch_poll(&mut self) -> Result<()> {
+        if !matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
+            return Ok(());
+        }
+        if !macos::option_key_pressed() {
+            self.quick_switch_commit()?;
+        }
+        Ok(())
+    }
+
+    fn quick_switch_commit(&mut self) -> Result<()> {
+        self.stop_quick_switch_poll_loop();
+        let LauncherMode::QuickSwitch {
+            ref mut pending_commit,
+        } = self.mode
+        else {
+            return Ok(());
+        };
+
+        if !self.state.session().is_search_complete() {
+            *pending_commit = true;
+            return Ok(());
+        }
+        self.state
+            .session_mut()
+            .refresh_rendered_items(&self.loaded.config.ranking);
+
+        if let Some(item) = self
+            .state
+            .session()
+            .rendered_item(self.state.session().selected_index())
+            .cloned()
+        {
+            let context = PluginExecutionContext {
+                previous_app: self.windows.previous_app(),
+            };
+            self.mode = LauncherMode::Regular;
+            self.hide_without_focus_restore()?;
+            self.actions.spawn(
+                &self.runtime,
+                self.proxy.clone(),
+                Some(item),
+                None,
+                false,
+                context,
+            );
+            return Ok(());
+        }
+
+        self.hide_without_focus_restore()
+    }
+
+    fn quick_switch_maybe_commit_on_results(&mut self) -> Result<()> {
+        let LauncherMode::QuickSwitch { pending_commit } = self.mode else {
+            return Ok(());
+        };
+        if pending_commit && self.state.session().is_search_complete() {
+            self.quick_switch_commit()?;
+        }
+        Ok(())
+    }
+
+    fn start_quick_switch_poll_loop(&mut self) {
+        self.stop_quick_switch_poll_loop();
+        let active = Arc::new(AtomicBool::new(true));
+        self.quick_switch_poll_active = Some(active.clone());
+        let proxy = self.proxy.clone();
+        thread::spawn(move || {
+            while active.load(Ordering::Relaxed) {
+                thread::sleep(QUICK_SWITCH_POLL_INTERVAL);
+                if !active.load(Ordering::Relaxed) {
+                    break;
+                }
+                let _ = proxy.send_event(AppEvent::QuickSwitchPoll);
+            }
+        });
+    }
+
+    fn stop_quick_switch_poll_loop(&mut self) {
+        if let Some(active) = self.quick_switch_poll_active.take() {
+            active.store(false, Ordering::Relaxed);
+        }
     }
 }
 
@@ -864,7 +1043,7 @@ mod tests {
         clear_recovered_config_error, frontend_config_script,
         settings_app_bundle_path_from_executable,
     };
-    use crate::{config, state::AppState};
+    use crate::{config, state::AppState, types::ViewMode};
 
     #[test]
     fn successful_reload_clears_latched_config_error_state() {
@@ -878,7 +1057,13 @@ mod tests {
         clear_recovered_config_error(&mut state, &mut config_reload_error);
 
         assert!(config_reload_error.is_none());
-        assert!(state.session().view_state().config_error.is_none());
+        assert!(
+            state
+                .session()
+                .view_state(ViewMode::Regular)
+                .config_error
+                .is_none()
+        );
     }
 
     #[test]

@@ -12,7 +12,7 @@ use crate::{
     config::{RankingConfig, TimingConfig},
     providers::ProviderSet,
     state::AppState,
-    types::{AppEvent, SearchItem},
+    types::{AppEvent, SearchItem, ViewMode},
 };
 
 /// Owns the transient scheduling state around searches and rerenders.
@@ -108,11 +108,12 @@ impl SearchController {
         &mut self,
         state: &mut AppState,
         ranking: &RankingConfig,
+        mode: ViewMode,
     ) -> Result<String> {
         state.session_mut().refresh_rendered_items(ranking);
         Ok(format!(
             "window.__RUNX_RENDER({});",
-            serde_json::to_string(&state.session().view_state())?
+            serde_json::to_string(&state.session().view_state(mode))?
         ))
     }
 }

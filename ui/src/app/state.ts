@@ -1,6 +1,7 @@
 import type { RenderItem, RenderPayload } from "../types";
 
 export interface LauncherState {
+  mode: "regular" | "quick_switch";
   query: string;
   configError: string | null;
   items: RenderItem[];
@@ -15,10 +16,17 @@ export interface Environment {
 export interface RenderUpdate {
   shouldSyncInput: boolean;
   inputValue: string;
+  modeChanged: boolean;
 }
 
 export function createState(): LauncherState {
-  return { query: "", configError: null, items: [], selectedIndex: 0 };
+  return {
+    mode: "regular",
+    query: "",
+    configError: null,
+    items: [],
+    selectedIndex: 0,
+  };
 }
 
 export function normalizeVisibleRows(value: unknown): number {
@@ -73,6 +81,9 @@ export function applyRenderPayload(
   environment: Environment,
 ): RenderUpdate {
   const payloadQuery = typeof payload.query === "string" ? payload.query : "";
+  const nextMode = payload.mode === "quick_switch" ? "quick_switch" : "regular";
+  const modeChanged = state.mode !== nextMode;
+  state.mode = nextMode;
   state.configError =
     typeof payload.config_error === "string" ? payload.config_error : null;
   const shouldSyncInput =
@@ -86,9 +97,12 @@ export function applyRenderPayload(
   }
 
   state.items = payload.items || [];
+  if (typeof payload.selected_index === "number") {
+    state.selectedIndex = Math.max(0, Math.floor(payload.selected_index));
+  }
   if (queryChanged && shouldSyncInput) {
     state.selectedIndex = 0;
   }
 
-  return { shouldSyncInput, inputValue: payloadQuery };
+  return { shouldSyncInput, inputValue: payloadQuery, modeChanged };
 }

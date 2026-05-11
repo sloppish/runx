@@ -85,7 +85,7 @@ if (typeof window !== "undefined" && window.document) {
   }
 
   function reportPreferredHeight(): void {
-    const height = measurePreferredHeight(dom, visibleRows());
+    const height = measurePreferredHeight(dom, visibleRows(), state.mode);
     const version = layoutVersion();
     if (!Number.isFinite(height) || height <= 0) {
       return;
@@ -134,9 +134,15 @@ if (typeof window !== "undefined" && window.document) {
     }
 
     render();
+    if (update.modeChanged) {
+      queuePreferredHeightReport();
+    }
   };
 
   window.__RUNX_FOCUS = () => {
+    if (state.mode === "quick_switch") {
+      return;
+    }
     if (inConfigErrorMode()) {
       return;
     }
@@ -239,6 +245,23 @@ if (typeof window !== "undefined" && window.document) {
   });
 
   document.addEventListener("keydown", (event: KeyboardEvent) => {
+    if (state.mode === "quick_switch") {
+      if (event.altKey && event.code === "Tab") {
+        event.preventDefault();
+        send({ type: "quick_switch_cycle" });
+        return;
+      }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        send({ type: "hide" });
+        return;
+      }
+      if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
+        event.preventDefault();
+      }
+      return;
+    }
+
     if (!inConfigErrorMode()) {
       return;
     }

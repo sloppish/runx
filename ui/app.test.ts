@@ -235,6 +235,7 @@ test("backend render payload does not overwrite active typing with stale query t
   );
 
   expect(update.shouldSyncInput).toBe(false);
+  expect(update.modeChanged).toBe(false);
   expect(state.query).toBe("gmail");
   expect(state.items.length).toBe(1);
   expect(state.selectedIndex).toBe(1);
@@ -251,6 +252,18 @@ test("backend render payload preserves config error separately from items", () =
 
   expect(state.configError).toBe("bad syntax");
   expect(state.items.length).toBe(0);
+});
+
+test("render payload switches quick switch mode", () => {
+  const state = createState();
+  const update = applyRenderPayload(
+    state,
+    { mode: "quick_switch", query: "", items: [] },
+    { inputValue: "", inputFocused: false },
+  );
+
+  expect(state.mode).toBe("quick_switch");
+  expect(update.modeChanged).toBe(true);
 });
 
 test("escapeHtml encodes angle brackets and ampersands", () => {

@@ -8,8 +8,10 @@ export interface RenderItem {
 }
 
 export interface RenderPayload {
+  mode?: "regular" | "quick_switch";
   query?: string;
   config_error?: string | null;
+  selected_index?: number;
   items?: RenderItem[];
   layout_version?: number;
 }
@@ -30,6 +32,7 @@ export type LauncherMessage =
   | { type: "copy_text"; text: string }
   | { type: "paste_text" }
   | { type: "hide" }
+  | { type: "quick_switch_cycle" }
   | { type: "preferred_height"; height: number; layout_version: number };
 
 export type SettingsMessage =

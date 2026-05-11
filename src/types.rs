@@ -71,6 +71,7 @@ pub enum AppEvent {
     TrayCheckForUpdates,
     Quit,
     FrontendReadyWatchdog,
+    QuickSwitchPoll,
     ProviderItems {
         generation: u64,
         provider: String,
@@ -87,6 +88,13 @@ pub enum AppEvent {
     },
 }
 
+#[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq)]
+#[serde(rename_all = "snake_case")]
+pub enum ViewMode {
+    Regular,
+    QuickSwitch,
+}
+
 /// Commands emitted by the embedded frontend back into the Rust event loop.
 #[derive(Debug, Clone, Deserialize)]
 #[serde(tag = "type", rename_all = "snake_case")]
@@ -98,6 +106,7 @@ pub enum FrontendCommand {
     CopyText { text: String },
     PasteText,
     Hide,
+    QuickSwitchCycle,
 }
 
 /// Commands emitted by the Settings webview back into the Rust event loop.
@@ -295,8 +304,10 @@ pub struct UiLayoutSettingsDraft {
 /// Serialized frontend state pushed into the webview on each render.
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewState {
+    pub mode: ViewMode,
     pub query: String,
     pub config_error: Option<String>,
+    pub selected_index: usize,
     pub items: Vec<ViewItem>,
 }
 

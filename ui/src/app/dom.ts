@@ -30,7 +30,8 @@ export function renderConfigError(dom: DomElements, error: string): void {
 }
 
 export function renderResults(dom: DomElements, state: LauncherState): void {
-  dom.inputWrap.classList.remove("hidden");
+  const isQuickSwitch = state.mode === "quick_switch";
+  dom.inputWrap.classList.toggle("hidden", isQuickSwitch);
   dom.results.classList.remove("hidden");
   dom.configError.classList.add("hidden");
   dom.results.innerHTML = "";
@@ -85,7 +86,11 @@ export function syncSelection(
   }
 }
 
-export function measurePreferredHeight(dom: DomElements, rows: number): number {
+export function measurePreferredHeight(
+  dom: DomElements,
+  rows: number,
+  mode: "regular" | "quick_switch",
+): number {
   const host = document.createElement("div");
   host.style.position = "fixed";
   host.style.left = "-10000px";
@@ -135,8 +140,11 @@ export function measurePreferredHeight(dom: DomElements, rows: number): number {
     results.appendChild(row);
   }
 
+  const isQuickSwitch = mode === "quick_switch";
   shell.appendChild(label);
-  shell.appendChild(inputWrap);
+  if (!isQuickSwitch) {
+    shell.appendChild(inputWrap);
+  }
   shell.appendChild(results);
   host.appendChild(shell);
   document.body.appendChild(host);
