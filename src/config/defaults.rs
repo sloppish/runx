@@ -67,6 +67,7 @@ result_limit = 24
 
 [timing]
 search_debounce_ms = 24
+quick_switch_show_delay_ms = 90
 
 [plugins]
 directories = []

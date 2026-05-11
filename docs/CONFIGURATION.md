@@ -121,6 +121,7 @@ Debounce timings for the search pipeline.
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `search_debounce_ms` | integer | `24` | Delay before a changed query starts a new search generation. |
+| `quick_switch_show_delay_ms` | integer | `90` | Delay before the quick-switch window appears after activation. |
 
 ## [plugins]
 

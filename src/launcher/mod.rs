@@ -63,7 +63,6 @@ const SETTINGS_MODE_ARG: &str = "--settings";
 const SETTINGS_EXECUTABLE_NAME: &str = "runx-settings";
 const SETTINGS_APP_BUNDLE_NAME: &str = "Runx Settings.app";
 const QUICK_SWITCH_POLL_INTERVAL: Duration = Duration::from_millis(30);
-const QUICK_SWITCH_SHOW_DELAY: Duration = Duration::from_millis(90);
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum LauncherMode {
@@ -986,9 +985,10 @@ impl Launcher {
     }
 
     fn schedule_quick_switch_show(&self) {
+        let delay = Duration::from_millis(self.loaded.config.timing.quick_switch_show_delay_ms);
         let proxy = self.proxy.clone();
         thread::spawn(move || {
-            thread::sleep(QUICK_SWITCH_SHOW_DELAY);
+            thread::sleep(delay);
             let _ = proxy.send_event(AppEvent::QuickSwitchShow);
         });
     }

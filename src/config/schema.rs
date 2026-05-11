@@ -215,6 +215,8 @@ pub enum RankingScoreRuleMatchKind {
 pub struct TimingConfig {
     /// Delay before a changed query starts a new search generation.
     pub search_debounce_ms: u64,
+    /// Delay before the quick-switch window appears after activation.
+    pub quick_switch_show_delay_ms: u64,
 }
 
 /// Plugin discovery and subprocess lookup configuration.
@@ -899,6 +901,7 @@ impl Default for TimingConfig {
     fn default() -> Self {
         Self {
             search_debounce_ms: 24,
+            quick_switch_show_delay_ms: 90,
         }
     }
 }
