@@ -9,6 +9,7 @@
 
 mod action_runner;
 mod config_reload_ipc;
+mod frontend_readiness;
 mod search_controller;
 mod settings_window;
 mod window_controller;
@@ -47,7 +48,10 @@ use tracing::{debug, error, info, warn};
 use wry::http::Request;
 use wry::{WebView, WebViewBuilder};
 
-use self::{search_controller::SearchController, window_controller::WindowController};
+use self::{
+    frontend_readiness::FrontendReadiness, search_controller::SearchController,
+    window_controller::WindowController,
+};
 
 const INITIAL_LAYOUT_VERSION: u64 = 0;
 const SETTINGS_MODE_ARG: &str = "--settings";
@@ -92,6 +96,7 @@ pub struct Launcher {
     actions: ActionRunner,
     search: SearchController,
     windows: WindowController,
+    readiness: FrontendReadiness,
     config_reload_error: Option<String>,
     proxy: EventLoopProxy<AppEvent>,
     window: Window,
@@ -181,6 +186,7 @@ impl Launcher {
             actions: ActionRunner::new(plugins),
             search: SearchController::new(&config.timing),
             windows: WindowController::default(),
+            readiness: FrontendReadiness::new(),
             config_reload_error: config_error,
             proxy,
             window,
@@ -268,11 +274,7 @@ impl Launcher {
             AppEvent::Settings(_) => {}
             AppEvent::ReloadConfig => self.reload_config_after_settings_save()?,
             AppEvent::Render => {
-                self.search.flush_render(
-                    &mut self.state,
-                    &self.loaded.config.ranking,
-                    &self.webview,
-                )?;
+                self.render()?;
             }
             AppEvent::IconReady => {
                 if self.state.is_visible() {
@@ -313,6 +315,9 @@ impl Launcher {
                 message,
                 self.proxy.clone(),
             ),
+            AppEvent::FrontendReadyWatchdog => {
+                self.readiness.watchdog_fired();
+            }
             AppEvent::ActionOutcome { message, is_error } => {
                 self.log_outcome(message, is_error);
             }
@@ -344,14 +349,12 @@ impl Launcher {
         self.windows.show_window(&self.window);
         if let Some(message) = self.config_reload_error.clone() {
             self.state.session_mut().set_config_error(message);
-            self.search
-                .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+            self.render()?;
             return Ok(());
         }
 
         clear_recovered_config_error(&mut self.state, &mut self.config_reload_error);
-        self.search
-            .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+        self.render()?;
         let token = self.state.session().search_token();
         self.search.handle_start_search(
             &mut self.state,
@@ -378,18 +381,20 @@ impl Launcher {
         self.windows.note_hidden(&mut self.state);
 
         self.windows.hide_window(&self.window);
-        self.search
-            .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+        self.render()?;
         Ok(())
     }
 
     fn handle_frontend(&mut self, command: FrontendCommand) -> Result<()> {
         match command {
             FrontendCommand::Ready => {
-                self.search
-                    .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+                let flushed = self.readiness.mark_ready(&self.webview)?;
+                if !flushed {
+                    self.render()?;
+                }
                 if self.state.is_visible() {
-                    self.ensure_launcher_key_focus()?;
+                    self.windows.focus_window(&self.window);
+                    self.windows.focus_input(&self.webview)?;
                 }
             }
             FrontendCommand::PreferredHeight {
@@ -413,6 +418,10 @@ impl Launcher {
                 let _ = macos::copy_text_to_clipboard(&text)?;
             }
             FrontendCommand::PasteText => {
+                if !self.readiness.is_ready() {
+                    debug!("PasteText dropped: frontend not ready");
+                    return Ok(());
+                }
                 if let Ok(text) = macos::read_clipboard_text() {
                     let script = format!(
                         "window.__RUNX_PASTE_TEXT && window.__RUNX_PASTE_TEXT({});",
@@ -632,8 +641,7 @@ impl Launcher {
             self.state.session_mut().restart_query();
             self.state.session_mut().clear_config_error();
             let token = self.state.session_mut().set_query(current_query);
-            self.search
-                .render(&mut self.state, &self.loaded.config.ranking, &self.webview)?;
+            self.render()?;
             self.search.handle_start_search(
                 &mut self.state,
                 token,
@@ -675,6 +683,14 @@ impl Launcher {
         Ok(())
     }
 
+    fn render(&mut self) -> Result<()> {
+        let script = self
+            .search
+            .render_script(&mut self.state, &self.loaded.config.ranking)?;
+        self.readiness
+            .eval_render(&self.webview, script, &self.runtime, &self.proxy)
+    }
+
     fn apply_window_config(&mut self, window: &config::WindowConfig, ui: &config::UiConfig) {
         self.windows.apply_window_geometry(&self.window, window, ui);
         self.window.set_always_on_top(window.always_on_top);
@@ -701,15 +717,14 @@ impl Launcher {
     }
 
     fn apply_frontend_config(
-        &self,
+        &mut self,
         window: &config::WindowConfig,
         theme: &config::UiConfig,
         layout_version: u64,
     ) -> Result<()> {
         let script = frontend_config_script(window, theme, layout_version)?;
-        self.webview
-            .evaluate_script(&script)
-            .context("failed to apply the reloaded UI theme")
+        self.readiness
+            .eval_config(&self.webview, script, &self.runtime, &self.proxy)
     }
 
     fn log_outcome(&self, message: String, is_error: bool) {
@@ -721,7 +736,11 @@ impl Launcher {
         }
     }
 
-    fn ensure_launcher_key_focus(&self) -> Result<()> {
+    fn ensure_launcher_key_focus(&mut self) -> Result<()> {
+        if !self.readiness.is_ready() {
+            self.readiness.request_focus(&self.runtime, &self.proxy);
+            return Ok(());
+        }
         self.windows.focus_window(&self.window);
         self.windows.focus_input(&self.webview)?;
         debug!(

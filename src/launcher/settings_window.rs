@@ -48,6 +48,9 @@ pub(crate) const SETTINGS_WINDOW_TITLE: &str = "Runx Settings";
 pub(crate) struct SettingsWindow {
     window: Window,
     webview: wry::WebView,
+    ready: bool,
+    pending_refresh: Option<String>,
+    pending_status: Option<String>,
 }
 
 impl SettingsWindow {
@@ -73,7 +76,13 @@ impl SettingsWindow {
             .build(&window)
             .context("failed to build the settings webview")?;
 
-        Ok(Self { window, webview })
+        Ok(Self {
+            window,
+            webview,
+            ready: false,
+            pending_refresh: None,
+            pending_status: None,
+        })
     }
 
     pub(crate) fn window_id(&self) -> WindowId {
@@ -88,26 +97,51 @@ impl SettingsWindow {
             .context("failed to focus the settings webview")
     }
 
-    pub(crate) fn refresh(&self) -> Result<()> {
+    pub(crate) fn mark_ready(&mut self) -> Result<()> {
+        self.ready = true;
+        if let Some(script) = self.pending_refresh.take() {
+            self.webview
+                .evaluate_script(&script)
+                .context("failed to flush pending settings refresh on Ready")?;
+        }
+        if let Some(script) = self.pending_status.take() {
+            self.webview
+                .evaluate_script(&script)
+                .context("failed to flush pending settings status on Ready")?;
+        }
+        Ok(())
+    }
+
+    pub(crate) fn refresh(&mut self) -> Result<()> {
         let payload = settings_payload()?;
         let script = format!(
             "window.__RUNX_SETTINGS_STATE__ && window.__RUNX_SETTINGS_STATE__({});",
             safe_json(&payload)?
         );
-        self.webview
-            .evaluate_script(&script)
-            .context("failed to refresh the settings window")
+        if self.ready {
+            self.webview
+                .evaluate_script(&script)
+                .context("failed to refresh the settings window")?;
+        } else {
+            self.pending_refresh = Some(script);
+        }
+        Ok(())
     }
 
-    pub(crate) fn set_status(&self, message: &str, is_error: bool) -> Result<()> {
+    pub(crate) fn set_status(&mut self, message: &str, is_error: bool) -> Result<()> {
         let script = format!(
             "window.__RUNX_SETTINGS_STATUS__ && window.__RUNX_SETTINGS_STATUS__({}, {});",
             serde_json::to_string(message)?,
             if is_error { "true" } else { "false" }
         );
-        self.webview
-            .evaluate_script(&script)
-            .context("failed to update the settings status")
+        if self.ready {
+            self.webview
+                .evaluate_script(&script)
+                .context("failed to update the settings status")?;
+        } else {
+            self.pending_status = Some(script);
+        }
+        Ok(())
     }
 }
 
@@ -121,7 +155,7 @@ pub(crate) fn run_standalone_app() -> Result<()> {
     event_loop.set_dock_visibility(true);
 
     let proxy = event_loop.create_proxy();
-    let settings = SettingsWindow::new(&event_loop, proxy)?;
+    let mut settings = SettingsWindow::new(&event_loop, proxy)?;
 
     event_loop.run(move |event, _, control_flow| {
         *control_flow = ControlFlow::Wait;
@@ -140,7 +174,7 @@ pub(crate) fn run_standalone_app() -> Result<()> {
                 Ok(())
             }
             Event::UserEvent(AppEvent::Settings(command)) => {
-                handle_standalone_settings_command(&settings, command, control_flow)
+                handle_standalone_settings_command(&mut settings, command, control_flow)
             }
             _ => Ok(()),
         };
@@ -205,12 +239,13 @@ fn override_app_menu_title(title: &str) {
 }
 
 fn handle_standalone_settings_command(
-    settings: &SettingsWindow,
+    settings: &mut SettingsWindow,
     command: SettingsCommand,
     control_flow: &mut ControlFlow,
 ) -> Result<()> {
     match command {
         SettingsCommand::Ready => {
+            settings.mark_ready()?;
             settings.refresh()?;
         }
         SettingsCommand::Reload => {
@@ -272,7 +307,7 @@ fn notify_launcher_reload() {
     let _ = config_reload_ipc::notify_reload();
 }
 
-fn handle_update_plugins(settings: &SettingsWindow) -> Result<()> {
+fn handle_update_plugins(settings: &mut SettingsWindow) -> Result<()> {
     use crate::config::LoadedConfig;
     use crate::plugins::manager::{UpdateResult, update_all};
 

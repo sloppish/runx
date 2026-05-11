@@ -70,6 +70,7 @@ pub enum AppEvent {
     TraySponsor,
     TrayCheckForUpdates,
     Quit,
+    FrontendReadyWatchdog,
     ProviderItems {
         generation: u64,
         provider: String,

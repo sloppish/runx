@@ -5,9 +5,8 @@
 
 use std::time::Duration;
 
-use anyhow::{Context, Result};
+use anyhow::Result;
 use tokio::runtime::Runtime;
-use wry::WebView;
 
 use crate::{
     config::{RankingConfig, TimingConfig},
@@ -104,31 +103,16 @@ impl SearchController {
         }
     }
 
-    /// Recomputes the visible result list and pushes a new view state into the webview.
-    pub(crate) fn render(
+    /// Recomputes the visible result list and returns the render script.
+    pub(crate) fn render_script(
         &mut self,
         state: &mut AppState,
         ranking: &RankingConfig,
-        webview: &WebView,
-    ) -> Result<()> {
+    ) -> Result<String> {
         state.session_mut().refresh_rendered_items(ranking);
-        let script = format!(
+        Ok(format!(
             "window.__RUNX_RENDER({});",
             serde_json::to_string(&state.session().view_state())?
-        );
-        webview
-            .evaluate_script(&script)
-            .context("failed to render the launcher UI")?;
-        Ok(())
-    }
-
-    /// Clears the render debounce latch and renders the current session immediately.
-    pub(crate) fn flush_render(
-        &mut self,
-        state: &mut AppState,
-        ranking: &RankingConfig,
-        webview: &WebView,
-    ) -> Result<()> {
-        self.render(state, ranking, webview)
+        ))
     }
 }
