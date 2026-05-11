@@ -11,6 +11,7 @@ debug_log = false
 
 [hotkey]
 shortcut = "Option+Space"
+quick_switch = "Option+Tab"
 
 [window]
 width_fraction = 0.4

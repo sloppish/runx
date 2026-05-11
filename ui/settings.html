@@ -45,8 +45,19 @@
               <div class="grid two">
                 <label class="shortcut-field span-two">
                   <span>Launcher hotkey</span>
-                  <button type="button" class="shortcut-recorder" data-shortcut-recorder="hotkey.shortcut"></button>
+                  <div class="shortcut-row">
+                    <button type="button" class="shortcut-recorder" data-shortcut-recorder="hotkey.shortcut"></button>
+                    <button type="button" class="button compact shortcut-clear" data-shortcut-clear="hotkey.shortcut">Clear</button>
+                  </div>
                   <input type="hidden" data-field="hotkey.shortcut" />
+                </label>
+                <label class="shortcut-field span-two">
+                  <span>Quick-switch hotkey</span>
+                  <div class="shortcut-row">
+                    <button type="button" class="shortcut-recorder" data-shortcut-recorder="hotkey.quick_switch"></button>
+                    <button type="button" class="button compact shortcut-clear" data-shortcut-clear="hotkey.quick_switch">Clear</button>
+                  </div>
+                  <input type="hidden" data-field="hotkey.quick_switch" />
                 </label>
               </div>
             </div>

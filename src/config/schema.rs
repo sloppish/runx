@@ -43,8 +43,10 @@ pub struct Config {
 #[derive(Debug, Clone, Deserialize, PartialEq, Eq)]
 #[serde(default, deny_unknown_fields)]
 pub struct HotKeyConfig {
-    /// Global shortcut that opens the launcher.
+    /// Global shortcut that opens the launcher, or empty to disable.
     pub shortcut: String,
+    /// Global shortcut that activates quick-switch mode, or empty to disable.
+    pub quick_switch: String,
 }
 
 /// Launcher window behavior and geometry.
@@ -503,8 +505,8 @@ pub struct UiLayoutConfig {
 }
 
 impl Config {
-    /// Converts the configured shortcut string into a `global_hotkey` binding.
-    pub fn hotkey(&self) -> Result<HotKey> {
+    /// Converts the configured shortcut string into a `global_hotkey` binding, or `None` if disabled.
+    pub fn hotkey(&self) -> Result<Option<HotKey>> {
         self.hotkey.to_hotkey()
     }
 
@@ -632,15 +634,32 @@ impl Default for HotKeyConfig {
     fn default() -> Self {
         Self {
             shortcut: "Option+Space".to_owned(),
+            quick_switch: "Option+Tab".to_owned(),
         }
     }
 }
 
 impl HotKeyConfig {
-    /// Parses the configured shortcut into a `global_hotkey` binding.
-    pub fn to_hotkey(&self) -> Result<HotKey> {
-        parse_hotkey_shortcut(&self.shortcut)
+    /// Parses the configured shortcut, or `None` if disabled.
+    pub fn to_hotkey(&self) -> Result<Option<HotKey>> {
+        if is_disabled_shortcut(&self.shortcut) {
+            return Ok(None);
+        }
+        parse_hotkey_shortcut(&self.shortcut).map(Some)
     }
+
+    /// Parses the quick-switch shortcut, or `None` if disabled.
+    pub fn quick_switch_hotkey(&self) -> Result<Option<HotKey>> {
+        if is_disabled_shortcut(&self.quick_switch) {
+            return Ok(None);
+        }
+        parse_hotkey_shortcut(&self.quick_switch).map(Some)
+    }
+}
+
+fn is_disabled_shortcut(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.is_empty() || trimmed.eq_ignore_ascii_case("none")
 }
 
 impl Config {

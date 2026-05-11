@@ -535,6 +535,7 @@ fn settings_draft_from_config(config: &Config, raw: &str) -> Result<SettingsDraf
         debug_log: config.debug_log,
         hotkey: HotkeySettingsDraft {
             shortcut: config.hotkey.shortcut.clone(),
+            quick_switch: config.hotkey.quick_switch.clone(),
         },
         window: WindowSettingsDraft {
             width_fraction: config.window.width_fraction,
@@ -764,6 +765,12 @@ fn apply_settings_draft_to_raw(
         &["hotkey"],
         "shortcut",
         value(draft.hotkey.shortcut.clone()),
+    )?;
+    set_item(
+        &mut doc,
+        &["hotkey"],
+        "quick_switch",
+        value(draft.hotkey.quick_switch.clone()),
     )?;
 
     set_item(

@@ -40,7 +40,6 @@ use crate::{
 };
 use action_runner::ActionRunner;
 use anyhow::{Context, Result};
-use global_hotkey::hotkey::{Code, Modifiers};
 use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
 use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
@@ -103,8 +102,8 @@ pub struct Launcher {
     resolved_ui_config: config::UiConfig,
     last_config_modified: Option<SystemTime>,
     hotkey_manager: GlobalHotKeyManager,
-    hotkey: HotKey,
-    quick_switch_hotkey: HotKey,
+    hotkey: Option<HotKey>,
+    quick_switch_hotkey: Option<HotKey>,
     runtime: Runtime,
     icons: Arc<IconCache>,
     providers: ProviderSet,
@@ -142,15 +141,19 @@ impl Launcher {
             warn!(error = %error, "startup config invalid; using defaults");
         }
         let last_config_modified = config::config_modified_at(&loaded.config_path);
-        let quick_switch_hotkey = HotKey::new(Some(Modifiers::ALT), Code::Tab);
+        let quick_switch_hotkey = loaded.config.hotkey.quick_switch_hotkey()?;
         let hotkey_manager =
             GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
-        hotkey_manager
-            .register(hotkey)
-            .context("failed to register the global hotkey from config.toml")?;
-        hotkey_manager
-            .register(quick_switch_hotkey)
-            .context("failed to register quick-switch hotkey")?;
+        if let Some(hk) = hotkey {
+            hotkey_manager
+                .register(hk)
+                .context("failed to register the global hotkey from config.toml")?;
+        }
+        if let Some(qs) = quick_switch_hotkey {
+            hotkey_manager
+                .register(qs)
+                .context("failed to register quick-switch hotkey")?;
+        }
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -369,7 +372,7 @@ impl Launcher {
             return Ok(());
         }
 
-        if event.id == self.hotkey.id() {
+        if self.hotkey.is_some_and(|hk| event.id == hk.id()) {
             if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
                 self.hide_without_focus_restore()?;
             }
@@ -377,7 +380,10 @@ impl Launcher {
             return Ok(());
         }
 
-        if event.id == self.quick_switch_hotkey.id() {
+        if self
+            .quick_switch_hotkey
+            .is_some_and(|hk| event.id == hk.id())
+        {
             self.handle_quick_switch_hotkey()?;
         }
         Ok(())
@@ -693,6 +699,7 @@ impl Launcher {
         }
 
         let reloaded_hotkey = loaded.config.hotkey()?;
+        let reloaded_qs_hotkey = loaded.config.hotkey.quick_switch_hotkey()?;
         let plugin_config = loaded.config.plugin_config()?;
         let plugin_routes = loaded.config.plugin_routes()?;
 
@@ -706,14 +713,37 @@ impl Launcher {
         let providers = ProviderSet::new(config.clone(), plugins.clone(), self.icons.clone())?;
 
         if reloaded_hotkey != previous_hotkey {
-            self.hotkey_manager
-                .unregister(previous_hotkey)
-                .context("failed to unregister the previous hotkey during config reload")?;
-            if let Err(error) = self.hotkey_manager.register(reloaded_hotkey) {
-                let _ = self.hotkey_manager.register(previous_hotkey);
+            if let Some(prev) = previous_hotkey {
+                self.hotkey_manager
+                    .unregister(prev)
+                    .context("failed to unregister the previous hotkey during config reload")?;
+            }
+            if let Some(next) = reloaded_hotkey
+                && let Err(error) = self.hotkey_manager.register(next)
+            {
+                if let Some(prev) = previous_hotkey {
+                    let _ = self.hotkey_manager.register(prev);
+                }
                 return Err(error).context("failed to register the reloaded hotkey");
             }
             self.hotkey = reloaded_hotkey;
+        }
+
+        if reloaded_qs_hotkey != self.quick_switch_hotkey {
+            if let Some(prev) = self.quick_switch_hotkey {
+                self.hotkey_manager
+                    .unregister(prev)
+                    .context("failed to unregister previous quick-switch hotkey")?;
+            }
+            if let Some(next) = reloaded_qs_hotkey
+                && let Err(error) = self.hotkey_manager.register(next)
+            {
+                if let Some(prev) = self.quick_switch_hotkey {
+                    let _ = self.hotkey_manager.register(prev);
+                }
+                return Err(error).context("failed to register reloaded quick-switch hotkey");
+            }
+            self.quick_switch_hotkey = reloaded_qs_hotkey;
         }
 
         self.providers.end_session();
@@ -1060,7 +1090,7 @@ fn clear_recovered_config_error(state: &mut AppState, config_reload_error: &mut 
 
 struct BootstrapConfig {
     loaded: LoadedConfig,
-    hotkey: HotKey,
+    hotkey: Option<HotKey>,
     plugin_config: std::collections::HashMap<String, serde_json::Value>,
     plugin_routes: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     config_error: Option<String>,

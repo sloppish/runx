@@ -76,7 +76,7 @@ export interface ColorschemeEntry {
 
 export interface SettingsDraft {
   debug_log: boolean;
-  hotkey: { shortcut: string };
+  hotkey: { shortcut: string; quick_switch: string };
   window: {
     width_fraction: number;
     visible_rows: number;

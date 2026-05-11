@@ -1216,7 +1216,10 @@ function render(payload: SettingsPayload): void {
 function collectDraft(): SettingsDraft {
   return {
     debug_log: bool("debug_log"),
-    hotkey: { shortcut: text("hotkey.shortcut") },
+    hotkey: {
+      shortcut: text("hotkey.shortcut"),
+      quick_switch: text("hotkey.quick_switch"),
+    },
     window: {
       width_fraction: float("window.width_fraction"),
       visible_rows: int("window.visible_rows"),

@@ -84,6 +84,7 @@ struct RawUiEntriesSpans {
 #[serde(default, deny_unknown_fields)]
 struct RawHotKeySpans {
     shortcut: Option<Spanned<String>>,
+    quick_switch: Option<Spanned<String>>,
 }
 
 #[derive(Debug, Deserialize, Default)]
@@ -237,6 +238,7 @@ pub(super) fn validate_config_with_spans(
     spans: &RawConfigSpans,
 ) -> Result<()> {
     if let Some(shortcut) = &spans.hotkey.shortcut
+        && !is_disabled_shortcut_value(shortcut.get_ref())
         && let Err(error) = parse_hotkey_shortcut(shortcut.get_ref())
     {
         return Err(anyhow!(render_config_validation_error(
@@ -244,6 +246,18 @@ pub(super) fn validate_config_with_spans(
             raw,
             &error.to_string(),
             shortcut.span(),
+        )));
+    }
+
+    if let Some(qs) = &spans.hotkey.quick_switch
+        && !is_disabled_shortcut_value(qs.get_ref())
+        && let Err(error) = parse_hotkey_shortcut(qs.get_ref())
+    {
+        return Err(anyhow!(render_config_validation_error(
+            config_path,
+            raw,
+            &error.to_string(),
+            qs.span(),
         )));
     }
 
@@ -872,4 +886,9 @@ fn validate_ui_colorscheme_name_impl<'a>(
             BUILTIN_COLORSCHEME_NAMES.join("`, `")
         )
     }
+}
+
+fn is_disabled_shortcut_value(value: &str) -> bool {
+    let trimmed = value.trim();
+    trimmed.is_empty() || trimmed.eq_ignore_ascii_case("none")
 }

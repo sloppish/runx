@@ -19,7 +19,8 @@ User-facing global hotkey configuration.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
-| `shortcut` | shortcut string such as `Option+Space` or `Cmd+KeyK` | `"Option+Space"` | Global shortcut that opens the launcher. |
+| `shortcut` | shortcut string such as `Option+Space` or `Cmd+KeyK` | `"Option+Space"` | Global shortcut that opens the launcher, or empty to disable. |
+| `quick_switch` | string | `"Option+Tab"` | Global shortcut that activates quick-switch mode, or empty to disable. |
 
 ## [window]
 
