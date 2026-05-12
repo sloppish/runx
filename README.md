@@ -1,5 +1,5 @@
 <p align="center">
-  <img src="assets/runx-app-icon.svg" width="140" alt="Runx icon">
+  <img src="assets/runx-app-icon.png" width="140" alt="Runx icon">
 </p>
 
 <h1 align="center">Runx</h1>
