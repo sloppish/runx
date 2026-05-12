@@ -15,6 +15,7 @@ export default defineConfig({
       { text: "Guide", link: "/guide/getting-started" },
       { text: "Configuration", link: "/guide/configuration" },
       { text: "Plugins", link: "/guide/plugins" },
+      { text: "☕ Sponsor", link: "https://ko-fi.com/magnickolas" },
     ],
 
     sidebar: [
