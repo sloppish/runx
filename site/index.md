@@ -4,7 +4,7 @@ layout: home
 hero:
   name: Runx
   text: A fast, native macOS launcher
-  tagline: Keyboard-driven app switching, window management, and extensible Lua plugins — all in a single native binary.
+  tagline: App switching, window management, extensible Lua plugins and more — always FOSS.
   actions:
     - theme: brand
       text: Get Started
