@@ -2,7 +2,7 @@ import { defineConfig } from "vitepress";
 
 export default defineConfig({
   title: "Runx",
-  description: "A fast, native macOS launcher with Lua plugins",
+  description: "A fast, native macOS launcher",
   base: "/runx/",
   cleanUrls: true,
 
