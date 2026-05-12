@@ -9,9 +9,9 @@ export default defineConfig({
   head: [
     ["link", { rel: "icon", type: "image/x-icon", sizes: "48x48", href: "/runx/favicon.ico" }],
     ["link", { rel: "apple-touch-icon", sizes: "180x180", href: "/runx/apple-touch-icon.png" }],
-    ["meta", { property: "og:image", content: "https://sloppish.github.io/runx/screenshot.webp" }],
-    ["meta", { property: "og:image:width", content: "1728" }],
-    ["meta", { property: "og:image:height", content: "1098" }],
+    ["meta", { property: "og:image", content: "https://sloppish.github.io/runx/og-icon.png" }],
+    ["meta", { property: "og:image:width", content: "280" }],
+    ["meta", { property: "og:image:height", content: "280" }],
   ],
 
   themeConfig: {
