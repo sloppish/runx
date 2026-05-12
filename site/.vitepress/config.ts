@@ -6,7 +6,10 @@ export default defineConfig({
   base: "/runx/",
   cleanUrls: true,
 
-  head: [["link", { rel: "icon", href: "/runx/favicon.ico" }]],
+  head: [
+    ["link", { rel: "icon", type: "image/x-icon", sizes: "48x48", href: "/runx/favicon.ico" }],
+    ["link", { rel: "apple-touch-icon", sizes: "180x180", href: "/runx/apple-touch-icon.png" }],
+  ],
 
   themeConfig: {
     logo: "/logo.png",
