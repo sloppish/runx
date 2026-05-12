@@ -100,6 +100,7 @@ export interface SettingsDraft {
     apps: {
       exact_name_boost: number;
       prefix_name_boost: number;
+      additional_directories: string[];
     };
   };
   ranking: {

@@ -50,6 +50,7 @@ show_on_empty_query = true
 [providers.apps]
 exact_name_boost = 200
 prefix_name_boost = 100
+additional_directories = []
 
 [ranking]
 tie_threshold = 120

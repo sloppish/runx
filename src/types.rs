@@ -193,6 +193,7 @@ pub struct WindowsProviderSettingsDraft {
 pub struct AppsProviderSettingsDraft {
     pub exact_name_boost: i64,
     pub prefix_name_boost: i64,
+    pub additional_directories: Vec<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, PartialEq)]

@@ -43,6 +43,7 @@ pub struct LoadedConfig {
     pub config_path: PathBuf,
     pub plugin_dirs: Vec<PathBuf>,
     pub plugin_search_paths: Vec<PathBuf>,
+    pub app_discovery_dirs: Vec<PathBuf>,
 }
 
 impl LoadedConfig {
@@ -94,12 +95,19 @@ impl LoadedConfig {
         }
         dedup_paths(&mut plugin_search_paths);
 
+        let mut app_discovery_dirs = Vec::new();
+        for configured in &config.providers.apps.additional_directories {
+            app_discovery_dirs.push(resolve_path(&root_dir, base_dirs.home_dir(), configured));
+        }
+        dedup_paths(&mut app_discovery_dirs);
+
         Ok(Self {
             config,
             colorschemes,
             config_path,
             plugin_dirs,
             plugin_search_paths,
+            app_discovery_dirs,
         })
     }
 }
@@ -518,6 +526,18 @@ mod tests {
             .expect("app boosts should parse");
             assert_eq!(config.providers.apps.exact_name_boost, 350);
             assert_eq!(config.providers.apps.prefix_name_boost, 80);
+        }
+
+        #[test]
+        fn accepts_additional_app_directories() {
+            let config: Config = toml::from_str(
+                "[providers.apps]\nadditional_directories = [\"~/Applications/Nested\", \"./dist/Applications\"]\n",
+            )
+            .expect("additional app directories should parse");
+            assert_eq!(
+                config.providers.apps.additional_directories,
+                vec!["~/Applications/Nested", "./dist/Applications"]
+            );
         }
     }
 

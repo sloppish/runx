@@ -583,6 +583,7 @@ fn settings_draft_from_config(
             apps: AppsProviderSettingsDraft {
                 exact_name_boost: config.providers.apps.exact_name_boost,
                 prefix_name_boost: config.providers.apps.prefix_name_boost,
+                additional_directories: config.providers.apps.additional_directories.clone(),
             },
         },
         ranking: RankingSettingsDraft {
@@ -835,6 +836,12 @@ fn apply_settings_draft_to_raw(
         &["providers", "apps"],
         "prefix_name_boost",
         value(draft.providers.apps.prefix_name_boost),
+    )?;
+    set_item(
+        &mut doc,
+        &["providers", "apps"],
+        "additional_directories",
+        string_array(&draft.providers.apps.additional_directories),
     )?;
 
     set_item(
@@ -1519,6 +1526,10 @@ shortcut = "Option+Space"
                 pattern: "spotify".to_owned(),
                 boost: 120,
             });
+        draft.providers.apps.additional_directories = vec![
+            "~/Applications/Nested".to_owned(),
+            "./dist/Applications".to_owned(),
+        ];
         draft.plugins.directories =
             vec!["~/Library/Application Support/runx/more-plugins".to_owned()];
         draft.plugins.search_paths = vec!["/opt/homebrew/bin".to_owned()];
@@ -1550,6 +1561,9 @@ terminal_app = "Alacritty"
         assert!(saved.contains("apps = 60"));
         assert!(saved.contains("[[ranking.score_rules]]"));
         assert!(saved.contains("pattern = \"spotify\""));
+        assert!(saved.contains(
+            "additional_directories = [\"~/Applications/Nested\", \"./dist/Applications\"]"
+        ));
         assert!(saved.contains("search_paths = [\"/opt/homebrew/bin\"]"));
         assert!(saved.contains("[plugin.terminal.commands]"));
         assert!(saved.contains("[ui.shortcuts]"));

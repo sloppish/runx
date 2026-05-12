@@ -171,7 +171,12 @@ impl Launcher {
             plugin_routes,
         ));
         let icons = Arc::new(IconCache::new(Some(proxy.clone()))?);
-        let providers = ProviderSet::new(config.clone(), plugins.clone(), icons.clone())?;
+        let providers = ProviderSet::new(
+            config.clone(),
+            plugins.clone(),
+            icons.clone(),
+            app_discovery_roots(&loaded)?,
+        )?;
         let window = build_window(event_loop, &config)?;
         let html = ui::html(
             &config.ui,
@@ -736,7 +741,12 @@ impl Launcher {
             plugin_config,
             plugin_routes,
         ));
-        let providers = ProviderSet::new(config.clone(), plugins.clone(), self.icons.clone())?;
+        let providers = ProviderSet::new(
+            config.clone(),
+            plugins.clone(),
+            self.icons.clone(),
+            app_discovery_roots(&loaded)?,
+        )?;
 
         if reloaded_hotkey != previous_hotkey {
             if let Some(prev) = previous_hotkey {
@@ -1066,6 +1076,19 @@ fn packaged_settings_app_path() -> Result<Option<PathBuf>> {
     Ok(settings_app_bundle_path_from_executable(&executable).filter(|path| path.is_dir()))
 }
 
+fn app_discovery_roots(loaded: &LoadedConfig) -> Result<Vec<PathBuf>> {
+    let mut roots = loaded.app_discovery_dirs.clone();
+    if let Some(path) = packaged_additional_apps_root()? {
+        roots.push(path);
+    }
+    Ok(roots)
+}
+
+fn packaged_additional_apps_root() -> Result<Option<PathBuf>> {
+    let executable = std::env::current_exe().context("failed to resolve current executable")?;
+    Ok(packaged_additional_apps_root_from_executable(&executable).filter(|path| path.is_dir()))
+}
+
 fn terminate_settings_app() {
     use objc2_app_kit::NSRunningApplication;
     use objc2_foundation::NSString;
@@ -1097,6 +1120,20 @@ fn settings_app_bundle_path_from_executable(executable: &Path) -> Option<PathBuf
             .join("Applications")
             .join(SETTINGS_APP_BUNDLE_NAME),
     )
+}
+
+fn packaged_additional_apps_root_from_executable(executable: &Path) -> Option<PathBuf> {
+    let macos_dir = executable.parent()?;
+    if macos_dir.file_name()? != "MacOS" {
+        return None;
+    }
+
+    let contents_dir = macos_dir.parent()?;
+    if contents_dir.file_name()? != "Contents" {
+        return None;
+    }
+
+    Some(contents_dir.join("Applications"))
 }
 
 fn frontend_config_script(
@@ -1173,7 +1210,7 @@ fn build_window(
 mod tests {
     use super::{
         clear_recovered_config_error, frontend_config_script,
-        settings_app_bundle_path_from_executable,
+        packaged_additional_apps_root_from_executable, settings_app_bundle_path_from_executable,
     };
     use crate::{config, state::AppState, types::ViewMode};
 
@@ -1221,6 +1258,20 @@ mod tests {
             path.as_deref(),
             Some(std::path::Path::new(
                 "/Applications/Runx.app/Contents/Applications/Runx Settings.app"
+            ))
+        );
+    }
+
+    #[test]
+    fn derives_packaged_additional_apps_root_from_launcher_executable() {
+        let path = packaged_additional_apps_root_from_executable(std::path::Path::new(
+            "/Applications/Runx.app/Contents/MacOS/runx",
+        ));
+
+        assert_eq!(
+            path.as_deref(),
+            Some(std::path::Path::new(
+                "/Applications/Runx.app/Contents/Applications"
             ))
         );
     }

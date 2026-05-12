@@ -1245,6 +1245,9 @@ function collectDraft(): SettingsDraft {
       apps: {
         exact_name_boost: int("providers.apps.exact_name_boost"),
         prefix_name_boost: int("providers.apps.prefix_name_boost"),
+        additional_directories: lineList(
+          "providers.apps.additional_directories",
+        ),
       },
     },
     ranking: {

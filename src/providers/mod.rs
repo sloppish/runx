@@ -9,6 +9,7 @@ pub mod windows;
 
 use std::{
     collections::HashSet,
+    path::PathBuf,
     sync::{
         Arc,
         mpsc::{self, Receiver, Sender},
@@ -46,6 +47,7 @@ impl ProviderSet {
         config: Arc<Config>,
         plugins: Arc<PluginHost>,
         icons: Arc<IconCache>,
+        additional_app_roots: Vec<PathBuf>,
     ) -> anyhow::Result<Self> {
         let windows = Arc::new(WindowsProvider::new(
             icons.clone(),
@@ -54,6 +56,7 @@ impl ProviderSet {
         let apps = Arc::new(AppProvider::new(
             icons.clone(),
             config.providers.apps.clone(),
+            additional_app_roots,
         )?);
         let settings = Arc::new(SettingsProvider::new(icons)?);
         let disabled_providers = config.providers.disabled.iter().cloned().collect();

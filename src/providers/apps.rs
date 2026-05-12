@@ -22,10 +22,16 @@ use crate::{
 
 /// Searches the local app bundle index built from common application roots.
 pub struct AppProvider {
-    roots: Vec<PathBuf>,
+    roots: Vec<AppScanRoot>,
     index: Arc<Mutex<AppIndex>>,
     icons: Arc<IconCache>,
     config: AppsProviderConfig,
+}
+
+#[derive(Clone)]
+struct AppScanRoot {
+    path: PathBuf,
+    allow_nested_apps: bool,
 }
 
 #[derive(Clone)]
@@ -45,16 +51,39 @@ const APP_INDEX_REFRESH_COOLDOWN: Duration = Duration::from_secs(10);
 
 impl AppProvider {
     /// Builds the provider and kicks off an initial background scan.
-    pub fn new(icons: Arc<IconCache>, config: AppsProviderConfig) -> Result<Self> {
+    pub fn new(
+        icons: Arc<IconCache>,
+        config: AppsProviderConfig,
+        additional_roots: Vec<PathBuf>,
+    ) -> Result<Self> {
         let base_dirs = BaseDirs::new().context("could not determine the home directory")?;
         let mut roots = vec![
-            PathBuf::from("/Applications"),
-            PathBuf::from("/System/Applications"),
-            PathBuf::from("/System/Applications/Utilities"),
-            PathBuf::from("/System/Library/CoreServices"),
-            base_dirs.home_dir().join("Applications"),
+            AppScanRoot {
+                path: PathBuf::from("/Applications"),
+                allow_nested_apps: false,
+            },
+            AppScanRoot {
+                path: PathBuf::from("/System/Applications"),
+                allow_nested_apps: false,
+            },
+            AppScanRoot {
+                path: PathBuf::from("/System/Applications/Utilities"),
+                allow_nested_apps: false,
+            },
+            AppScanRoot {
+                path: PathBuf::from("/System/Library/CoreServices"),
+                allow_nested_apps: false,
+            },
+            AppScanRoot {
+                path: base_dirs.home_dir().join("Applications"),
+                allow_nested_apps: false,
+            },
         ];
-        roots.retain(|path| path.exists());
+        roots.extend(additional_roots.into_iter().map(|path| AppScanRoot {
+            path,
+            allow_nested_apps: true,
+        }));
+        roots.retain(|root| root.path.exists());
 
         let index = Arc::new(Mutex::new(AppIndex {
             apps: Vec::new(),
@@ -134,12 +163,12 @@ fn lock_or_recover<T>(mutex: &Mutex<T>) -> MutexGuard<'_, T> {
     mutex.lock().unwrap_or_else(|poison| poison.into_inner())
 }
 
-fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
+fn scan_apps(roots: &[AppScanRoot]) -> Vec<AppRecord> {
     let mut seen = HashSet::with_capacity(512);
     let mut apps = Vec::with_capacity(512);
 
     for root in roots {
-        for entry in WalkDir::new(root)
+        for entry in WalkDir::new(&root.path)
             .max_depth(4)
             .follow_links(true)
             .into_iter()
@@ -155,7 +184,7 @@ fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
                 continue;
             }
 
-            if is_nested_app_bundle(path) {
+            if is_nested_app_bundle(path, root) {
                 continue;
             }
 
@@ -182,7 +211,11 @@ fn scan_apps(roots: &[PathBuf]) -> Vec<AppRecord> {
     apps
 }
 
-fn is_nested_app_bundle(path: &Path) -> bool {
+fn is_nested_app_bundle(path: &Path, root: &AppScanRoot) -> bool {
+    if root.allow_nested_apps && path.starts_with(&root.path) {
+        return false;
+    }
+
     path.parent().is_some_and(|parent| {
         parent
             .ancestors()
@@ -320,9 +353,26 @@ fn plist_truthy(value: &Value) -> bool {
 
 #[cfg(test)]
 mod tests {
-    use super::{AppRecord, app_match_score, is_nested_app_bundle};
+    use super::{AppRecord, AppScanRoot, app_match_score, is_nested_app_bundle, scan_apps};
     use crate::config::AppsProviderConfig;
-    use std::path::Path;
+    use std::{
+        fs,
+        path::{Path, PathBuf},
+    };
+
+    fn standard_root(path: &str) -> AppScanRoot {
+        AppScanRoot {
+            path: PathBuf::from(path),
+            allow_nested_apps: false,
+        }
+    }
+
+    fn additional_root(path: &Path) -> AppScanRoot {
+        AppScanRoot {
+            path: path.to_path_buf(),
+            allow_nested_apps: true,
+        }
+    }
 
     #[test]
     fn app_name_boosts_are_configurable() {
@@ -334,10 +384,12 @@ mod tests {
         let config = AppsProviderConfig {
             exact_name_boost: 17,
             prefix_name_boost: 5,
+            additional_directories: Vec::new(),
         };
         let without_boosts = AppsProviderConfig {
             exact_name_boost: 0,
             prefix_name_boost: 0,
+            additional_directories: Vec::new(),
         };
 
         assert_eq!(
@@ -352,9 +404,42 @@ mod tests {
 
     #[test]
     fn nested_wrapped_app_bundles_are_not_indexed_as_apps() {
-        assert!(!is_nested_app_bundle(Path::new("/Applications/Outer.app")));
-        assert!(is_nested_app_bundle(Path::new(
-            "/Applications/Outer.app/Wrapper/Inner.app"
-        )));
+        assert!(!is_nested_app_bundle(
+            Path::new("/Applications/Outer.app"),
+            &standard_root("/Applications")
+        ));
+        assert!(is_nested_app_bundle(
+            Path::new("/Applications/Outer.app/Wrapper/Inner.app"),
+            &standard_root("/Applications")
+        ));
+    }
+
+    #[test]
+    fn additional_roots_can_index_nested_apps_under_that_root() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let explicit_root = tmp.path().join("Outer.app/Contents/Applications");
+        let nested_app = explicit_root.join("Runx Settings.app");
+        fs::create_dir_all(&nested_app).expect("create nested app");
+
+        let apps = scan_apps(&[additional_root(&explicit_root)]);
+
+        assert_eq!(apps.len(), 1);
+        assert_eq!(apps[0].name, "Runx Settings");
+        assert_eq!(apps[0].path, nested_app.to_string_lossy());
+    }
+
+    #[test]
+    fn overlapping_roots_do_not_duplicate_apps() {
+        let tmp = tempfile::tempdir().expect("tempdir");
+        let explicit_root = tmp.path().join("Applications");
+        let app = explicit_root.join("Runx.app");
+        fs::create_dir_all(&app).expect("create app");
+
+        let apps = scan_apps(&[
+            additional_root(&explicit_root),
+            additional_root(&explicit_root),
+        ]);
+
+        assert_eq!(apps.len(), 1);
     }
 }

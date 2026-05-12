@@ -107,6 +107,8 @@ pub struct AppsProviderConfig {
     pub exact_name_boost: i64,
     /// Score added when a query is a prefix of an installed app name.
     pub prefix_name_boost: i64,
+    /// Extra directories to scan for `.app` bundles in addition to the standard app roots.
+    pub additional_directories: Vec<String>,
 }
 
 /// Monitor selection strategy for placing the launcher window.
@@ -943,6 +945,7 @@ impl Default for AppsProviderConfig {
         Self {
             exact_name_boost: 200,
             prefix_name_boost: 100,
+            additional_directories: Vec::new(),
         }
     }
 }

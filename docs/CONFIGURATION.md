@@ -83,6 +83,7 @@ Settings for installed application search ranking.
 | --- | --- | --- | --- |
 | `exact_name_boost` | integer | `200` | Score added when a query exactly matches an installed app name. |
 | `prefix_name_boost` | integer | `100` | Score added when a query is a prefix of an installed app name. |
+| `additional_directories` | array of string | `[]` | Extra directories to scan for `.app` bundles in addition to the standard app roots. |
 
 ## [ranking]
 
