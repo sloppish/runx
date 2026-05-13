@@ -1,18 +1,59 @@
 import { defineConfig } from "vitepress";
 
+const SITE_HOST = "https://sloppish.github.io";
+const SITE_URL = `${SITE_HOST}/runx`;
+
+function canonicalUrl(page: string): string {
+  if (page === "404.md") {
+    return `${SITE_URL}/404`;
+  }
+
+  const normalizedPage = page === "index.md" ? "" : page.replace(/\.md$/, "");
+  return normalizedPage ? `${SITE_URL}/${normalizedPage}` : `${SITE_URL}/`;
+}
+
 export default defineConfig({
   title: "Runx",
   description: "A fast, native macOS launcher",
   base: "/runx/",
   cleanUrls: true,
+  sitemap: {
+    hostname: SITE_HOST,
+    transformItems(items) {
+      return items.map((item) => {
+        const url = item.url === "/" ? "/runx/" : `/runx/${item.url.replace(/^\/+/, "")}`;
+        return { ...item, url };
+      });
+    },
+  },
 
   head: [
     ["link", { rel: "icon", type: "image/x-icon", sizes: "48x48", href: "/runx/favicon.ico" }],
     ["link", { rel: "apple-touch-icon", sizes: "180x180", href: "/runx/apple-touch-icon.png" }],
-    ["meta", { property: "og:image", content: "https://sloppish.github.io/runx/og-icon.png" }],
+    ["meta", { property: "og:site_name", content: "Runx" }],
+    ["meta", { property: "og:image", content: `${SITE_URL}/og-icon.png` }],
     ["meta", { property: "og:image:width", content: "280" }],
     ["meta", { property: "og:image:height", content: "280" }],
+    ["meta", { name: "twitter:card", content: "summary" }],
   ],
+
+  transformHead({ page, title, description }) {
+    const pageTitle = title || "Runx";
+    const pageDescription = description || "A fast, native macOS launcher";
+    const url = canonicalUrl(page);
+
+    return [
+      ["link", { rel: "canonical", href: url }],
+      ["meta", { name: "robots", content: "index,follow" }],
+      ["meta", { property: "og:type", content: "website" }],
+      ["meta", { property: "og:title", content: pageTitle }],
+      ["meta", { property: "og:description", content: pageDescription }],
+      ["meta", { property: "og:url", content: url }],
+      ["meta", { name: "twitter:title", content: pageTitle }],
+      ["meta", { name: "twitter:description", content: pageDescription }],
+      ["meta", { name: "twitter:image", content: `${SITE_URL}/og-icon.png` }],
+    ];
+  },
 
   themeConfig: {
     logo: "/logo.png",

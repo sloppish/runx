@@ -1,0 +1,4 @@
+User-agent: *
+Allow: /
+
+Sitemap: https://sloppish.github.io/runx/sitemap.xml
