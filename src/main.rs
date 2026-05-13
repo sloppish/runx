@@ -18,6 +18,8 @@
 
 mod actions;
 mod assets;
+mod config;
+mod displays;
 mod icons;
 mod launcher;
 mod logging;
@@ -28,6 +30,7 @@ mod scoring;
 mod state;
 mod tray;
 mod types;
+mod ui;
 mod updates;
 
 use anyhow::Result;
@@ -40,8 +43,6 @@ use tao::{
 use types::AppEvent;
 
 use crate::launcher::Launcher;
-
-pub use runx::{config, displays, ui};
 
 /// Starts the launcher process and reports any fatal startup error to stderr.
 fn main() {

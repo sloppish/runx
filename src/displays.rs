@@ -46,11 +46,7 @@ impl DisplayProfile {
 
 use std::collections::HashMap;
 
-use core_graphics::{
-    display::CGDisplay,
-    event::CGEvent,
-    event_source::{CGEventSource, CGEventSourceStateID},
-};
+use core_graphics::display::CGDisplay;
 use objc2::MainThreadMarker;
 use objc2_app_kit::NSScreen;
 use objc2_foundation::{NSNumber, ns_string};
@@ -71,29 +67,6 @@ pub fn active_displays() -> Vec<DisplayProfile> {
                 .collect()
         })
         .unwrap_or_default()
-}
-
-pub fn current_display() -> Option<DisplayProfile> {
-    let source = CGEventSource::new(CGEventSourceStateID::CombinedSessionState).ok()?;
-    let event = CGEvent::new(source).ok()?;
-    let point = event.location();
-    let (display_ids, matching_count) = CGDisplay::displays_with_point(point, 8).ok()?;
-    let display_id = display_ids
-        .into_iter()
-        .take(matching_count as usize)
-        .next()?;
-    Some(profile_from_display(
-        CGDisplay::new(display_id),
-        display_name_by_id(display_id),
-    ))
-}
-
-pub fn primary_display() -> Option<DisplayProfile> {
-    let display = CGDisplay::main();
-    Some(profile_from_display(
-        display,
-        display_name_by_id(display.id),
-    ))
 }
 
 pub fn profile_from_monitor(monitor: &MonitorHandle) -> DisplayProfile {
