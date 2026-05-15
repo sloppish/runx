@@ -50,6 +50,15 @@ function runx.exec_json(cmd, args) end
 ---@return any
 function runx.json_decode(text) end
 
+---@param key string
+---@param value any
+---@return true
+function runx.session_set(key, value) end
+
+---@param key string
+---@return any?
+function runx.session_get(key) end
+
 ---@param text string
 function runx.copy_text(text) end
 

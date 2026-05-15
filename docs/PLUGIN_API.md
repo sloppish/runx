@@ -14,7 +14,7 @@ You can add more plugin directories through `[plugins].directories` in `config.t
 
 - **One directory is one plugin:** Each plugin is a subdirectory containing `init.lua` as its entry point (e.g. `plugins/calc/init.lua`).
 - **`require` support:** Plugins can load sibling files via `require("utils")` which resolves to `utils.lua` or `utils/init.lua` in the same directory.
-- **Fresh state:** Runx evaluates the plugin in a fresh Lua state on every search or action. Do not rely on global variables surviving between calls. Garbage collection is disabled since the entire state is discarded after each call.
+- **Fresh state:** Runx evaluates the plugin in a fresh Lua state on every search or action. Do not rely on global variables surviving between calls. Garbage collection is disabled since the entire state is discarded after each call. Use `runx.session_set` / `runx.session_get` for small per-invocation caches that should survive fresh Lua evaluations while the launcher stays open.
 
 ## Editor Support
 
@@ -270,6 +270,30 @@ Runs a command, parses stdout as JSON, and returns it as a Lua table. Errors if 
 #### `runx.json_decode(text: string) -> table`
 
 Parses a JSON string and returns it as a Lua table. Errors if the input is not valid JSON.
+
+### Session
+
+Session values are in-memory only. They survive separate Lua evaluations while the launcher panel is open, then clear when the panel is hidden or dismissed. Keys are automatically scoped to the current plugin id, so use plugin-local names such as `"tabs:snapshot"`.
+
+Values must be JSON-serializable plain Lua data: `nil`, booleans, numbers, strings, array-like tables, object-like tables, and nested combinations. Functions, userdata, threads, cyclic tables, metatable/object identity, and other unsupported values are rejected.
+
+Runx keeps at most 1024 session keys per plugin and evicts the oldest key when the cap is exceeded.
+
+#### `runx.session_set(key: string, value: any) -> true`
+
+Stores a JSON-serializable value for the current launcher invocation.
+
+```lua
+runx.session_set("tabs:snapshot", tabs)
+```
+
+#### `runx.session_get(key: string) -> any?`
+
+Returns a previously stored value, or `nil` if the key is missing.
+
+```lua
+local tabs = runx.session_get("tabs:snapshot")
+```
 
 ### Clipboard & Interaction
 

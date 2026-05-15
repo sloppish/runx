@@ -95,6 +95,7 @@ impl ProviderSet {
     /// Ends the current launcher-visible session and clears any per-open provider state.
     pub fn end_session(&self) {
         self.windows_provider.end_session();
+        self.plugins_host.clear_session_store();
     }
 
     /// Returns how many provider responses a session should wait for.

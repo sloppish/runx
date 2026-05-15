@@ -11,9 +11,10 @@ mod routing;
 mod runtime_api;
 
 use std::{
-    collections::{HashMap, HashSet},
+    collections::{HashMap, HashSet, VecDeque},
     fs,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -31,8 +32,13 @@ use self::{
     commands::parse_shell_args,
     item_validation::{PluginItemWire, validate_plugin_item},
     routing::{PluginRoute, build_routes, match_command},
-    runtime_api::{empty_plugin_config, load_table, load_table_with_context},
+    runtime_api::{
+        empty_plugin_config, load_table, load_table_with_context_and_session,
+        load_table_with_session,
+    },
 };
+
+const PLUGIN_SESSION_KEY_CAP: usize = 1024;
 
 /// In-memory plugin registry plus the routing/config needed to execute plugins.
 #[derive(Clone, Default)]
@@ -42,6 +48,47 @@ pub struct PluginHost {
     config: HashMap<String, JsonValue>,
     routes: Vec<PluginRoute>,
     routed_plugin_ids: HashSet<String>,
+    session_store: Arc<Mutex<PluginSessionStore>>,
+}
+
+/// Shared in-memory session values scoped by plugin id and cleared per launcher invocation.
+#[derive(Debug, Default)]
+pub(super) struct PluginSessionStore {
+    plugins: HashMap<String, PluginSession>,
+}
+
+#[derive(Debug, Default)]
+struct PluginSession {
+    values: HashMap<String, JsonValue>,
+    order: VecDeque<String>,
+}
+
+impl PluginSessionStore {
+    pub(super) fn set(&mut self, plugin_id: &str, key: String, value: JsonValue) {
+        let session = self.plugins.entry(plugin_id.to_owned()).or_default();
+        if !session.values.contains_key(&key) {
+            session.order.push_back(key.clone());
+        }
+        session.values.insert(key, value);
+
+        while session.values.len() > PLUGIN_SESSION_KEY_CAP {
+            let Some(oldest) = session.order.pop_front() else {
+                break;
+            };
+            session.values.remove(&oldest);
+        }
+    }
+
+    pub(super) fn get(&self, plugin_id: &str, key: &str) -> Option<JsonValue> {
+        self.plugins
+            .get(plugin_id)
+            .and_then(|session| session.values.get(key))
+            .cloned()
+    }
+
+    fn clear(&mut self) {
+        self.plugins.clear();
+    }
 }
 
 #[derive(Clone)]
@@ -134,6 +181,7 @@ impl PluginHost {
             config,
             routes,
             routed_plugin_ids,
+            session_store: Arc::new(Mutex::new(PluginSessionStore::default())),
         }
     }
 
@@ -152,6 +200,7 @@ impl PluginHost {
                 args,
                 self.plugin_config(&plugin.id),
                 &self.search_paths,
+                self.session_store.clone(),
             )
             .with_context(|| {
                 format!(
@@ -171,6 +220,7 @@ impl PluginHost {
                 query,
                 self.plugin_config(&plugin.id),
                 &self.search_paths,
+                self.session_store.clone(),
             )
             .with_context(|| format!("plugin `{}` search failed", plugin.id))?;
             items.extend(plugin_items);
@@ -196,7 +246,16 @@ impl PluginHost {
             context,
             self.plugin_config(plugin_id),
             &self.search_paths,
+            self.session_store.clone(),
         )
+    }
+
+    /// Clears per-invocation plugin session data.
+    pub fn clear_session_store(&self) {
+        match self.session_store.lock() {
+            Ok(mut store) => store.clear(),
+            Err(poisoned) => poisoned.into_inner().clear(),
+        }
     }
 
     fn plugin_config(&self, plugin_id: &str) -> JsonValue {
@@ -299,8 +358,16 @@ fn run_search(
     query: &str,
     plugin_config: JsonValue,
     search_paths: &[PathBuf],
+    session_store: Arc<Mutex<PluginSessionStore>>,
 ) -> Result<Vec<SearchItem>> {
-    let (lua, table) = load_table(&plugin.path, &plugin.source, &plugin_config, search_paths)?;
+    let (lua, table) = load_table_with_session(
+        &plugin.path,
+        &plugin.source,
+        &plugin.id,
+        &plugin_config,
+        search_paths,
+        session_store,
+    )?;
     let search: Function = match table.get::<Option<Function>>("search")? {
         Some(function) => function,
         None => return Ok(Vec::new()),
@@ -316,8 +383,16 @@ fn run_search_handler(
     args: &str,
     plugin_config: JsonValue,
     search_paths: &[PathBuf],
+    session_store: Arc<Mutex<PluginSessionStore>>,
 ) -> Result<Vec<SearchItem>> {
-    let (lua, table) = load_table(&plugin.path, &plugin.source, &plugin_config, search_paths)?;
+    let (lua, table) = load_table_with_session(
+        &plugin.path,
+        &plugin.source,
+        &plugin.id,
+        &plugin_config,
+        search_paths,
+        session_store,
+    )?;
     let search: Function = table
         .get::<Option<Function>>(handler_name)?
         .ok_or_else(|| anyhow!("plugin `{}` does not export `{}`", plugin.id, handler_name))?;
@@ -333,13 +408,16 @@ fn run_action(
     context: &PluginExecutionContext,
     plugin_config: JsonValue,
     search_paths: &[PathBuf],
+    session_store: Arc<Mutex<PluginSessionStore>>,
 ) -> Result<Option<String>> {
-    let (lua, table) = load_table_with_context(
+    let (lua, table) = load_table_with_context_and_session(
         &plugin.path,
         &plugin.source,
+        &plugin.id,
         context,
         &plugin_config,
         search_paths,
+        session_store,
     )?;
     let run: Function = match table.get::<Option<Function>>("run")? {
         Some(function) => function,
@@ -363,8 +441,16 @@ fn run_action(
 mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::{Arc, Mutex};
 
-    use super::{LuaPlugin, run_search, run_search_handler, runtime_api::empty_plugin_config};
+    use super::{
+        LuaPlugin, PluginHost, PluginSessionStore, run_search, run_search_handler,
+        runtime_api::empty_plugin_config,
+    };
+
+    fn session_store() -> Arc<Mutex<PluginSessionStore>> {
+        Arc::new(Mutex::new(PluginSessionStore::default()))
+    }
 
     #[test]
     fn routed_handlers_receive_raw_and_parsed_args() {
@@ -396,6 +482,7 @@ mod tests {
             r#"1 "2 3" '4 "5"'"#,
             empty_plugin_config(),
             &[],
+            session_store(),
         )
         .expect("handler search should succeed");
 
@@ -429,11 +516,163 @@ mod tests {
             default_commands: HashMap::new(),
         };
 
-        let items = run_search_handler(&plugin, "search_echo", "", empty_plugin_config(), &[])
-            .expect("handler search should succeed");
+        let items = run_search_handler(
+            &plugin,
+            "search_echo",
+            "",
+            empty_plugin_config(),
+            &[],
+            session_store(),
+        )
+        .expect("handler search should succeed");
 
         assert_eq!(items.len(), 1);
         assert!(!items[0].compact);
+    }
+
+    #[test]
+    fn session_value_survives_separate_lua_evaluations() {
+        let plugin = LuaPlugin {
+            id: "tabs".to_owned(),
+            name: "Tabs Plugin".to_owned(),
+            badge: "TAB".to_owned(),
+            path: PathBuf::from("tabs/init.lua"),
+            source: r#"
+                return {
+                  search = function(query)
+                    if query == "set" then
+                      runx.session_set("tabs:snapshot", {
+                        { title = "One", url = "https://example.com" },
+                        { title = "Two", url = "https://example.org" },
+                      })
+                      return { { title = "stored", payload = {} } }
+                    end
+
+                    local tabs = runx.session_get("tabs:snapshot")
+                    return {
+                      {
+                        title = tabs[2].title,
+                        subtitle = tabs[2].url,
+                        payload = {},
+                      },
+                    }
+                  end,
+                }
+            "#
+            .to_owned(),
+            default_commands: HashMap::new(),
+        };
+        let store = session_store();
+
+        run_search(&plugin, "set", empty_plugin_config(), &[], store.clone())
+            .expect("first evaluation should store the snapshot");
+        let items =
+            run_search(&plugin, "get", empty_plugin_config(), &[], store).expect("search works");
+
+        assert_eq!(items[0].title, "Two");
+        assert_eq!(items[0].subtitle, "https://example.org");
+    }
+
+    #[test]
+    fn session_keys_are_scoped_by_plugin_id() {
+        let source = r#"
+            return {
+              search = function(query)
+                if query == "set" then
+                  runx.session_set("shared", "owned")
+                  return { { title = "stored", payload = {} } }
+                end
+
+                local value = runx.session_get("shared")
+                return { { title = value or "missing", payload = {} } }
+              end,
+            }
+        "#;
+        let plugin_a = LuaPlugin {
+            id: "a".to_owned(),
+            name: "A".to_owned(),
+            badge: "A".to_owned(),
+            path: PathBuf::from("a/init.lua"),
+            source: source.to_owned(),
+            default_commands: HashMap::new(),
+        };
+        let plugin_b = LuaPlugin {
+            id: "b".to_owned(),
+            name: "B".to_owned(),
+            badge: "B".to_owned(),
+            path: PathBuf::from("b/init.lua"),
+            source: source.to_owned(),
+            default_commands: HashMap::new(),
+        };
+        let store = session_store();
+
+        run_search(&plugin_a, "set", empty_plugin_config(), &[], store.clone())
+            .expect("plugin A should store its own value");
+        let items = run_search(&plugin_b, "get", empty_plugin_config(), &[], store)
+            .expect("plugin B search works");
+
+        assert_eq!(items[0].title, "missing");
+    }
+
+    #[test]
+    fn session_set_rejects_unsupported_values() {
+        let plugin = LuaPlugin {
+            id: "bad".to_owned(),
+            name: "Bad Plugin".to_owned(),
+            badge: "BAD".to_owned(),
+            path: PathBuf::from("bad/init.lua"),
+            source: r#"
+                return {
+                  search = function()
+                    runx.session_set("callback", function() end)
+                    return {}
+                  end,
+                }
+            "#
+            .to_owned(),
+            default_commands: HashMap::new(),
+        };
+
+        let error = run_search(&plugin, "", empty_plugin_config(), &[], session_store())
+            .expect_err("functions are not JSON-serializable");
+
+        assert!(format!("{error:#}").contains("function"));
+    }
+
+    #[test]
+    fn session_store_evicts_oldest_key_for_plugin() {
+        let mut store = PluginSessionStore::default();
+        for index in 0..=super::PLUGIN_SESSION_KEY_CAP {
+            store.set(
+                "cache",
+                format!("key-{index}"),
+                serde_json::json!({ "index": index }),
+            );
+        }
+
+        assert!(store.get("cache", "key-0").is_none());
+        assert_eq!(
+            store.get("cache", "key-1"),
+            Some(serde_json::json!({ "index": 1 }))
+        );
+        assert_eq!(
+            store.get("cache", "key-1024"),
+            Some(serde_json::json!({ "index": 1024 }))
+        );
+    }
+
+    #[test]
+    fn clear_session_store_removes_cached_values() {
+        let host = PluginHost::default();
+        {
+            let mut store = host.session_store.lock().expect("lock session store");
+            store.set("plugin", "key".to_owned(), serde_json::json!("value"));
+        }
+
+        host.clear_session_store();
+
+        let store = host.session_store.lock().expect("lock session store");
+        assert!(store.get("plugin", "key").is_none());
     }
 
     #[test]
@@ -459,8 +698,8 @@ mod tests {
             default_commands: HashMap::new(),
         };
 
-        let items =
-            run_search(&plugin, "", empty_plugin_config(), &[]).expect("search should succeed");
+        let items = run_search(&plugin, "", empty_plugin_config(), &[], session_store())
+            .expect("search should succeed");
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "function");
@@ -494,8 +733,8 @@ mod tests {
             default_commands: HashMap::new(),
         };
 
-        let items =
-            run_search(&plugin, "", empty_plugin_config(), &[]).expect("search should succeed");
+        let items = run_search(&plugin, "", empty_plugin_config(), &[], session_store())
+            .expect("search should succeed");
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "2");

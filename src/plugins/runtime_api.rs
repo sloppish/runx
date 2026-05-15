@@ -1,6 +1,7 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
+    sync::{Arc, Mutex},
 };
 
 use anyhow::{Context, Result};
@@ -17,7 +18,7 @@ use crate::{
 };
 
 use super::{
-    PluginExecutionContext,
+    PluginExecutionContext, PluginSessionStore,
     commands::{exec_capture, exec_status, parse_shell_args, walk_files},
 };
 
@@ -29,25 +30,70 @@ pub(super) fn load_table(
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
 ) -> Result<(Lua, Table)> {
-    load_table_with_context(
+    load_table_internal(
         path,
         source,
         &PluginExecutionContext::default(),
         plugin_config,
         search_paths,
+        None,
     )
 }
 
-pub(super) fn load_table_with_context(
+pub(super) fn load_table_with_session(
+    path: &Path,
+    source: &str,
+    plugin_id: &str,
+    plugin_config: &JsonValue,
+    search_paths: &[PathBuf],
+    session_store: Arc<Mutex<PluginSessionStore>>,
+) -> Result<(Lua, Table)> {
+    load_table_internal(
+        path,
+        source,
+        &PluginExecutionContext::default(),
+        plugin_config,
+        search_paths,
+        Some(PluginRuntimeSession {
+            plugin_id: plugin_id.to_owned(),
+            store: session_store,
+        }),
+    )
+}
+
+pub(super) fn load_table_with_context_and_session(
+    path: &Path,
+    source: &str,
+    plugin_id: &str,
+    context: &PluginExecutionContext,
+    plugin_config: &JsonValue,
+    search_paths: &[PathBuf],
+    session_store: Arc<Mutex<PluginSessionStore>>,
+) -> Result<(Lua, Table)> {
+    load_table_internal(
+        path,
+        source,
+        context,
+        plugin_config,
+        search_paths,
+        Some(PluginRuntimeSession {
+            plugin_id: plugin_id.to_owned(),
+            store: session_store,
+        }),
+    )
+}
+
+fn load_table_internal(
     path: &Path,
     source: &str,
     context: &PluginExecutionContext,
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
+    session: Option<PluginRuntimeSession>,
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
     lua.gc_stop();
-    install_runtime(&lua, path, context, plugin_config, search_paths)?;
+    install_runtime(&lua, path, context, plugin_config, search_paths, session)?;
     let table: Table = lua
         .load(source)
         .set_name(path.to_string_lossy().as_ref())
@@ -62,6 +108,7 @@ fn install_runtime(
     context: &PluginExecutionContext,
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
+    session: Option<PluginRuntimeSession>,
 ) -> Result<()> {
     let runtime = lua.create_table()?;
     let search_paths = search_paths.to_vec();
@@ -171,6 +218,34 @@ fn install_runtime(
         })?,
     )?;
 
+    if let Some(session) = session {
+        let set_session = session.clone();
+        runtime.set(
+            "session_set",
+            lua.create_function(move |lua, (key, value): (String, mlua::Value)| {
+                let json: JsonValue = lua.from_value(value)?;
+                with_session_store(&set_session.store, |store| {
+                    store.set(&set_session.plugin_id, key, json);
+                });
+                Ok(true)
+            })?,
+        )?;
+
+        let get_session = session;
+        runtime.set(
+            "session_get",
+            lua.create_function(move |lua, key: String| {
+                let value = with_session_store(&get_session.store, |store| {
+                    store.get(&get_session.plugin_id, &key)
+                });
+                match value {
+                    Some(value) => lua.to_value(&value),
+                    None => Ok(mlua::Value::Nil),
+                }
+            })?,
+        )?;
+    }
+
     runtime.set(
         "copy_text",
         lua.create_function(move |_, text: String| {
@@ -241,6 +316,25 @@ fn install_runtime(
 
     lua.globals().set("runx", runtime)?;
     Ok(())
+}
+
+#[derive(Clone)]
+struct PluginRuntimeSession {
+    plugin_id: String,
+    store: Arc<Mutex<PluginSessionStore>>,
+}
+
+fn with_session_store<T>(
+    store: &Arc<Mutex<PluginSessionStore>>,
+    f: impl FnOnce(&mut PluginSessionStore) -> T,
+) -> T {
+    match store.lock() {
+        Ok(mut store) => f(&mut store),
+        Err(poisoned) => {
+            let mut store = poisoned.into_inner();
+            f(&mut store)
+        }
+    }
 }
 
 pub(super) fn empty_plugin_config() -> JsonValue {
