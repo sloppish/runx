@@ -73,7 +73,9 @@ pub enum AppEvent {
     FrontendReadyWatchdog,
     QuickSwitchPoll,
     QuickSwitchShow,
-    QuickSwitchTabCycle,
+    QuickSwitchTabCycle {
+        delta: i32,
+    },
     QuickSwitchModifierReleased,
     ProviderItems {
         generation: u64,
@@ -109,7 +111,7 @@ pub enum FrontendCommand {
     CopyText { text: String },
     PasteText,
     Hide,
-    QuickSwitchCycle,
+    QuickSwitchCycle { delta: i32 },
 }
 
 /// Commands emitted by the Settings webview back into the Rust event loop.

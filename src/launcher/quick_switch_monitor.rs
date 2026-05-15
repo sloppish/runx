@@ -23,7 +23,12 @@ impl QuickSwitchMonitor {
                 return event.as_ptr();
             }
             if event_ref.keyCode() == key_code {
-                let _ = proxy.send_event(AppEvent::QuickSwitchTabCycle);
+                let delta = if flags.contains(NSEventModifierFlags::Shift) {
+                    -1
+                } else {
+                    1
+                };
+                let _ = proxy.send_event(AppEvent::QuickSwitchTabCycle { delta });
                 return std::ptr::null_mut();
             }
             event.as_ptr()

@@ -40,7 +40,10 @@ use crate::{
 };
 use action_runner::ActionRunner;
 use anyhow::{Context, Result};
-use global_hotkey::{GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState, hotkey::HotKey};
+use global_hotkey::{
+    GlobalHotKeyEvent, GlobalHotKeyManager, HotKeyState,
+    hotkey::{HotKey, Modifiers},
+};
 use tao::platform::macos::{WindowBuilderExtMacOS, WindowExtMacOS};
 use tao::{
     dpi::LogicalSize,
@@ -104,7 +107,9 @@ pub struct Launcher {
     hotkey_manager: GlobalHotKeyManager,
     hotkey: Option<HotKey>,
     quick_switch_hotkey: Option<HotKey>,
+    quick_switch_reverse_hotkey: Option<HotKey>,
     quick_switch_hotkey_registered: bool,
+    quick_switch_reverse_hotkey_registered: bool,
     runtime: Runtime,
     icons: Arc<IconCache>,
     providers: ProviderSet,
@@ -147,6 +152,7 @@ impl Launcher {
             loaded.config_path.parent().unwrap_or(Path::new(".")),
         );
         let quick_switch_hotkey = loaded.config.hotkey.quick_switch_hotkey()?;
+        let quick_switch_reverse_hotkey = reverse_quick_switch_hotkey(quick_switch_hotkey);
         let hotkey_manager =
             GlobalHotKeyManager::new().context("failed to create the hotkey manager")?;
         if let Some(hk) = hotkey {
@@ -158,6 +164,14 @@ impl Launcher {
             hotkey_manager
                 .register(qs)
                 .context("failed to register quick-switch hotkey")?;
+        }
+        let mut quick_switch_reverse_hotkey_registered = false;
+        if let Some(qs_reverse) = quick_switch_reverse_hotkey
+            && let Err(error) = hotkey_manager.register(qs_reverse)
+        {
+            warn!(?error, "failed to register reverse quick-switch hotkey");
+        } else {
+            quick_switch_reverse_hotkey_registered = quick_switch_reverse_hotkey.is_some();
         }
         let quick_switch_hotkey_registered = quick_switch_hotkey.is_some();
         let runtime = Builder::new_multi_thread()
@@ -218,7 +232,9 @@ impl Launcher {
             hotkey_manager,
             hotkey,
             quick_switch_hotkey,
+            quick_switch_reverse_hotkey,
             quick_switch_hotkey_registered,
+            quick_switch_reverse_hotkey_registered,
             runtime,
             icons,
             providers,
@@ -369,9 +385,9 @@ impl Launcher {
             }
             AppEvent::QuickSwitchPoll => self.handle_quick_switch_poll()?,
             AppEvent::QuickSwitchShow => self.handle_quick_switch_show()?,
-            AppEvent::QuickSwitchTabCycle => {
+            AppEvent::QuickSwitchTabCycle { delta } => {
                 if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
-                    self.state.session_mut().cycle_selection(1);
+                    self.state.session_mut().cycle_selection(delta);
                     self.render()?;
                 }
             }
@@ -410,7 +426,15 @@ impl Launcher {
             .quick_switch_hotkey
             .is_some_and(|hk| event.id == hk.id())
         {
-            self.handle_quick_switch_hotkey()?;
+            self.handle_quick_switch_hotkey(1)?;
+            return Ok(());
+        }
+
+        if self
+            .quick_switch_reverse_hotkey
+            .is_some_and(|hk| event.id == hk.id())
+        {
+            self.handle_quick_switch_hotkey(-1)?;
         }
         Ok(())
     }
@@ -552,9 +576,9 @@ impl Launcher {
                 }
             }
             FrontendCommand::Hide => self.hide_without_focus_restore()?,
-            FrontendCommand::QuickSwitchCycle => {
+            FrontendCommand::QuickSwitchCycle { delta } => {
                 if matches!(self.mode, LauncherMode::QuickSwitch { .. }) {
-                    self.state.session_mut().cycle_selection(1);
+                    self.state.session_mut().cycle_selection(delta);
                     self.render()?;
                 }
             }
@@ -734,6 +758,7 @@ impl Launcher {
 
         let reloaded_hotkey = loaded.config.hotkey()?;
         let reloaded_qs_hotkey = loaded.config.hotkey.quick_switch_hotkey()?;
+        let reloaded_qs_reverse_hotkey = reverse_quick_switch_hotkey(reloaded_qs_hotkey);
         let plugin_config = loaded.config.plugin_config()?;
         let plugin_routes = loaded.config.plugin_routes()?;
 
@@ -770,16 +795,13 @@ impl Launcher {
 
         if reloaded_qs_hotkey != self.quick_switch_hotkey {
             let previous_qs_hotkey = self.quick_switch_hotkey;
+            let previous_qs_reverse_hotkey = self.quick_switch_reverse_hotkey;
             let previous_qs_registered = self.quick_switch_hotkey_registered;
+            let previous_qs_reverse_registered = self.quick_switch_reverse_hotkey_registered;
 
-            if let Some(prev) = previous_qs_hotkey
-                && self.quick_switch_hotkey_registered
-            {
-                self.hotkey_manager
-                    .unregister(prev)
-                    .context("failed to unregister previous quick-switch hotkey")?;
-                self.quick_switch_hotkey_registered = false;
-            }
+            self.unregister_registered_quick_switch_hotkeys(
+                "failed to unregister previous quick-switch hotkey",
+            );
 
             let should_register_reloaded_qs =
                 !matches!(self.mode, LauncherMode::QuickSwitch { .. });
@@ -793,11 +815,30 @@ impl Launcher {
                         self.quick_switch_hotkey_registered =
                             self.hotkey_manager.register(prev).is_ok();
                     }
+                    if let Some(prev) = previous_qs_reverse_hotkey
+                        && previous_qs_reverse_registered
+                    {
+                        self.quick_switch_reverse_hotkey_registered =
+                            self.hotkey_manager.register(prev).is_ok();
+                    }
                     return Err(error).context("failed to register reloaded quick-switch hotkey");
                 }
                 self.quick_switch_hotkey_registered = reloaded_qs_hotkey.is_some();
+                if let Some(next) = reloaded_qs_reverse_hotkey
+                    && let Err(error) = self.hotkey_manager.register(next)
+                {
+                    warn!(
+                        ?error,
+                        "failed to register reloaded reverse quick-switch hotkey"
+                    );
+                    self.quick_switch_reverse_hotkey_registered = false;
+                } else {
+                    self.quick_switch_reverse_hotkey_registered =
+                        reloaded_qs_reverse_hotkey.is_some();
+                }
             }
             self.quick_switch_hotkey = reloaded_qs_hotkey;
+            self.quick_switch_reverse_hotkey = reloaded_qs_reverse_hotkey;
         }
 
         self.providers.end_session();
@@ -936,7 +977,7 @@ impl Launcher {
         }
     }
 
-    fn handle_quick_switch_hotkey(&mut self) -> Result<()> {
+    fn handle_quick_switch_hotkey(&mut self, delta: i32) -> Result<()> {
         if matches!(self.mode, LauncherMode::Regular) && self.state.is_visible() {
             return Ok(());
         }
@@ -945,7 +986,7 @@ impl Launcher {
             if !self.window.is_visible() {
                 self.reveal_quick_switch_window()?;
             }
-            self.state.session_mut().cycle_selection(1);
+            self.state.session_mut().cycle_selection(delta);
             self.render()?;
             return Ok(());
         }
@@ -979,35 +1020,56 @@ impl Launcher {
     }
 
     fn unregister_quick_switch_hotkey_for_capture(&mut self) {
-        if !self.quick_switch_hotkey_registered {
-            return;
-        }
-        let Some(hk) = self.quick_switch_hotkey else {
-            self.quick_switch_hotkey_registered = false;
-            return;
-        };
+        self.unregister_registered_quick_switch_hotkeys("failed to unregister quick-switch hotkey");
+    }
 
-        match self.hotkey_manager.unregister(hk) {
-            Ok(()) => {
-                self.quick_switch_hotkey_registered = false;
+    fn unregister_registered_quick_switch_hotkeys(&mut self, message: &str) {
+        if let Some(hk) = self.quick_switch_hotkey
+            && self.quick_switch_hotkey_registered
+        {
+            match self.hotkey_manager.unregister(hk) {
+                Ok(()) => self.quick_switch_hotkey_registered = false,
+                Err(error) => warn!(?error, message),
             }
-            Err(error) => {
-                warn!(?error, "failed to unregister quick-switch hotkey");
+        } else {
+            self.quick_switch_hotkey_registered = false;
+        }
+
+        if let Some(hk) = self.quick_switch_reverse_hotkey
+            && self.quick_switch_reverse_hotkey_registered
+        {
+            match self.hotkey_manager.unregister(hk) {
+                Ok(()) => self.quick_switch_reverse_hotkey_registered = false,
+                Err(error) => warn!(?error, message),
             }
+        } else {
+            self.quick_switch_reverse_hotkey_registered = false;
         }
     }
 
     fn reregister_quick_switch_hotkey(&mut self) {
-        if self.quick_switch_hotkey_registered {
-            return;
-        }
-        if let Some(hk) = self.quick_switch_hotkey {
+        if let Some(hk) = self.quick_switch_hotkey
+            && !self.quick_switch_hotkey_registered
+        {
             match self.hotkey_manager.register(hk) {
                 Ok(()) => {
                     self.quick_switch_hotkey_registered = true;
                 }
                 Err(error) => {
                     warn!(?error, "failed to re-register quick-switch hotkey");
+                }
+            }
+        }
+
+        if let Some(hk) = self.quick_switch_reverse_hotkey
+            && !self.quick_switch_reverse_hotkey_registered
+        {
+            match self.hotkey_manager.register(hk) {
+                Ok(()) => {
+                    self.quick_switch_reverse_hotkey_registered = true;
+                }
+                Err(error) => {
+                    warn!(?error, "failed to re-register reverse quick-switch hotkey");
                 }
             }
         }
@@ -1251,6 +1313,17 @@ fn build_window(
     Ok(window)
 }
 
+fn reverse_quick_switch_hotkey(hotkey: Option<HotKey>) -> Option<HotKey> {
+    let hotkey = hotkey?;
+    if hotkey.mods.contains(Modifiers::SHIFT) {
+        return None;
+    }
+    Some(HotKey::new(
+        Some(hotkey.mods | Modifiers::SHIFT),
+        hotkey.key,
+    ))
+}
+
 #[cfg(test)]
 mod tests {
     use super::{
@@ -1258,6 +1331,7 @@ mod tests {
         packaged_additional_apps_root_from_executable, settings_app_bundle_path_from_executable,
     };
     use crate::{config, state::AppState, types::ViewMode};
+    use global_hotkey::hotkey::{Code, HotKey, Modifiers};
 
     #[test]
     fn successful_reload_clears_latched_config_error_state() {
@@ -1319,5 +1393,23 @@ mod tests {
                 "/Applications/Runx.app/Contents/Applications"
             ))
         );
+    }
+
+    #[test]
+    fn reverse_quick_switch_hotkey_adds_shift_to_unshifted_shortcut() {
+        let hotkey = HotKey::new(Some(Modifiers::ALT), Code::Tab);
+        let reverse = super::reverse_quick_switch_hotkey(Some(hotkey))
+            .expect("unshifted hotkey should derive a reverse binding");
+
+        assert_eq!(reverse.key, Code::Tab);
+        assert!(reverse.mods.contains(Modifiers::ALT));
+        assert!(reverse.mods.contains(Modifiers::SHIFT));
+    }
+
+    #[test]
+    fn reverse_quick_switch_hotkey_skips_already_shifted_shortcut() {
+        let hotkey = HotKey::new(Some(Modifiers::ALT | Modifiers::SHIFT), Code::Tab);
+
+        assert!(super::reverse_quick_switch_hotkey(Some(hotkey)).is_none());
     }
 }

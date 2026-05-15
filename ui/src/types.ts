@@ -32,7 +32,7 @@ export type LauncherMessage =
   | { type: "copy_text"; text: string }
   | { type: "paste_text" }
   | { type: "hide" }
-  | { type: "quick_switch_cycle" }
+  | { type: "quick_switch_cycle"; delta: number }
   | { type: "preferred_height"; height: number; layout_version: number };
 
 export type SettingsMessage =

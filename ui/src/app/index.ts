@@ -248,7 +248,7 @@ if (typeof window !== "undefined" && window.document) {
     if (state.mode === "quick_switch") {
       if (event.altKey && event.code === "Tab") {
         event.preventDefault();
-        send({ type: "quick_switch_cycle" });
+        send({ type: "quick_switch_cycle", delta: event.shiftKey ? -1 : 1 });
         return;
       }
       if (event.key === "Escape") {
