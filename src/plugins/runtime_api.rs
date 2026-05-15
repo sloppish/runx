@@ -9,6 +9,7 @@ use mlua::{Lua, LuaSerdeExt, Table};
 use serde_json::Value as JsonValue;
 
 use crate::{
+    icons::IconCache,
     macos::{
         accessibility_windows_for_pid, copy_text_to_clipboard, focus_window,
         focus_window_and_activate_all_windows, read_clipboard_text, running_applications,
@@ -29,6 +30,7 @@ pub(super) fn load_table(
     source: &str,
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
+    icons: Option<Arc<IconCache>>,
 ) -> Result<(Lua, Table)> {
     load_table_internal(
         path,
@@ -37,6 +39,7 @@ pub(super) fn load_table(
         plugin_config,
         search_paths,
         None,
+        icons,
     )
 }
 
@@ -47,6 +50,7 @@ pub(super) fn load_table_with_session(
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<(Lua, Table)> {
     load_table_internal(
         path,
@@ -58,17 +62,18 @@ pub(super) fn load_table_with_session(
             plugin_id: plugin_id.to_owned(),
             store: session_store,
         }),
+        icons,
     )
 }
 
 pub(super) fn load_table_with_context_and_session(
     path: &Path,
     source: &str,
-    plugin_id: &str,
     context: &PluginExecutionContext,
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
-    session_store: Arc<Mutex<PluginSessionStore>>,
+    session: PluginRuntimeSession,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<(Lua, Table)> {
     load_table_internal(
         path,
@@ -76,10 +81,8 @@ pub(super) fn load_table_with_context_and_session(
         context,
         plugin_config,
         search_paths,
-        Some(PluginRuntimeSession {
-            plugin_id: plugin_id.to_owned(),
-            store: session_store,
-        }),
+        Some(session),
+        icons,
     )
 }
 
@@ -90,10 +93,19 @@ fn load_table_internal(
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
     session: Option<PluginRuntimeSession>,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
     lua.gc_stop();
-    install_runtime(&lua, path, context, plugin_config, search_paths, session)?;
+    install_runtime(
+        &lua,
+        path,
+        context,
+        plugin_config,
+        search_paths,
+        session,
+        icons,
+    )?;
     let table: Table = lua
         .load(source)
         .set_name(path.to_string_lossy().as_ref())
@@ -109,6 +121,7 @@ fn install_runtime(
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
     session: Option<PluginRuntimeSession>,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<()> {
     let runtime = lua.create_table()?;
     let search_paths = search_paths.to_vec();
@@ -278,6 +291,15 @@ fn install_runtime(
         lua.create_function(|lua, ()| lua.to_value(&running_applications()))?,
     )?;
 
+    runtime.set("icon_for_bundle_id", {
+        let icons = icons.clone();
+        lua.create_function(move |_, bundle_id: String| {
+            Ok(icons
+                .as_ref()
+                .and_then(|icons| icons.icon_for_bundle_id(&bundle_id)))
+        })?
+    })?;
+
     runtime.set(
         "windows_for_pid",
         lua.create_function(|lua, pid: i64| lua.to_value(&accessibility_windows_for_pid(pid)))?,
@@ -319,9 +341,18 @@ fn install_runtime(
 }
 
 #[derive(Clone)]
-struct PluginRuntimeSession {
+pub(super) struct PluginRuntimeSession {
     plugin_id: String,
     store: Arc<Mutex<PluginSessionStore>>,
+}
+
+impl PluginRuntimeSession {
+    pub(super) fn new(plugin_id: &str, store: Arc<Mutex<PluginSessionStore>>) -> Self {
+        Self {
+            plugin_id: plugin_id.to_owned(),
+            store,
+        }
+    }
 }
 
 fn with_session_store<T>(

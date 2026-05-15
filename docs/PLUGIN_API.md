@@ -204,6 +204,12 @@ Each returned app has:
 - `bundle_id`: bundle identifier, if available
 - `path`: application bundle path, if available
 
+#### `runx.icon_for_bundle_id(bundle_id: string) -> string?`
+
+Returns a Runx icon URL for a running application with the given bundle identifier, or `nil` when the app is unknown or the icon is still being prepared.
+
+The returned string is a lightweight `runx://localhost/icon/...webp` URL suitable for a search item's `icon` field. The first lookup may return `nil`; Runx will refresh visible results when the icon becomes ready.
+
 #### `runx.windows_for_pid(pid: integer) -> table[]`
 
 Returns Accessibility-visible windows for a running application process.

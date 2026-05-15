@@ -27,7 +27,7 @@ use wry::http::{
     header::{CACHE_CONTROL, CONTENT_TYPE},
 };
 
-use crate::types::AppEvent;
+use crate::{macos, types::AppEvent};
 use tracing::debug;
 
 use self::{
@@ -171,6 +171,21 @@ impl IconCache {
     pub fn icon_for_bundle<P: AsRef<Path>>(&self, bundle_path: P) -> Option<String> {
         let bundle_path = bundle_path.as_ref();
         self.icon_for_bundle_with_mode(bundle_path, IconLookupMode::Full)
+    }
+
+    /// Resolves an icon for a running application's bundle identifier.
+    pub fn icon_for_bundle_id(&self, bundle_id: &str) -> Option<String> {
+        let bundle_id = bundle_id.trim();
+        if bundle_id.is_empty() {
+            return None;
+        }
+
+        let bundle_path = macos::running_applications()
+            .into_iter()
+            .find(|app| app.bundle_id.as_deref() == Some(bundle_id))
+            .and_then(|app| app.path)?;
+
+        self.icon_for_bundle(bundle_path)
     }
 
     /// Resolves an icon only when the bundle exposes a concrete icon file.

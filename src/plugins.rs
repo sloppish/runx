@@ -24,6 +24,7 @@ use serde_json::Value as JsonValue;
 use tracing::warn;
 
 use crate::{
+    icons::IconCache,
     macos::FrontmostApp,
     types::{Action, PluginActionPayload, SearchItem},
 };
@@ -33,7 +34,7 @@ use self::{
     item_validation::{PluginItemWire, validate_plugin_item},
     routing::{PluginRoute, build_routes, match_command},
     runtime_api::{
-        empty_plugin_config, load_table, load_table_with_context_and_session,
+        PluginRuntimeSession, empty_plugin_config, load_table, load_table_with_context_and_session,
         load_table_with_session,
     },
 };
@@ -49,6 +50,7 @@ pub struct PluginHost {
     routes: Vec<PluginRoute>,
     routed_plugin_ids: HashSet<String>,
     session_store: Arc<Mutex<PluginSessionStore>>,
+    icons: Option<Arc<IconCache>>,
 }
 
 /// Shared in-memory session values scoped by plugin id and cleared per launcher invocation.
@@ -121,6 +123,7 @@ impl PluginHost {
         search_paths: &[PathBuf],
         config: HashMap<String, JsonValue>,
         route_config: HashMap<String, HashMap<String, String>>,
+        icons: Arc<IconCache>,
     ) -> Self {
         let mut plugins = Vec::new();
 
@@ -138,7 +141,7 @@ impl PluginHost {
                     continue;
                 }
 
-                match load_plugin(&init, search_paths) {
+                match load_plugin(&init, search_paths, Some(icons.clone())) {
                     Ok(plugin) => plugins.push(plugin),
                     Err(error) => {
                         warn!(
@@ -182,6 +185,7 @@ impl PluginHost {
             routes,
             routed_plugin_ids,
             session_store: Arc::new(Mutex::new(PluginSessionStore::default())),
+            icons: Some(icons),
         }
     }
 
@@ -201,6 +205,7 @@ impl PluginHost {
                 self.plugin_config(&plugin.id),
                 &self.search_paths,
                 self.session_store.clone(),
+                self.icons.clone(),
             )
             .with_context(|| {
                 format!(
@@ -221,6 +226,7 @@ impl PluginHost {
                 self.plugin_config(&plugin.id),
                 &self.search_paths,
                 self.session_store.clone(),
+                self.icons.clone(),
             )
             .with_context(|| format!("plugin `{}` search failed", plugin.id))?;
             items.extend(plugin_items);
@@ -247,6 +253,7 @@ impl PluginHost {
             self.plugin_config(plugin_id),
             &self.search_paths,
             self.session_store.clone(),
+            self.icons.clone(),
         )
     }
 
@@ -277,10 +284,14 @@ impl PluginHost {
     }
 }
 
-fn load_plugin(path: &Path, search_paths: &[PathBuf]) -> Result<LuaPlugin> {
+fn load_plugin(
+    path: &Path,
+    search_paths: &[PathBuf],
+    icons: Option<Arc<IconCache>>,
+) -> Result<LuaPlugin> {
     let source = fs::read_to_string(path)
         .with_context(|| format!("failed to read plugin {}", path.display()))?;
-    let (_lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths)?;
+    let (_lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths, icons)?;
     let metadata = extract_metadata(&table)?;
     let default_commands = extract_default_commands(&table);
 
@@ -359,6 +370,7 @@ fn run_search(
     plugin_config: JsonValue,
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<Vec<SearchItem>> {
     let (lua, table) = load_table_with_session(
         &plugin.path,
@@ -367,6 +379,7 @@ fn run_search(
         &plugin_config,
         search_paths,
         session_store,
+        icons,
     )?;
     let search: Function = match table.get::<Option<Function>>("search")? {
         Some(function) => function,
@@ -384,6 +397,7 @@ fn run_search_handler(
     plugin_config: JsonValue,
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<Vec<SearchItem>> {
     let (lua, table) = load_table_with_session(
         &plugin.path,
@@ -392,6 +406,7 @@ fn run_search_handler(
         &plugin_config,
         search_paths,
         session_store,
+        icons,
     )?;
     let search: Function = table
         .get::<Option<Function>>(handler_name)?
@@ -409,15 +424,16 @@ fn run_action(
     plugin_config: JsonValue,
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
+    icons: Option<Arc<IconCache>>,
 ) -> Result<Option<String>> {
     let (lua, table) = load_table_with_context_and_session(
         &plugin.path,
         &plugin.source,
-        &plugin.id,
         context,
         &plugin_config,
         search_paths,
-        session_store,
+        PluginRuntimeSession::new(&plugin.id, session_store),
+        icons,
     )?;
     let run: Function = match table.get::<Option<Function>>("run")? {
         Some(function) => function,
@@ -483,6 +499,7 @@ mod tests {
             empty_plugin_config(),
             &[],
             session_store(),
+            None,
         )
         .expect("handler search should succeed");
 
@@ -523,6 +540,7 @@ mod tests {
             empty_plugin_config(),
             &[],
             session_store(),
+            None,
         )
         .expect("handler search should succeed");
 
@@ -564,10 +582,17 @@ mod tests {
         };
         let store = session_store();
 
-        run_search(&plugin, "set", empty_plugin_config(), &[], store.clone())
-            .expect("first evaluation should store the snapshot");
-        let items =
-            run_search(&plugin, "get", empty_plugin_config(), &[], store).expect("search works");
+        run_search(
+            &plugin,
+            "set",
+            empty_plugin_config(),
+            &[],
+            store.clone(),
+            None,
+        )
+        .expect("first evaluation should store the snapshot");
+        let items = run_search(&plugin, "get", empty_plugin_config(), &[], store, None)
+            .expect("search works");
 
         assert_eq!(items[0].title, "Two");
         assert_eq!(items[0].subtitle, "https://example.org");
@@ -606,9 +631,16 @@ mod tests {
         };
         let store = session_store();
 
-        run_search(&plugin_a, "set", empty_plugin_config(), &[], store.clone())
-            .expect("plugin A should store its own value");
-        let items = run_search(&plugin_b, "get", empty_plugin_config(), &[], store)
+        run_search(
+            &plugin_a,
+            "set",
+            empty_plugin_config(),
+            &[],
+            store.clone(),
+            None,
+        )
+        .expect("plugin A should store its own value");
+        let items = run_search(&plugin_b, "get", empty_plugin_config(), &[], store, None)
             .expect("plugin B search works");
 
         assert_eq!(items[0].title, "missing");
@@ -633,8 +665,15 @@ mod tests {
             default_commands: HashMap::new(),
         };
 
-        let error = run_search(&plugin, "", empty_plugin_config(), &[], session_store())
-            .expect_err("functions are not JSON-serializable");
+        let error = run_search(
+            &plugin,
+            "",
+            empty_plugin_config(),
+            &[],
+            session_store(),
+            None,
+        )
+        .expect_err("functions are not JSON-serializable");
 
         assert!(format!("{error:#}").contains("function"));
     }
@@ -698,8 +737,15 @@ mod tests {
             default_commands: HashMap::new(),
         };
 
-        let items = run_search(&plugin, "", empty_plugin_config(), &[], session_store())
-            .expect("search should succeed");
+        let items = run_search(
+            &plugin,
+            "",
+            empty_plugin_config(),
+            &[],
+            session_store(),
+            None,
+        )
+        .expect("search should succeed");
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "function");
@@ -720,6 +766,7 @@ mod tests {
                         title = tostring(runx.api_version),
                         subtitle = table.concat({
                           type(runx.running_apps),
+                          type(runx.icon_for_bundle_id),
                           type(runx.windows_for_pid),
                           type(runx.focus_window),
                         }, "|"),
@@ -733,12 +780,56 @@ mod tests {
             default_commands: HashMap::new(),
         };
 
-        let items = run_search(&plugin, "", empty_plugin_config(), &[], session_store())
-            .expect("search should succeed");
+        let items = run_search(
+            &plugin,
+            "",
+            empty_plugin_config(),
+            &[],
+            session_store(),
+            None,
+        )
+        .expect("search should succeed");
 
         assert_eq!(items.len(), 1);
         assert_eq!(items[0].title, "2");
-        assert_eq!(items[0].subtitle, "function|function|function");
+        assert_eq!(items[0].subtitle, "function|function|function|function");
+    }
+
+    #[test]
+    fn icon_for_bundle_id_returns_nil_without_icon_cache() {
+        let plugin = LuaPlugin {
+            id: "icons".to_owned(),
+            name: "Icons Plugin".to_owned(),
+            badge: "ICO".to_owned(),
+            path: PathBuf::from("icons/init.lua"),
+            source: r#"
+                return {
+                  search = function()
+                    return {
+                      {
+                        title = tostring(runx.icon_for_bundle_id("com.example.Missing") == nil),
+                        payload = { kind = "noop" },
+                      },
+                    }
+                  end,
+                }
+            "#
+            .to_owned(),
+            default_commands: HashMap::new(),
+        };
+
+        let items = run_search(
+            &plugin,
+            "",
+            empty_plugin_config(),
+            &[],
+            session_store(),
+            None,
+        )
+        .expect("search should succeed");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "true");
     }
 
     #[test]
@@ -786,7 +877,7 @@ mod tests {
 
     #[test]
     fn extract_default_commands_from_lua_table() {
-        let plugin = super::load_plugin(&PathBuf::from("test/init.lua"), &[]);
+        let plugin = super::load_plugin(&PathBuf::from("test/init.lua"), &[], None);
         // load_plugin requires a real file, so test via a full plugin load instead
         let source = r#"
             return {
@@ -804,8 +895,8 @@ mod tests {
         std::fs::create_dir(&plugin_dir).expect("mkdir");
         std::fs::write(plugin_dir.join("init.lua"), source).expect("write");
 
-        let loaded =
-            super::load_plugin(&plugin_dir.join("init.lua"), &[]).expect("plugin should load");
+        let loaded = super::load_plugin(&plugin_dir.join("init.lua"), &[], None)
+            .expect("plugin should load");
         drop(plugin);
         assert_eq!(loaded.default_commands.len(), 2);
         assert_eq!(loaded.default_commands["foo"], "search_foo");
@@ -825,8 +916,8 @@ mod tests {
         std::fs::create_dir(&plugin_dir).expect("mkdir");
         std::fs::write(plugin_dir.join("init.lua"), source).expect("write");
 
-        let loaded =
-            super::load_plugin(&plugin_dir.join("init.lua"), &[]).expect("plugin should load");
+        let loaded = super::load_plugin(&plugin_dir.join("init.lua"), &[], None)
+            .expect("plugin should load");
         assert!(loaded.default_commands.is_empty());
     }
 }

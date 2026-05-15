@@ -180,13 +180,14 @@ impl Launcher {
             .context("failed to build the async runtime")?;
 
         let config = Arc::new(loaded.config.clone());
+        let icons = Arc::new(IconCache::new(Some(proxy.clone()))?);
         let plugins = Arc::new(plugins::PluginHost::load(
             &loaded.plugin_dirs,
             &loaded.plugin_search_paths,
             plugin_config,
             plugin_routes,
+            icons.clone(),
         ));
-        let icons = Arc::new(IconCache::new(Some(proxy.clone()))?);
         let providers = ProviderSet::new(
             config.clone(),
             plugins.clone(),
@@ -768,6 +769,7 @@ impl Launcher {
             &loaded.plugin_search_paths,
             plugin_config,
             plugin_routes,
+            self.icons.clone(),
         ));
         let providers = ProviderSet::new(
             config.clone(),

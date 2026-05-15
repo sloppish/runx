@@ -80,6 +80,10 @@ function runx.home_dir() end
 ---@return RunxRunningApp[]
 function runx.running_apps() end
 
+---@param bundle_id string
+---@return string?
+function runx.icon_for_bundle_id(bundle_id) end
+
 ---@class RunxWindow
 ---@field window_id integer
 ---@field title string
