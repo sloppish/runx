@@ -6,7 +6,10 @@ use objc2_app_kit::{
     NSWorkspace,
 };
 
-use super::{process::run_quiet, types::FrontmostApp};
+use super::{
+    process::run_quiet,
+    types::{FrontmostApp, RunningApp},
+};
 
 #[derive(Clone, Copy)]
 pub(super) enum AppActivationMode {
@@ -49,6 +52,40 @@ pub fn capture_frontmost_app() -> Result<Option<FrontmostApp>> {
     }
 
     Ok(Some(app))
+}
+
+/// Returns user-visible running applications.
+pub fn running_applications() -> Vec<RunningApp> {
+    let running_apps = NSWorkspace::sharedWorkspace().runningApplications();
+    let mut output = Vec::new();
+
+    for index in 0..running_apps.count() {
+        let app = running_apps.objectAtIndex(index);
+        if app.activationPolicy() != NSApplicationActivationPolicy::Regular {
+            continue;
+        }
+
+        let name = app
+            .localizedName()
+            .map(|value| value.to_string())
+            .or_else(|| app.bundleIdentifier().map(|value| value.to_string()))
+            .unwrap_or_else(|| format!("pid {}", app.processIdentifier()));
+        output.push(RunningApp {
+            pid: i64::from(app.processIdentifier()),
+            name,
+            bundle_id: app.bundleIdentifier().map(|value| value.to_string()),
+            path: app
+                .bundleURL()
+                .and_then(|url| url.path().map(|path| path.to_string()))
+                .or_else(|| {
+                    app.executableURL()
+                        .and_then(|url| url.path().map(|path| path.to_string()))
+                        .and_then(|path| bundle_root_from_executable_path(&path))
+                }),
+        });
+    }
+
+    output
 }
 
 /// Returns whether the app can normally own foreground windows.

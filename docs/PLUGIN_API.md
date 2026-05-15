@@ -171,7 +171,7 @@ Runx provides a built-in `runx` table with utility functions. Parameters marked 
 
 #### `runx.api_version`: integer
 
-Current API version (currently `1`).
+Current API version (currently `2`).
 
 #### `runx.plugin_path`: string
 
@@ -192,6 +192,46 @@ Returns the user's home directory path.
 #### `runx.getenv(name: string) -> string?`
 
 Returns an environment variable or `nil`.
+
+#### `runx.running_apps() -> table[]`
+
+Returns regular foreground-capable macOS applications currently known to the system.
+
+Each returned app has:
+
+- `pid`: process ID
+- `name`: localized application name or bundle identifier fallback
+- `bundle_id`: bundle identifier, if available
+- `path`: application bundle path, if available
+
+#### `runx.windows_for_pid(pid: integer) -> table[]`
+
+Returns Accessibility-visible windows for a running application process.
+
+Each returned window has:
+
+- `window_id`: CoreGraphics window ID
+- `title`: Accessibility window title
+- `subrole`: Accessibility subrole, such as `AXStandardWindow`
+
+Requires Accessibility permission for Runx.
+
+#### `runx.focus_window(options: table) -> string`
+
+Focuses a specific macOS window using the same focusing path as Runx's built-in window provider.
+
+Required options:
+
+- `pid`: process ID
+- `window_id`: CoreGraphics window ID
+
+Optional options:
+
+- `app_name`: application name used in feedback messages
+- `title` or `window_title`: window title used in feedback messages
+- `all_windows`: when `true`, activates all windows for the app before focusing the target
+
+Requires Accessibility permission for exact window focus. If the target cannot be focused directly, Runx falls back to activating the app and returns a feedback message.
 
 ### Files & Execution
 

@@ -8,7 +8,11 @@ use mlua::{Lua, LuaSerdeExt, Table};
 use serde_json::Value as JsonValue;
 
 use crate::{
-    macos::{copy_text_to_clipboard, read_clipboard_text, type_text_into_previous_app},
+    macos::{
+        accessibility_windows_for_pid, copy_text_to_clipboard, focus_window,
+        focus_window_and_activate_all_windows, read_clipboard_text, running_applications,
+        type_text_into_previous_app,
+    },
     scoring::fuzzy_score,
 };
 
@@ -17,7 +21,7 @@ use super::{
     commands::{exec_capture, exec_status, parse_shell_args, walk_files},
 };
 
-const PLUGIN_API_VERSION: u32 = 1;
+const PLUGIN_API_VERSION: u32 = 2;
 
 pub(super) fn load_table(
     path: &Path,
@@ -191,6 +195,43 @@ fn install_runtime(
         lua.create_function(|_, ()| {
             let home = BaseHome::resolve()?;
             Ok(home.display().to_string())
+        })?,
+    )?;
+
+    runtime.set(
+        "running_apps",
+        lua.create_function(|lua, ()| lua.to_value(&running_applications()))?,
+    )?;
+
+    runtime.set(
+        "windows_for_pid",
+        lua.create_function(|lua, pid: i64| lua.to_value(&accessibility_windows_for_pid(pid)))?,
+    )?;
+
+    runtime.set(
+        "focus_window",
+        lua.create_function(|_, options: Table| {
+            let pid: i64 = options.get("pid")?;
+            let window_id: u32 = options.get("window_id")?;
+            let app_name = options
+                .get::<Option<String>>("app_name")?
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| format!("pid {pid}"));
+            let window_title = options
+                .get::<Option<String>>("window_title")?
+                .or(options.get::<Option<String>>("title")?)
+                .filter(|value| !value.trim().is_empty())
+                .unwrap_or_else(|| format!("window {window_id}"));
+            let all_windows = options.get::<Option<bool>>("all_windows")?.unwrap_or(false);
+
+            let message = if all_windows {
+                focus_window_and_activate_all_windows(&app_name, &window_title, window_id, pid)
+            } else {
+                focus_window(&app_name, &window_title, window_id, pid)
+            }
+            .map_err(mlua::Error::external)?;
+
+            Ok(message.unwrap_or_else(|| format!("Focused {window_title}")))
         })?,
     )?;
 

@@ -61,3 +61,33 @@ function runx.type_text(text) end
 
 ---@return string
 function runx.home_dir() end
+
+---@class RunxRunningApp
+---@field pid integer
+---@field name string
+---@field bundle_id string?
+---@field path string?
+
+---@return RunxRunningApp[]
+function runx.running_apps() end
+
+---@class RunxWindow
+---@field window_id integer
+---@field title string
+---@field subrole string
+
+---@param pid integer
+---@return RunxWindow[]
+function runx.windows_for_pid(pid) end
+
+---@class RunxFocusWindowOptions
+---@field pid integer
+---@field window_id integer
+---@field app_name? string
+---@field title? string
+---@field window_title? string
+---@field all_windows? boolean
+
+---@param options RunxFocusWindowOptions
+---@return string
+function runx.focus_window(options) end

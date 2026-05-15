@@ -467,6 +467,42 @@ mod tests {
     }
 
     #[test]
+    fn runtime_exposes_window_helpers() {
+        let plugin = LuaPlugin {
+            id: "windows".to_owned(),
+            name: "Windows Plugin".to_owned(),
+            badge: "WIN".to_owned(),
+            path: PathBuf::from("windows/init.lua"),
+            source: r#"
+                return {
+                  search = function()
+                    return {
+                      {
+                        title = tostring(runx.api_version),
+                        subtitle = table.concat({
+                          type(runx.running_apps),
+                          type(runx.windows_for_pid),
+                          type(runx.focus_window),
+                        }, "|"),
+                        payload = { kind = "noop" },
+                      },
+                    }
+                  end,
+                }
+            "#
+            .to_owned(),
+            default_commands: HashMap::new(),
+        };
+
+        let items =
+            run_search(&plugin, "", empty_plugin_config(), &[]).expect("search should succeed");
+
+        assert_eq!(items.len(), 1);
+        assert_eq!(items[0].title, "2");
+        assert_eq!(items[0].subtitle, "function|function|function");
+    }
+
+    #[test]
     fn default_commands_merged_into_routes_when_no_user_config() {
         use super::routing::build_routes;
 
