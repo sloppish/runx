@@ -104,6 +104,7 @@ pub struct Launcher {
     hotkey_manager: GlobalHotKeyManager,
     hotkey: Option<HotKey>,
     quick_switch_hotkey: Option<HotKey>,
+    quick_switch_hotkey_registered: bool,
     runtime: Runtime,
     icons: Arc<IconCache>,
     providers: ProviderSet,
@@ -158,6 +159,7 @@ impl Launcher {
                 .register(qs)
                 .context("failed to register quick-switch hotkey")?;
         }
+        let quick_switch_hotkey_registered = quick_switch_hotkey.is_some();
         let runtime = Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -216,6 +218,7 @@ impl Launcher {
             hotkey_manager,
             hotkey,
             quick_switch_hotkey,
+            quick_switch_hotkey_registered,
             runtime,
             icons,
             providers,
@@ -766,18 +769,33 @@ impl Launcher {
         }
 
         if reloaded_qs_hotkey != self.quick_switch_hotkey {
-            if let Some(prev) = self.quick_switch_hotkey {
+            let previous_qs_hotkey = self.quick_switch_hotkey;
+            let previous_qs_registered = self.quick_switch_hotkey_registered;
+
+            if let Some(prev) = previous_qs_hotkey
+                && self.quick_switch_hotkey_registered
+            {
                 self.hotkey_manager
                     .unregister(prev)
                     .context("failed to unregister previous quick-switch hotkey")?;
+                self.quick_switch_hotkey_registered = false;
             }
-            if let Some(next) = reloaded_qs_hotkey
-                && let Err(error) = self.hotkey_manager.register(next)
-            {
-                if let Some(prev) = self.quick_switch_hotkey {
-                    let _ = self.hotkey_manager.register(prev);
+
+            let should_register_reloaded_qs =
+                !matches!(self.mode, LauncherMode::QuickSwitch { .. });
+            if should_register_reloaded_qs {
+                if let Some(next) = reloaded_qs_hotkey
+                    && let Err(error) = self.hotkey_manager.register(next)
+                {
+                    if let Some(prev) = previous_qs_hotkey
+                        && previous_qs_registered
+                    {
+                        self.quick_switch_hotkey_registered =
+                            self.hotkey_manager.register(prev).is_ok();
+                    }
+                    return Err(error).context("failed to register reloaded quick-switch hotkey");
                 }
-                return Err(error).context("failed to register reloaded quick-switch hotkey");
+                self.quick_switch_hotkey_registered = reloaded_qs_hotkey.is_some();
             }
             self.quick_switch_hotkey = reloaded_qs_hotkey;
         }
@@ -937,7 +955,7 @@ impl Launcher {
             pending_commit: false,
         };
         if let Some(hk) = self.quick_switch_hotkey {
-            let _ = self.hotkey_manager.unregister(hk);
+            self.unregister_quick_switch_hotkey_for_capture();
             if let Some(key_code) = quick_switch_monitor::code_to_macos_keycode(hk.key) {
                 self.quick_switch_monitor =
                     quick_switch_monitor::QuickSwitchMonitor::install(self.proxy.clone(), key_code);
@@ -960,11 +978,38 @@ impl Launcher {
         Ok(())
     }
 
-    fn reregister_quick_switch_hotkey(&self) {
-        if let Some(hk) = self.quick_switch_hotkey
-            && let Err(error) = self.hotkey_manager.register(hk)
-        {
-            warn!(?error, "failed to re-register quick-switch hotkey");
+    fn unregister_quick_switch_hotkey_for_capture(&mut self) {
+        if !self.quick_switch_hotkey_registered {
+            return;
+        }
+        let Some(hk) = self.quick_switch_hotkey else {
+            self.quick_switch_hotkey_registered = false;
+            return;
+        };
+
+        match self.hotkey_manager.unregister(hk) {
+            Ok(()) => {
+                self.quick_switch_hotkey_registered = false;
+            }
+            Err(error) => {
+                warn!(?error, "failed to unregister quick-switch hotkey");
+            }
+        }
+    }
+
+    fn reregister_quick_switch_hotkey(&mut self) {
+        if self.quick_switch_hotkey_registered {
+            return;
+        }
+        if let Some(hk) = self.quick_switch_hotkey {
+            match self.hotkey_manager.register(hk) {
+                Ok(()) => {
+                    self.quick_switch_hotkey_registered = true;
+                }
+                Err(error) => {
+                    warn!(?error, "failed to re-register quick-switch hotkey");
+                }
+            }
         }
     }
 
