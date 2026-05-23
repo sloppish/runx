@@ -64,6 +64,8 @@ return {
 | `id` | no | string | Directory name | Stable identifier used to match `[plugin.<id>]` config and command routes. |
 | `name` | no | string | Directory name | Display name shown in the UI. |
 | `badge` | no | string | `"PLG"` | Default badge shown on full-style items. |
+| `commands` | no | table | - | Default command routes: `{ prefix = "handler_name" }`. |
+| `aliases` | no | table | - | Default command aliases: `{ command = "alias" }`. |
 | `search` | no | function | - | Generic search entrypoint for normal queries. |
 | `run` | no | function | - | Called when a plugin item is activated. |
 | `\<handler\>` | no | function | - | Named routed handlers referenced by `commands`. |
@@ -110,6 +112,31 @@ Users can override a plugin's default commands in `config.toml`:
 ```
 
 When `[plugin.<id>.commands]` is present in the user's config, it completely replaces the plugin's built-in `commands` table.
+
+### Command Aliases
+
+Plugins can declare aliases for their commands:
+
+```lua
+return {
+  commands = { "pass-otp" = "search_otp" },
+  aliases = { "pass-otp" = "otp" },
+  ...
+}
+```
+
+Each alias maps a canonical command name (key) to a shorter trigger (value). Typing `p foo` behaves identically to `pass foo` — the alias is transparent to the plugin handler.
+
+Users can override aliases in `config.toml`:
+
+```toml
+[plugin.pass.aliases]
+pass-otp = "otp"
+```
+
+When `[plugin.<id>.aliases]` is present, it completely replaces the plugin's built-in `aliases` table. An empty section disables all aliases.
+
+Alias conflicts (two routes sharing the same trigger string) are rejected at config load time.
 
 **Lua handler signature:**
 ```lua

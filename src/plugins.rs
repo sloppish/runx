@@ -101,6 +101,7 @@ struct LuaPlugin {
     path: PathBuf,
     source: String,
     default_commands: HashMap<String, String>,
+    default_aliases: HashMap<String, String>,
 }
 
 #[derive(Debug, Deserialize)]
@@ -123,8 +124,9 @@ impl PluginHost {
         search_paths: &[PathBuf],
         config: HashMap<String, JsonValue>,
         route_config: HashMap<String, HashMap<String, String>>,
+        alias_config: HashMap<String, HashMap<String, String>>,
         icons: Arc<IconCache>,
-    ) -> Self {
+    ) -> Result<Self> {
         let mut plugins = Vec::new();
 
         for directory in directories {
@@ -165,7 +167,15 @@ impl PluginHost {
             }
         }
 
-        let mut routes = build_routes(merged_route_config);
+        let mut merged_alias_config = alias_config;
+        for plugin in &plugins {
+            if !plugin.default_aliases.is_empty() && !merged_alias_config.contains_key(&plugin.id)
+            {
+                merged_alias_config.insert(plugin.id.clone(), plugin.default_aliases.clone());
+            }
+        }
+
+        let mut routes = build_routes(merged_route_config, &merged_alias_config)?;
         routes.sort_by(|left, right| {
             right
                 .command
@@ -178,7 +188,7 @@ impl PluginHost {
             .iter()
             .map(|route| route.plugin_id.clone())
             .collect::<HashSet<_>>();
-        Self {
+        Ok(Self {
             plugins,
             search_paths: search_paths.to_vec(),
             config,
@@ -186,7 +196,7 @@ impl PluginHost {
             routed_plugin_ids,
             session_store: Arc::new(Mutex::new(PluginSessionStore::default())),
             icons: Some(icons),
-        }
+        })
     }
 
     /// Returns search items contributed by plugins for the current query.
@@ -294,6 +304,7 @@ fn load_plugin(
     let (_lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths, icons)?;
     let metadata = extract_metadata(&table)?;
     let default_commands = extract_default_commands(&table);
+    let default_aliases = extract_default_aliases(&table);
 
     let fallback_id = path
         .parent()
@@ -309,6 +320,7 @@ fn load_plugin(
         path: path.to_path_buf(),
         source,
         default_commands,
+        default_aliases,
     })
 }
 
@@ -336,6 +348,24 @@ fn extract_default_commands(table: &Table) -> HashMap<String, String> {
         }
     }
     commands
+}
+
+fn extract_default_aliases(table: &Table) -> HashMap<String, String> {
+    let mut aliases = HashMap::new();
+    let Ok(Some(aliases_table)) = table.get::<Option<Table>>("aliases") else {
+        return aliases;
+    };
+    for pair in aliases_table.pairs::<String, String>() {
+        let Ok((key, value)) = pair else {
+            continue;
+        };
+        let key = key.trim().to_owned();
+        let value = value.trim().to_owned();
+        if !key.is_empty() && !value.is_empty() {
+            aliases.insert(key, value);
+        }
+    }
+    aliases
 }
 
 fn items_from_wire(plugin: &LuaPlugin, raw_items: Vec<PluginItemWire>) -> Result<Vec<SearchItem>> {
@@ -490,6 +520,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
 
         let items = run_search_handler(
@@ -531,6 +562,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
 
         let items = run_search_handler(
@@ -579,6 +611,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
         let store = session_store();
 
@@ -620,6 +653,7 @@ mod tests {
             path: PathBuf::from("a/init.lua"),
             source: source.to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
         let plugin_b = LuaPlugin {
             id: "b".to_owned(),
@@ -628,6 +662,7 @@ mod tests {
             path: PathBuf::from("b/init.lua"),
             source: source.to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
         let store = session_store();
 
@@ -663,6 +698,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
 
         let error = run_search(
@@ -735,6 +771,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
 
         let items = run_search(
@@ -778,6 +815,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
 
         let items = run_search(
@@ -816,6 +854,7 @@ mod tests {
             "#
             .to_owned(),
             default_commands: HashMap::new(),
+            default_aliases: HashMap::new(),
         };
 
         let items = run_search(
@@ -845,7 +884,7 @@ mod tests {
             merged.insert(plugin_id.to_owned(), default_commands);
         }
 
-        let routes = build_routes(merged);
+        let routes = build_routes(merged, &HashMap::new()).unwrap();
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].command, "greet");
         assert_eq!(routes[0].handler, "search_greet");
@@ -869,7 +908,7 @@ mod tests {
             merged.insert(plugin_id.to_owned(), default_commands);
         }
 
-        let routes = build_routes(merged);
+        let routes = build_routes(merged, &HashMap::new()).unwrap();
         // Should only have user's "hi" route, not plugin's default "greet"
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].command, "hi");
@@ -919,5 +958,93 @@ mod tests {
         let loaded = super::load_plugin(&plugin_dir.join("init.lua"), &[], None)
             .expect("plugin should load");
         assert!(loaded.default_commands.is_empty());
+    }
+
+    #[test]
+    fn extract_default_aliases_from_lua_table() {
+        let source = r#"
+            return {
+              id = "pass",
+              commands = { pass = "search", otp = "search_otp" },
+              aliases = { pass = "p", otp = "o" },
+              search = function() return {} end,
+              search_otp = function() return {} end,
+            }
+        "#;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = dir.path().join("pass");
+        std::fs::create_dir(&plugin_dir).expect("mkdir");
+        std::fs::write(plugin_dir.join("init.lua"), source).expect("write");
+
+        let loaded = super::load_plugin(&plugin_dir.join("init.lua"), &[], None)
+            .expect("plugin should load");
+        assert_eq!(loaded.default_aliases.len(), 2);
+        assert_eq!(loaded.default_aliases["pass"], "p");
+        assert_eq!(loaded.default_aliases["otp"], "o");
+    }
+
+    #[test]
+    fn extract_default_aliases_returns_empty_when_no_aliases_table() {
+        let source = r#"
+            return {
+              id = "test",
+              commands = { test = "search" },
+              search = function() return {} end,
+            }
+        "#;
+        let dir = tempfile::tempdir().expect("tempdir");
+        let plugin_dir = dir.path().join("test");
+        std::fs::create_dir(&plugin_dir).expect("mkdir");
+        std::fs::write(plugin_dir.join("init.lua"), source).expect("write");
+
+        let loaded = super::load_plugin(&plugin_dir.join("init.lua"), &[], None)
+            .expect("plugin should load");
+        assert!(loaded.default_aliases.is_empty());
+    }
+
+    #[test]
+    fn default_aliases_merged_into_routes_when_no_user_config() {
+        use super::routing::build_routes;
+
+        let commands = HashMap::from([("pass".to_owned(), "search".to_owned())]);
+        let aliases = HashMap::from([("pass".to_owned(), "p".to_owned())]);
+
+        let route_config = HashMap::from([("pass".to_owned(), commands)]);
+        let alias_config = HashMap::from([("pass".to_owned(), aliases)]);
+
+        let routes = build_routes(route_config, &alias_config).unwrap();
+        assert_eq!(routes.len(), 2);
+        assert!(routes.iter().any(|r| r.command == "pass"));
+        assert!(routes.iter().any(|r| r.command == "p" && r.handler == "search"));
+    }
+
+    #[test]
+    fn user_alias_config_replaces_plugin_defaults() {
+        use super::routing::build_routes;
+
+        let commands = HashMap::from([("pass".to_owned(), "search".to_owned())]);
+        let user_aliases = HashMap::from([("pass".to_owned(), "pw".to_owned())]);
+
+        let route_config = HashMap::from([("pass".to_owned(), commands)]);
+        let alias_config = HashMap::from([("pass".to_owned(), user_aliases)]);
+
+        let routes = build_routes(route_config, &alias_config).unwrap();
+        assert_eq!(routes.len(), 2);
+        assert!(routes.iter().any(|r| r.command == "pw"));
+        assert!(!routes.iter().any(|r| r.command == "p"));
+    }
+
+    #[test]
+    fn empty_alias_config_suppresses_defaults() {
+        use super::routing::build_routes;
+
+        let commands = HashMap::from([("pass".to_owned(), "search".to_owned())]);
+
+        let route_config = HashMap::from([("pass".to_owned(), commands)]);
+        let alias_config = HashMap::from([("pass".to_owned(), HashMap::new())]);
+
+        let routes = build_routes(route_config, &alias_config).unwrap();
+        assert_eq!(routes.len(), 1);
+        assert_eq!(routes[0].command, "pass");
     }
 }

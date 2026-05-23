@@ -146,11 +146,12 @@ A single managed plugin to clone and keep up to date.
 
 ## [plugin.\<id\>]
 
-Per-plugin configuration lives under `[plugin.<id>]`. Runx passes the full table to the plugin runtime as `runx.plugin_config`, except for the reserved `commands` subtable.
+Per-plugin configuration lives under `[plugin.<id>]`. Runx passes the full table to the plugin runtime as `runx.plugin_config`, except for the reserved `commands` and `aliases` subtables.
 
 | Option | Type | Default | Description |
 | --- | --- | --- | --- |
 | `commands` | table | - | Reserved for command routing. See `[plugin.<id>.commands]`. |
+| `aliases` | table | - | Reserved for command aliases. See `[plugin.<id>.aliases]`. |
 | `<your keys>` | TOML values | - | Arbitrary plugin-specific settings. These are available inside the plugin through `runx.plugin_config`. |
 
 ## [plugin.\<id\>.commands]
@@ -161,6 +162,17 @@ Command routing maps a typed prefix to a named Lua search handler. A route match
 | --- | --- | --- | --- |
 | `<command>` | string key | - | Command prefix typed into Runx, for example `pass` or `emoji`. |
 | value | string | - | Name of the exported Lua handler to call, for example `search_type_password`. |
+
+## [plugin.\<id\>.aliases]
+
+Command aliases provide shorter triggers for existing commands. Each entry maps a canonical command name to an alias string. Typing the alias behaves identically to typing the full command — it is transparent to the plugin.
+
+| Option | Type | Default | Description |
+| --- | --- | --- | --- |
+| `<command>` | string key | - | Canonical command name that has a route. |
+| value | string | - | Alias trigger. |
+
+When this section is present, it completely replaces the plugin's built-in aliases. An empty `[plugin.<id>.aliases]` section disables all default aliases for that plugin. Alias conflicts (duplicate route triggers across all plugins) are rejected at config load time.
 
 ## [ui]
 

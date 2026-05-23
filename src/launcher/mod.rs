@@ -140,6 +140,7 @@ impl Launcher {
             hotkey,
             plugin_config,
             plugin_routes,
+            plugin_aliases,
             config_error,
         } = bootstrap;
         logging::init_launcher_logging(loaded.config.debug_log);
@@ -186,8 +187,9 @@ impl Launcher {
             &loaded.plugin_search_paths,
             plugin_config,
             plugin_routes,
+            plugin_aliases,
             icons.clone(),
-        ));
+        )?);
         let providers = ProviderSet::new(
             config.clone(),
             plugins.clone(),
@@ -703,11 +705,13 @@ impl Launcher {
         let hotkey = loaded.config.hotkey()?;
         let plugin_config = loaded.config.plugin_config()?;
         let plugin_routes = loaded.config.plugin_routes()?;
+        let plugin_aliases = loaded.config.plugin_aliases()?;
         Ok(BootstrapConfig {
             loaded,
             hotkey,
             plugin_config,
             plugin_routes,
+            plugin_aliases,
             config_error: None,
         })
     }
@@ -762,6 +766,7 @@ impl Launcher {
         let reloaded_qs_reverse_hotkey = reverse_quick_switch_hotkey(reloaded_qs_hotkey);
         let plugin_config = loaded.config.plugin_config()?;
         let plugin_routes = loaded.config.plugin_routes()?;
+        let plugin_aliases = loaded.config.plugin_aliases()?;
 
         let config = Arc::new(loaded.config.clone());
         let plugins = Arc::new(plugins::PluginHost::load(
@@ -769,8 +774,9 @@ impl Launcher {
             &loaded.plugin_search_paths,
             plugin_config,
             plugin_routes,
+            plugin_aliases,
             self.icons.clone(),
-        ));
+        )?);
         let providers = ProviderSet::new(
             config.clone(),
             plugins.clone(),
@@ -1285,6 +1291,7 @@ struct BootstrapConfig {
     hotkey: Option<HotKey>,
     plugin_config: std::collections::HashMap<String, serde_json::Value>,
     plugin_routes: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
+    plugin_aliases: std::collections::HashMap<String, std::collections::HashMap<String, String>>,
     config_error: Option<String>,
 }
 

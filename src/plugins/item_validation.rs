@@ -119,6 +119,7 @@ mod tests {
             path: PathBuf::from("test/init.lua"),
             source: String::new(),
             default_commands: std::collections::HashMap::new(),
+            default_aliases: std::collections::HashMap::new(),
         }
     }
 

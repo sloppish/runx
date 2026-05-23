@@ -523,11 +523,53 @@ impl Config {
             .map(|(id, table)| {
                 let mut table = table.clone();
                 table.remove("commands");
+                table.remove("aliases");
                 let value = serde_json::to_value(table)
                     .with_context(|| format!("failed to serialize plugin config for `{id}`"))?;
                 Ok((id.clone(), value))
             })
             .collect()
+    }
+
+    /// Returns the command-alias table for configured plugins.
+    ///
+    /// Each entry maps `plugin_id → { canonical_command → alias }`.
+    pub fn plugin_aliases(&self) -> Result<HashMap<String, HashMap<String, String>>> {
+        let mut aliases_by_plugin = HashMap::new();
+
+        for (plugin_id, table) in &self.plugin {
+            let Some(aliases) = table.get("aliases") else {
+                continue;
+            };
+
+            let aliases = aliases
+                .as_table()
+                .ok_or_else(|| anyhow!("`[plugin.{plugin_id}.aliases]` must be a TOML table"))?;
+
+            let mut map = HashMap::new();
+            for (command, alias_value) in aliases {
+                let normalized_command = command.trim();
+                if normalized_command.is_empty() {
+                    bail!("`[plugin.{plugin_id}.aliases]` contains an empty command name");
+                }
+
+                let alias = alias_value.as_str().ok_or_else(|| {
+                    anyhow!(
+                        "`[plugin.{plugin_id}.aliases.{normalized_command}]` must be a string"
+                    )
+                })?;
+                let normalized_alias = alias.trim();
+                if normalized_alias.is_empty() {
+                    bail!("`[plugin.{plugin_id}.aliases.{normalized_command}]` must not be empty");
+                }
+
+                map.insert(normalized_command.to_owned(), normalized_alias.to_owned());
+            }
+
+            aliases_by_plugin.insert(plugin_id.clone(), map);
+        }
+
+        Ok(aliases_by_plugin)
     }
 
     /// Returns the command-prefix routing table for configured plugins.

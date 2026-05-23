@@ -1159,4 +1159,71 @@ bogus = true
             assert!(error.to_string().contains("unknown field"));
         }
     }
+
+    mod plugin_alias_tests {
+        use std::path::Path;
+
+        use super::validate_config_toml;
+
+        #[test]
+        fn parses_aliases_from_config() {
+            let toml = r#"
+                [plugin.pass.commands]
+                pass = "search"
+                otp = "search_otp"
+
+                [plugin.pass.aliases]
+                pass = "p"
+                otp = "o"
+            "#;
+            let config =
+                validate_config_toml(Path::new("/tmp/test.toml"), toml).expect("should parse");
+            let aliases = config.plugin_aliases().expect("aliases should parse");
+            assert_eq!(aliases["pass"]["pass"], "p");
+            assert_eq!(aliases["pass"]["otp"], "o");
+        }
+
+        #[test]
+        fn empty_aliases_section_parses_as_empty_map() {
+            let toml = r#"
+                [plugin.pass.commands]
+                pass = "search"
+
+                [plugin.pass.aliases]
+            "#;
+            let config =
+                validate_config_toml(Path::new("/tmp/test.toml"), toml).expect("should parse");
+            let aliases = config.plugin_aliases().expect("aliases should parse");
+            assert!(aliases["pass"].is_empty());
+        }
+
+        #[test]
+        fn aliases_stripped_from_plugin_config() {
+            let toml = r#"
+                [plugin.pass]
+                store = "/tmp/store"
+
+                [plugin.pass.aliases]
+                pass = "p"
+            "#;
+            let config =
+                validate_config_toml(Path::new("/tmp/test.toml"), toml).expect("should parse");
+            let plugin_config = config.plugin_config().expect("plugin_config should parse");
+            let pass_config = &plugin_config["pass"];
+            assert!(pass_config.get("aliases").is_none());
+            assert_eq!(pass_config["store"], "/tmp/store");
+        }
+
+        #[test]
+        fn rejects_non_string_alias_value() {
+            let toml = r#"
+                [plugin.pass.aliases]
+                pass = 42
+            "#;
+            let config =
+                validate_config_toml(Path::new("/tmp/test.toml"), toml).expect("should parse");
+            let error = config.plugin_aliases().expect_err("should reject non-string");
+            assert!(error.to_string().contains("must be a string"));
+        }
+    }
 }
