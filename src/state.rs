@@ -9,7 +9,7 @@ use std::collections::HashMap;
 use crate::{
     config::RankingConfig,
     scoring::sort_and_trim,
-    types::{Action, SearchItem, ViewItem, ViewMode, ViewState},
+    types::{Action, ActionFeedback, SearchItem, ViewItem, ViewMode, ViewState},
 };
 
 /// Top-level visibility and search-session state for the launcher.
@@ -73,6 +73,7 @@ impl AppState {
 pub struct SearchSession {
     query: String,
     config_error: Option<String>,
+    action_feedback: Option<ActionFeedback>,
     generation: u64,
     search_token: u64,
     provider_items: HashMap<String, Vec<SearchItem>>,
@@ -89,6 +90,7 @@ impl SearchSession {
         self.search_token = self.search_token.wrapping_add(1);
         self.query.clear();
         self.config_error = None;
+        self.action_feedback = None;
         self.provider_items.clear();
         self.rendered_items.clear();
         self.rendered_query.clear();
@@ -132,6 +134,11 @@ impl SearchSession {
     /// Clears any launcher-level config reload error notice.
     pub fn clear_config_error(&mut self) {
         self.config_error = None;
+    }
+
+    /// Sets or clears the action feedback to display in the launcher.
+    pub fn set_action_feedback(&mut self, feedback: Option<ActionFeedback>) {
+        self.action_feedback = feedback;
     }
 
     /// Starts a new provider search generation.
@@ -249,6 +256,7 @@ impl SearchSession {
             mode,
             query: self.query.clone(),
             config_error: self.config_error.clone(),
+            action_feedback: self.action_feedback.clone(),
             selected_index: self.selected_index,
             items,
         }

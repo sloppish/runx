@@ -6,6 +6,7 @@ export interface DomElements {
   shell: HTMLElement;
   results: HTMLElement;
   configError: HTMLElement;
+  actionFeedback: HTMLElement;
   input: HTMLInputElement;
   inputWrap: HTMLElement;
 }
@@ -14,18 +15,39 @@ export function queryElements(): DomElements {
   const shell = document.querySelector("main") as HTMLElement;
   const results = document.getElementById("results") as HTMLElement;
   const configError = document.getElementById("config-error") as HTMLElement;
+  const actionFeedback = document.getElementById(
+    "action-feedback",
+  ) as HTMLElement;
   const input = document.getElementById("query") as HTMLInputElement;
   const inputWrap = document.querySelector(".input-wrap") as HTMLElement;
-  return { shell, results, configError, input, inputWrap };
+  return { shell, results, configError, actionFeedback, input, inputWrap };
 }
 
 export function renderConfigError(dom: DomElements, error: string): void {
   dom.inputWrap.classList.add("hidden");
   dom.results.classList.add("hidden");
+  dom.actionFeedback.classList.add("hidden");
   dom.configError.classList.remove("hidden");
   dom.configError.innerHTML = `
     <div class="config-error-title">Config reload failed</div>
     <div class="config-error-copy">${escapeHtml(error)}</div>
+  `;
+}
+
+export function renderActionFeedback(
+  dom: DomElements,
+  message: string,
+  isError: boolean,
+): void {
+  dom.inputWrap.classList.add("hidden");
+  dom.results.classList.add("hidden");
+  dom.configError.classList.add("hidden");
+  dom.actionFeedback.classList.remove("hidden");
+  dom.actionFeedback.className = isError
+    ? "action-feedback is-error"
+    : "action-feedback is-info";
+  dom.actionFeedback.innerHTML = `
+    <div class="action-feedback-message">${escapeHtml(message)}</div>
   `;
 }
 
@@ -34,6 +56,7 @@ export function renderResults(dom: DomElements, state: LauncherState): void {
   dom.inputWrap.classList.toggle("hidden", isQuickSwitch);
   dom.results.classList.remove("hidden");
   dom.configError.classList.add("hidden");
+  dom.actionFeedback.classList.add("hidden");
   dom.results.innerHTML = "";
 
   for (const [index, item] of state.items.entries()) {

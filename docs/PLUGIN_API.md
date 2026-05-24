@@ -191,6 +191,28 @@ The `run` function executes the requested action. You can return a value to cont
 | `string` | The returned string. |
 | `""` | Nothing logged. |
 
+### Showing Messages to the User
+
+Return a table with an `error` or `message` key to re-show the launcher with a visible feedback banner:
+
+```lua
+run = function(payload)
+  local ok, err = do_something(payload)
+  if not ok then
+    return { error = err }          -- red error banner
+  end
+  return { message = "Done!" }      -- neutral info banner
+end
+```
+
+| Return Value | Behavior |
+| --- | --- |
+| `{ error = "text" }` | Re-shows launcher with an error message (red) |
+| `{ message = "text" }` | Re-shows launcher with an info message (neutral) |
+| `{ error = "...", message = "..." }` | `error` takes precedence |
+
+The banner replaces the result list. The user dismisses it with Escape. The message text is selectable for copying.
+
 ## Runtime Helpers (`runx.*`)
 
 Runx provides a built-in `runx` table with utility functions. Parameters marked with `?` are optional.

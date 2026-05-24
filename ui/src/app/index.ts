@@ -3,6 +3,7 @@ import {
   type DomElements,
   measurePreferredHeight,
   queryElements,
+  renderActionFeedback,
   renderConfigError,
   renderResults,
   syncSelection,
@@ -72,6 +73,10 @@ if (typeof window !== "undefined" && window.document) {
     return !!state.configError && state.query === "";
   }
 
+  function inActionFeedbackMode(): boolean {
+    return !!state.actionFeedback;
+  }
+
   function visibleRows(): number {
     return normalizeVisibleRows(window.__RUNX_VISIBLE_ROWS__);
   }
@@ -114,6 +119,15 @@ if (typeof window !== "undefined" && window.document) {
   function render(): void {
     clampSelection(state);
 
+    if (inActionFeedbackMode()) {
+      renderActionFeedback(
+        dom,
+        state.actionFeedback!.message,
+        state.actionFeedback!.is_error,
+      );
+      return;
+    }
+
     if (inConfigErrorMode()) {
       renderConfigError(dom, state.configError!);
       return;
@@ -143,6 +157,9 @@ if (typeof window !== "undefined" && window.document) {
     if (state.mode === "quick_switch") {
       return;
     }
+    if (inActionFeedbackMode()) {
+      return;
+    }
     if (inConfigErrorMode()) {
       return;
     }
@@ -151,7 +168,7 @@ if (typeof window !== "undefined" && window.document) {
   };
 
   window.__RUNX_PASTE_TEXT = (text?: string) => {
-    if (inConfigErrorMode()) {
+    if (inActionFeedbackMode() || inConfigErrorMode()) {
       return;
     }
     dom.input.focus();
@@ -259,6 +276,24 @@ if (typeof window !== "undefined" && window.document) {
       if (event.key.length === 1 && !event.metaKey && !event.ctrlKey) {
         event.preventDefault();
       }
+      return;
+    }
+
+    if (inActionFeedbackMode()) {
+      if (event.key === "Escape") {
+        event.preventDefault();
+        send({ type: "hide" });
+        return;
+      }
+      if (isCopyShortcut(event)) {
+        const selection = window.getSelection ? window.getSelection() : null;
+        const text = selection ? selection.toString() : "";
+        if (text) {
+          event.preventDefault();
+          send({ type: "copy_text", text });
+        }
+      }
+      event.preventDefault();
       return;
     }
 

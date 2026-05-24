@@ -6,7 +6,7 @@
 use anyhow::Result;
 
 use crate::macos;
-use crate::plugins::{PluginExecutionContext, PluginHost};
+use crate::plugins::{PluginActionOutcome, PluginExecutionContext, PluginHost};
 use crate::types::Action;
 
 /// Executes the action associated with the currently selected search result.
@@ -15,16 +15,22 @@ pub fn execute_action(
     all_windows: bool,
     plugins: &PluginHost,
     context: &PluginExecutionContext,
-) -> Result<Option<String>> {
+) -> Result<PluginActionOutcome> {
     match action {
-        Action::Noop => Ok(None),
+        Action::Noop => Ok(PluginActionOutcome::Silent(None)),
         Action::OpenApplication { path } => {
             macos::open_application(path)?;
-            Ok(Some(format!("Opened {}", display_name(path))))
+            Ok(PluginActionOutcome::Silent(Some(format!(
+                "Opened {}",
+                display_name(path)
+            ))))
         }
         Action::OpenSettings { url, title } => {
             macos::open_settings(url)?;
-            Ok(Some(format!("Opened {}", title)))
+            Ok(PluginActionOutcome::Silent(Some(format!(
+                "Opened {}",
+                title
+            ))))
         }
         Action::FocusWindow {
             app_name,
@@ -32,7 +38,7 @@ pub fn execute_action(
             window_id,
             pid,
         } => {
-            if all_windows {
+            let result = if all_windows {
                 macos::focus_window_and_activate_all_windows(
                     app_name,
                     window_title,
@@ -41,7 +47,8 @@ pub fn execute_action(
                 )
             } else {
                 macos::focus_window(app_name, window_title, *window_id, *pid)
-            }
+            };
+            Ok(PluginActionOutcome::Silent(result?))
         }
         Action::Plugin { plugin_id, payload } => plugins.run(plugin_id, payload, context),
     }

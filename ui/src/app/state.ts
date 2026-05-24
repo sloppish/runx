@@ -1,9 +1,10 @@
-import type { RenderItem, RenderPayload } from "../types";
+import type { ActionFeedback, RenderItem, RenderPayload } from "../types";
 
 export interface LauncherState {
   mode: "regular" | "quick_switch";
   query: string;
   configError: string | null;
+  actionFeedback: ActionFeedback | null;
   items: RenderItem[];
   selectedIndex: number;
 }
@@ -24,6 +25,7 @@ export function createState(): LauncherState {
     mode: "regular",
     query: "",
     configError: null,
+    actionFeedback: null,
     items: [],
     selectedIndex: 0,
   };
@@ -86,6 +88,7 @@ export function applyRenderPayload(
   state.mode = nextMode;
   state.configError =
     typeof payload.config_error === "string" ? payload.config_error : null;
+  state.actionFeedback = payload.action_feedback ?? null;
   const shouldSyncInput =
     payloadQuery === "" ||
     environment.inputValue === payloadQuery ||

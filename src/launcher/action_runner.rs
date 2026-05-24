@@ -9,7 +9,7 @@ use tokio::runtime::Runtime;
 
 use crate::{
     actions::execute_action,
-    plugins::{PluginExecutionContext, PluginHost},
+    plugins::{PluginActionOutcome, PluginExecutionContext, PluginHost},
     types::{AppEvent, SearchItem},
 };
 use tracing::{error, info, warn};
@@ -70,22 +70,32 @@ impl ActionRunner {
                 let _ = proxy.send_event(AppEvent::ActionOutcome {
                     message: "No results for current query".to_owned(),
                     is_error: true,
+                    show_in_ui: false,
                 });
                 return;
             };
             let result = execute_action(&item.action, all_windows, &plugins, &context);
-            let (message, is_error) = match result {
-                Ok(Some(message)) => (message, false),
-                Ok(None) => ("Action completed".to_owned(), false),
+            let (message, is_error, show_in_ui) = match result {
+                Ok(PluginActionOutcome::Silent(Some(message))) => (message, false, false),
+                Ok(PluginActionOutcome::Silent(None)) => {
+                    ("Action completed".to_owned(), false, false)
+                }
+                Ok(PluginActionOutcome::Feedback(feedback)) => {
+                    (feedback.message, feedback.is_error, true)
+                }
                 Err(error) => {
                     error!(all_windows, error = %format!("{error:#}"), "activate action failed");
-                    (error.to_string(), true)
+                    (error.to_string(), true, false)
                 }
             };
             if !is_error {
                 info!(all_windows, %message, "activate action completed");
             }
-            let _ = proxy.send_event(AppEvent::ActionOutcome { message, is_error });
+            let _ = proxy.send_event(AppEvent::ActionOutcome {
+                message,
+                is_error,
+                show_in_ui,
+            });
         });
     }
 }

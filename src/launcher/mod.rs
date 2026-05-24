@@ -218,6 +218,7 @@ impl Launcher {
                     |error| AppEvent::ActionOutcome {
                         message: format!("UI IPC error: {error}"),
                         is_error: true,
+                        show_in_ui: false,
                     },
                     AppEvent::Frontend,
                 );
@@ -383,8 +384,16 @@ impl Launcher {
             AppEvent::FrontendReadyWatchdog => {
                 self.readiness.watchdog_fired();
             }
-            AppEvent::ActionOutcome { message, is_error } => {
-                self.log_outcome(message, is_error);
+            AppEvent::ActionOutcome {
+                message,
+                is_error,
+                show_in_ui,
+            } => {
+                if show_in_ui {
+                    self.show_action_feedback(message, is_error)?;
+                } else {
+                    self.log_outcome(message, is_error);
+                }
             }
             AppEvent::QuickSwitchPoll => self.handle_quick_switch_poll()?,
             AppEvent::QuickSwitchShow => self.handle_quick_switch_show()?,
@@ -962,6 +971,27 @@ impl Launcher {
         } else {
             info!(%message);
         }
+    }
+
+    fn show_action_feedback(&mut self, message: String, is_error: bool) -> Result<()> {
+        if is_error {
+            error!(%message, "plugin action error (showing in UI)");
+        } else {
+            info!(%message, "plugin action feedback (showing in UI)");
+        }
+        self.refresh_display_config()?;
+        let window_config = self.resolved_window_config.clone();
+        let ui_config = self.resolved_ui_config.clone();
+        self.apply_window_config(&window_config, &ui_config);
+        self.windows.show_window(&self.window);
+        self.windows.note_shown(&mut self.state);
+        self.state
+            .session_mut()
+            .set_action_feedback(Some(crate::types::ActionFeedback { message, is_error }));
+        self.render()?;
+        self.windows.focus_window(&self.window);
+        self.windows.focus_webview(&self.webview)?;
+        Ok(())
     }
 
     fn ensure_launcher_key_focus(&mut self) -> Result<()> {

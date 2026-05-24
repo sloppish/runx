@@ -90,6 +90,7 @@ pub enum AppEvent {
     ActionOutcome {
         message: String,
         is_error: bool,
+        show_in_ui: bool,
     },
 }
 
@@ -311,12 +312,20 @@ pub struct UiLayoutSettingsDraft {
     pub icon_size: u16,
 }
 
+/// Feedback message from a plugin action shown in the launcher UI.
+#[derive(Debug, Clone, Serialize)]
+pub struct ActionFeedback {
+    pub message: String,
+    pub is_error: bool,
+}
+
 /// Serialized frontend state pushed into the webview on each render.
 #[derive(Debug, Clone, Serialize)]
 pub struct ViewState {
     pub mode: ViewMode,
     pub query: String,
     pub config_error: Option<String>,
+    pub action_feedback: Option<ActionFeedback>,
     pub selected_index: usize,
     pub items: Vec<ViewItem>,
 }

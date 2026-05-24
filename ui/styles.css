@@ -180,6 +180,10 @@ body {
   background: var(--canvas-hidden-config-error-bg);
 }
 
+.shell.canvas-hidden .action-feedback.is-error {
+  background: var(--canvas-hidden-config-error-bg);
+}
+
 .label {
   display: var(--header-display);
   justify-content: space-between;
@@ -274,6 +278,38 @@ input::placeholder {
     monospace;
   font-variant-ligatures: none;
   letter-spacing: 0;
+}
+
+.action-feedback {
+  flex: 1;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: calc(18px * var(--ui-scale)) calc(20px * var(--ui-scale));
+  border-radius: calc(18px * var(--ui-scale));
+  background: var(--config-error-bg);
+  border: 1px solid var(--config-error-border);
+  box-shadow: var(--config-error-shadow);
+  overflow: auto;
+}
+
+.action-feedback.is-info {
+  background: var(--item-bg);
+  border-color: var(--input-border);
+  box-shadow: none;
+}
+
+.action-feedback-message {
+  font-size: var(--title-font-size);
+  line-height: 1.65;
+  color: var(--text);
+  white-space: pre-wrap;
+  overflow-wrap: anywhere;
+  user-select: text;
+}
+
+.action-feedback.is-error .action-feedback-message {
+  color: var(--config-error-title);
 }
 
 .results::-webkit-scrollbar {

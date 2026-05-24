@@ -7,10 +7,16 @@ export interface RenderItem {
   accelerator?: string;
 }
 
+export interface ActionFeedback {
+  message: string;
+  is_error: boolean;
+}
+
 export interface RenderPayload {
   mode?: "regular" | "quick_switch";
   query?: string;
   config_error?: string | null;
+  action_feedback?: ActionFeedback | null;
   selected_index?: number;
   items?: RenderItem[];
   layout_version?: number;

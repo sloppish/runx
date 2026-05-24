@@ -26,8 +26,17 @@ use tracing::warn;
 use crate::{
     icons::IconCache,
     macos::FrontmostApp,
-    types::{Action, PluginActionPayload, SearchItem},
+    types::{Action, ActionFeedback, PluginActionPayload, SearchItem},
 };
+
+/// Result of running a plugin's `run()` handler.
+#[derive(Debug, Clone)]
+pub enum PluginActionOutcome {
+    /// No user-visible message (or a log-only string).
+    Silent(Option<String>),
+    /// A message the launcher should show to the user.
+    Feedback(ActionFeedback),
+}
 
 use self::{
     commands::parse_shell_args,
@@ -253,7 +262,7 @@ impl PluginHost {
         plugin_id: &str,
         payload: &PluginActionPayload,
         context: &PluginExecutionContext,
-    ) -> Result<Option<String>> {
+    ) -> Result<PluginActionOutcome> {
         let plugin = self
             .plugins
             .iter()
@@ -489,7 +498,7 @@ fn run_action(
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
     icons: Option<Arc<IconCache>>,
-) -> Result<Option<String>> {
+) -> Result<PluginActionOutcome> {
     let (lua, table) = load_table_with_context_and_session(
         &plugin.path,
         &plugin.source,
@@ -502,20 +511,38 @@ fn run_action(
     )?;
     let run: Function = match table.get::<Option<Function>>("run")? {
         Some(function) => function,
-        None => return Ok(None),
+        None => return Ok(PluginActionOutcome::Silent(None)),
     };
     let value = lua.to_value(&payload.0)?;
     let result = run.call::<mlua::Value>(value)?;
 
     if matches!(result, mlua::Value::Nil) {
-        return Ok(Some(format!("Ran {}", plugin.name)));
+        return Ok(PluginActionOutcome::Silent(Some(format!(
+            "Ran {}",
+            plugin.name
+        ))));
+    }
+
+    if let mlua::Value::Table(ref tbl) = result {
+        if let Ok(Some(error)) = tbl.get::<Option<String>>("error") {
+            return Ok(PluginActionOutcome::Feedback(ActionFeedback {
+                message: error,
+                is_error: true,
+            }));
+        }
+        if let Ok(Some(msg)) = tbl.get::<Option<String>>("message") {
+            return Ok(PluginActionOutcome::Feedback(ActionFeedback {
+                message: msg,
+                is_error: false,
+            }));
+        }
     }
 
     let message: String = lua.from_value(result)?;
     if message.trim().is_empty() {
-        return Ok(None);
+        return Ok(PluginActionOutcome::Silent(None));
     }
-    Ok(Some(message))
+    Ok(PluginActionOutcome::Silent(Some(message)))
 }
 
 #[cfg(test)]
