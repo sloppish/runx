@@ -205,17 +205,30 @@ impl IconCache {
             bundle_path.display()
         );
 
-        {
+        let pending = {
             let mut cache = lock_or_recover(&self.icons);
             match cache.get_cloned(&key) {
                 Some(IconState::Ready(url)) => return Some(url),
-                Some(IconState::Pending | IconState::Missing) => return None,
+                Some(IconState::Pending) => true,
+                Some(IconState::Missing) => return None,
                 None => {
                     if !cache.reserve_pending(key.clone()) {
                         return None;
                     }
+                    false
                 }
             }
+        };
+
+        if pending {
+            let icon_key = cache_key_for_bundle(bundle_path);
+            let webp_path = self.webp_path_for_key(&icon_key);
+            if webp_path.exists() {
+                let url = icon_protocol_url(&icon_key);
+                self.store_icon_state(key, IconState::Ready(url.clone()));
+                return Some(url);
+            }
+            return None;
         }
 
         self.resolve_or_schedule_bundle_icon(key, bundle_path, mode)
@@ -513,6 +526,41 @@ mod tests {
         let _ = fs::remove_file(&webp_path);
         let _ = fs::remove_dir(&bundle_path);
         let _ = fs::remove_dir(&temp_dir);
+    }
+
+    #[test]
+    fn resolves_icon_from_disk_when_memory_cache_is_pending() {
+        let temp_dir = unique_temp_dir();
+        fs::create_dir_all(&temp_dir).expect("temp dir should be created");
+        let bundle_path = temp_dir.join("Sample.app");
+        fs::create_dir_all(&bundle_path).expect("bundle dir should be created");
+
+        let icons = Arc::new(Mutex::new(IconMemoryCache::new(MAX_IN_MEMORY_ICON_ENTRIES)));
+        let cache = IconCache {
+            cache_dir: temp_dir.clone(),
+            icons: Arc::clone(&icons),
+            process_bundles: Mutex::new(HashMap::new()),
+            render_limiter: Arc::new(RenderLimiter::new()),
+            proxy: None,
+        };
+
+        let icon_key = cache_key_for_bundle(&bundle_path);
+        let webp_path = cache.webp_path_for_key(&icon_key);
+        fs::write(&webp_path, b"RIFFxxxxWEBP").expect("cached webp should be written");
+
+        let key = format!("bundle:full:{}", bundle_path.display());
+        icons
+            .lock()
+            .expect("lock")
+            .reserve_pending(key.clone());
+
+        let result = cache.icon_for_bundle(&bundle_path);
+        assert_eq!(result, Some(icon_protocol_url(&icon_key)));
+
+        let state = icons.lock().expect("lock").get_cloned(&key);
+        assert_eq!(state, Some(IconState::Ready(icon_protocol_url(&icon_key))));
+
+        let _ = fs::remove_dir_all(&temp_dir);
     }
 
     #[test]
