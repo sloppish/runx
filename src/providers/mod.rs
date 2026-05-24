@@ -40,6 +40,7 @@ pub struct ProviderSet {
     apps: ProviderWorker,
     settings: ProviderWorker,
     plugins: ProviderWorker,
+    last_plugin_query: Arc<Mutex<Option<String>>>,
 }
 
 impl ProviderSet {
@@ -85,6 +86,7 @@ impl ProviderSet {
             plugins: ProviderWorker::new("plugins", move |query, cancel| {
                 plugins.search(&query, cancel)
             })?,
+            last_plugin_query: Arc::new(Mutex::new(None)),
         })
     }
 
@@ -108,16 +110,28 @@ impl ProviderSet {
 
     /// Starts a new search request across all providers.
     pub fn spawn_search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
-        let workers: [(&str, &ProviderWorker); 4] = [
-            ("windows", &self.windows),
-            ("apps", &self.apps),
-            ("settings", &self.settings),
-            ("plugins", &self.plugins),
-        ];
         let enabled = self.enabled_providers(&query);
+
+        let cancel_plugins = if let Ok(mut guard) = self.last_plugin_query.lock() {
+            let cancel = match guard.as_deref() {
+                Some(prev) => self.plugins_host.should_cancel_search(prev, &query),
+                None => true,
+            };
+            *guard = Some(query.clone());
+            cancel
+        } else {
+            true
+        };
+
+        let workers: [(&str, &ProviderWorker, bool); 4] = [
+            ("windows", &self.windows, true),
+            ("apps", &self.apps, true),
+            ("settings", &self.settings, true),
+            ("plugins", &self.plugins, cancel_plugins),
+        ];
         for name in enabled {
-            if let Some((_, worker)) = workers.iter().find(|(n, _)| *n == name) {
-                worker.search(proxy.clone(), generation, query.clone());
+            if let Some((_, worker, cancel_prev)) = workers.iter().find(|(n, _, _)| *n == name) {
+                worker.search(proxy.clone(), generation, query.clone(), *cancel_prev);
             }
         }
     }
@@ -269,10 +283,16 @@ impl ProviderWorker {
         })
     }
 
-    fn search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
+    fn search(
+        &self,
+        proxy: EventLoopProxy<AppEvent>,
+        generation: u64,
+        query: String,
+        cancel_previous: bool,
+    ) {
         let cancel = Arc::new(AtomicBool::new(false));
         if let Ok(mut guard) = self.active_cancel.lock() {
-            if let Some(prev) = guard.take() {
+            if cancel_previous && let Some(prev) = guard.take() {
                 prev.store(true, Ordering::Relaxed);
             }
             *guard = Some(cancel.clone());

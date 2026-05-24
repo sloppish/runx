@@ -120,6 +120,7 @@ mod tests {
             source: String::new(),
             default_commands: std::collections::HashMap::new(),
             default_aliases: std::collections::HashMap::new(),
+            stateless: false,
         }
     }
 

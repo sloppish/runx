@@ -102,6 +102,7 @@ struct LuaPlugin {
     source: String,
     default_commands: HashMap<String, String>,
     default_aliases: HashMap<String, String>,
+    stateless: bool,
 }
 
 #[derive(Debug, Deserialize)]
@@ -109,6 +110,7 @@ struct PluginMetadata {
     id: Option<String>,
     name: Option<String>,
     badge: Option<String>,
+    stateless: Option<bool>,
 }
 
 /// Minimal Rust context passed into plugin action execution.
@@ -288,6 +290,23 @@ impl PluginHost {
         self.match_route(query).is_some()
     }
 
+    /// Returns whether an in-flight plugin search should be cancelled given a new query.
+    ///
+    /// Cancellation is suppressed when both queries route to the same non-stateless plugin,
+    /// allowing the first invocation to populate the session store for subsequent ones.
+    pub fn should_cancel_search(&self, prev_query: &str, new_query: &str) -> bool {
+        let prev_route = self.match_route(prev_query);
+        let new_route = self.match_route(new_query);
+        match (prev_route, new_route) {
+            (Some((prev, _)), Some((new, _))) if prev.plugin_id == new.plugin_id => self
+                .plugins
+                .iter()
+                .find(|p| p.id == prev.plugin_id)
+                .is_some_and(|p| p.stateless),
+            _ => true,
+        }
+    }
+
     fn match_route<'a>(&'a self, query: &'a str) -> Option<(&'a PluginRoute, &'a str)> {
         self.routes
             .iter()
@@ -329,6 +348,7 @@ fn load_plugin(
         source,
         default_commands,
         default_aliases,
+        stateless: metadata.stateless.unwrap_or(false),
     })
 }
 
@@ -337,6 +357,7 @@ fn extract_metadata(table: &Table) -> Result<PluginMetadata> {
         id: table.get("id")?,
         name: table.get("name")?,
         badge: table.get("badge")?,
+        stateless: table.get("stateless")?,
     })
 }
 
@@ -540,6 +561,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
 
         let items = run_search_handler(
@@ -583,6 +605,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
 
         let items = run_search_handler(
@@ -633,6 +656,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
         let store = session_store();
 
@@ -684,6 +708,7 @@ mod tests {
             source: source.to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
         let plugin_b = LuaPlugin {
             id: "b".to_owned(),
@@ -693,6 +718,7 @@ mod tests {
             source: source.to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
         let store = session_store();
 
@@ -738,6 +764,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
 
         let error = run_search(
@@ -812,6 +839,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
 
         let items = run_search(
@@ -857,6 +885,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
 
         let items = run_search(
@@ -897,6 +926,7 @@ mod tests {
             .to_owned(),
             default_commands: HashMap::new(),
             default_aliases: HashMap::new(),
+            stateless: false,
         };
 
         let items = run_search(
@@ -1093,5 +1123,62 @@ mod tests {
         let routes = build_routes(route_config, &alias_config).unwrap();
         assert_eq!(routes.len(), 1);
         assert_eq!(routes[0].command, "pass");
+    }
+
+    #[test]
+    fn should_cancel_search_preserves_same_route_non_stateless() {
+        use super::routing::PluginRoute;
+
+        let host = super::PluginHost {
+            plugins: vec![LuaPlugin {
+                id: "tabs".to_owned(),
+                name: "Tabs".to_owned(),
+                badge: "TAB".to_owned(),
+                path: PathBuf::from("tabs/init.lua"),
+                source: String::new(),
+                default_commands: HashMap::new(),
+                default_aliases: HashMap::new(),
+                stateless: false,
+            }],
+            routes: vec![PluginRoute {
+                plugin_id: "tabs".to_owned(),
+                command: "t".to_owned(),
+                handler: "search".to_owned(),
+            }],
+            routed_plugin_ids: ["tabs".to_owned()].into_iter().collect(),
+            ..Default::default()
+        };
+
+        assert!(!host.should_cancel_search("t", "t inbox"));
+        assert!(!host.should_cancel_search("t hello", "t inbox"));
+        assert!(host.should_cancel_search("t inbox", "te"));
+        assert!(host.should_cancel_search("hello", "world"));
+    }
+
+    #[test]
+    fn should_cancel_search_kills_stateless_plugin() {
+        use super::routing::PluginRoute;
+
+        let host = super::PluginHost {
+            plugins: vec![LuaPlugin {
+                id: "calc".to_owned(),
+                name: "Calc".to_owned(),
+                badge: "CAL".to_owned(),
+                path: PathBuf::from("calc/init.lua"),
+                source: String::new(),
+                default_commands: HashMap::new(),
+                default_aliases: HashMap::new(),
+                stateless: true,
+            }],
+            routes: vec![PluginRoute {
+                plugin_id: "calc".to_owned(),
+                command: "calc".to_owned(),
+                handler: "search".to_owned(),
+            }],
+            routed_plugin_ids: ["calc".to_owned()].into_iter().collect(),
+            ..Default::default()
+        };
+
+        assert!(host.should_cancel_search("calc 2+2", "calc 3+3"));
     }
 }

@@ -549,10 +549,7 @@ mod tests {
         fs::write(&webp_path, b"RIFFxxxxWEBP").expect("cached webp should be written");
 
         let key = format!("bundle:full:{}", bundle_path.display());
-        icons
-            .lock()
-            .expect("lock")
-            .reserve_pending(key.clone());
+        icons.lock().expect("lock").reserve_pending(key.clone());
 
         let result = cache.icon_for_bundle(&bundle_path);
         assert_eq!(result, Some(icon_protocol_url(&icon_key)));
