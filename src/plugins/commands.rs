@@ -4,9 +4,23 @@ use std::{
     fs,
     path::{Path, PathBuf},
     process::{Command, ExitStatus, Stdio},
+    sync::atomic::{AtomicBool, Ordering},
+    thread,
+    time::Duration,
 };
 
 use anyhow::{Context, Result, bail};
+
+#[derive(Debug)]
+pub(crate) struct SearchCancelled;
+
+impl std::fmt::Display for SearchCancelled {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_str("search cancelled")
+    }
+}
+
+impl std::error::Error for SearchCancelled {}
 
 pub(super) fn parse_shell_args(raw: &str) -> Result<Vec<String>> {
     #[derive(Copy, Clone, Eq, PartialEq)]
@@ -106,12 +120,34 @@ pub(super) fn exec_capture(
     first_line_only: bool,
     trim: bool,
     search_paths: &[PathBuf],
+    cancel: &AtomicBool,
 ) -> Result<String> {
-    let output = command_for_plugin(program, search_paths)
+    let mut child = command_for_plugin(program, search_paths)
         .args(args)
         .stdin(Stdio::null())
-        .output()
+        .stdout(Stdio::piped())
+        .stderr(Stdio::piped())
+        .spawn()
         .with_context(|| format!("failed to run `{program}`"))?;
+
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(SearchCancelled.into());
+        }
+        match child
+            .try_wait()
+            .context("failed to wait on child process")?
+        {
+            Some(_) => break,
+            None => thread::sleep(Duration::from_millis(1)),
+        }
+    }
+
+    let output = child
+        .wait_with_output()
+        .with_context(|| format!("failed to read output from `{program}`"))?;
 
     if !output.status.success() {
         bail_command_failure(program, &output.stderr, output.status)?;
@@ -139,6 +175,7 @@ pub(super) fn exec_status(
     args: &[String],
     silence_stderr: bool,
     search_paths: &[PathBuf],
+    cancel: &AtomicBool,
 ) -> Result<()> {
     let mut command = command_for_plugin(program, search_paths);
     command
@@ -149,15 +186,33 @@ pub(super) fn exec_status(
         command.stderr(Stdio::null());
     }
 
-    let output = command
-        .output()
+    let mut child = command
+        .spawn()
         .with_context(|| format!("failed to run `{program}`"))?;
-    if output.status.success() {
+
+    loop {
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(SearchCancelled.into());
+        }
+        match child
+            .try_wait()
+            .context("failed to wait on child process")?
+        {
+            Some(_) => break,
+            None => thread::sleep(Duration::from_millis(1)),
+        }
+    }
+
+    let status = child
+        .wait()
+        .with_context(|| format!("failed to wait on `{program}`"))?;
+    if status.success() {
         return Ok(());
     }
 
-    bail_command_failure(program, &output.stderr, output.status)?;
-    Ok(())
+    bail!("underlying command exited {status}");
 }
 
 fn bail_command_failure(program: &str, stderr: &[u8], status: ExitStatus) -> Result<()> {

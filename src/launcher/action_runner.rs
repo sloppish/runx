@@ -3,7 +3,7 @@
 //! This module owns the plugin host handle used during activation and keeps the
 //! "run this action off the UI thread" behavior out of `Launcher`.
 
-use std::sync::Arc;
+use std::sync::{Arc, atomic::AtomicBool};
 
 use tokio::runtime::Runtime;
 
@@ -44,19 +44,21 @@ impl ActionRunner {
         runtime.handle().spawn_blocking(move || {
             let resolved = match (&item, &stale_query) {
                 (Some(_), _) => item,
-                (None, Some(query)) => match plugins.search(query) {
-                    Ok(mut items) if !items.is_empty() => Some(items.swap_remove(0)),
-                    Ok(_) => None,
-                    Err(e) => {
-                        error!(
-                            all_windows,
-                            query = %query,
-                            error = %format!("{e:#}"),
-                            "plugin search failed during stale-query activation"
-                        );
-                        None
+                (None, Some(query)) => {
+                    match plugins.search(query, Arc::new(AtomicBool::new(false))) {
+                        Ok(mut items) if !items.is_empty() => Some(items.swap_remove(0)),
+                        Ok(_) => None,
+                        Err(e) => {
+                            error!(
+                                all_windows,
+                                query = %query,
+                                error = %format!("{e:#}"),
+                                "plugin search failed during stale-query activation"
+                            );
+                            None
+                        }
                     }
-                },
+                }
                 (None, None) => None,
             };
             let Some(item) = resolved else {

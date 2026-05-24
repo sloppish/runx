@@ -1222,7 +1222,9 @@ bogus = true
             "#;
             let config =
                 validate_config_toml(Path::new("/tmp/test.toml"), toml).expect("should parse");
-            let error = config.plugin_aliases().expect_err("should reject non-string");
+            let error = config
+                .plugin_aliases()
+                .expect_err("should reject non-string");
             assert!(error.to_string().contains("must be a string"));
         }
     }

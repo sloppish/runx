@@ -554,9 +554,7 @@ impl Config {
                 }
 
                 let alias = alias_value.as_str().ok_or_else(|| {
-                    anyhow!(
-                        "`[plugin.{plugin_id}.aliases.{normalized_command}]` must be a string"
-                    )
+                    anyhow!("`[plugin.{plugin_id}.aliases.{normalized_command}]` must be a string")
                 })?;
                 let normalized_alias = alias.trim();
                 if normalized_alias.is_empty() {

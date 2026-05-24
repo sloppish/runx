@@ -11,7 +11,8 @@ use std::{
     collections::HashSet,
     path::PathBuf,
     sync::{
-        Arc,
+        Arc, Mutex,
+        atomic::{AtomicBool, Ordering},
         mpsc::{self, Receiver, Sender},
     },
     thread,
@@ -69,19 +70,21 @@ impl ProviderSet {
             windows: ProviderWorker::new("windows", {
                 let provider = windows;
                 let limit = config.ranking.result_limit;
-                move |query| provider.search(&query, limit)
+                move |query, _cancel| provider.search(&query, limit)
             })?,
             apps: ProviderWorker::new("apps", {
                 let provider = apps;
                 let limit = config.ranking.result_limit;
-                move |query| provider.search(&query, limit)
+                move |query, _cancel| provider.search(&query, limit)
             })?,
             settings: ProviderWorker::new("settings", {
                 let provider = settings;
                 let limit = config.ranking.result_limit;
-                move |query| provider.search(&query, limit)
+                move |query, _cancel| provider.search(&query, limit)
             })?,
-            plugins: ProviderWorker::new("plugins", move |query| plugins.search(&query))?,
+            plugins: ProviderWorker::new("plugins", move |query, cancel| {
+                plugins.search(&query, cancel)
+            })?,
         })
     }
 
@@ -240,46 +243,59 @@ mod tests {
 #[derive(Clone)]
 struct ProviderWorker {
     sender: Sender<SearchRequest>,
+    active_cancel: Arc<Mutex<Option<Arc<AtomicBool>>>>,
 }
 
 struct SearchRequest {
     generation: u64,
     query: String,
     proxy: EventLoopProxy<AppEvent>,
+    cancel: Arc<AtomicBool>,
 }
 
 impl ProviderWorker {
     fn new<F>(name: &'static str, search: F) -> anyhow::Result<Self>
     where
-        F: Fn(String) -> anyhow::Result<Vec<SearchItem>> + Send + 'static,
+        F: Fn(String, Arc<AtomicBool>) -> anyhow::Result<Vec<SearchItem>> + Send + 'static,
     {
         let (sender, receiver) = mpsc::channel();
         thread::Builder::new()
             .name(format!("runx-provider-{name}"))
             .spawn(move || worker_loop(name, receiver, search))
             .map_err(anyhow::Error::from)?;
-        Ok(Self { sender })
+        Ok(Self {
+            sender,
+            active_cancel: Arc::new(Mutex::new(None)),
+        })
     }
 
     fn search(&self, proxy: EventLoopProxy<AppEvent>, generation: u64, query: String) {
+        let cancel = Arc::new(AtomicBool::new(false));
+        if let Ok(mut guard) = self.active_cancel.lock() {
+            if let Some(prev) = guard.take() {
+                prev.store(true, Ordering::Relaxed);
+            }
+            *guard = Some(cancel.clone());
+        }
         let _ = self.sender.send(SearchRequest {
             generation,
             query,
             proxy,
+            cancel,
         });
     }
 }
 
 fn worker_loop<F>(name: &'static str, receiver: Receiver<SearchRequest>, search: F)
 where
-    F: Fn(String) -> anyhow::Result<Vec<SearchItem>>,
+    F: Fn(String, Arc<AtomicBool>) -> anyhow::Result<Vec<SearchItem>>,
 {
     while let Ok(mut request) = receiver.recv() {
         while let Ok(next) = receiver.try_recv() {
             request = next;
         }
 
-        match search(request.query) {
+        match search(request.query, request.cancel.clone()) {
             Ok(items) => {
                 let _ = request.proxy.send_event(AppEvent::ProviderItems {
                     generation: request.generation,
@@ -288,6 +304,9 @@ where
                 });
             }
             Err(error) => {
+                if request.cancel.load(Ordering::Relaxed) {
+                    continue;
+                }
                 error!(
                     provider = name,
                     error = %format!("{error:#}"),

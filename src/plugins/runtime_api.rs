@@ -1,7 +1,7 @@
 use std::{
     env, fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
 use anyhow::{Context, Result};
@@ -31,6 +31,7 @@ pub(super) fn load_table(
     plugin_config: &JsonValue,
     search_paths: &[PathBuf],
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(Lua, Table)> {
     load_table_internal(
         path,
@@ -40,9 +41,11 @@ pub(super) fn load_table(
         search_paths,
         None,
         icons,
+        cancel,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn load_table_with_session(
     path: &Path,
     source: &str,
@@ -51,6 +54,7 @@ pub(super) fn load_table_with_session(
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(Lua, Table)> {
     load_table_internal(
         path,
@@ -63,9 +67,11 @@ pub(super) fn load_table_with_session(
             store: session_store,
         }),
         icons,
+        cancel,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 pub(super) fn load_table_with_context_and_session(
     path: &Path,
     source: &str,
@@ -74,6 +80,7 @@ pub(super) fn load_table_with_context_and_session(
     search_paths: &[PathBuf],
     session: PluginRuntimeSession,
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(Lua, Table)> {
     load_table_internal(
         path,
@@ -83,9 +90,11 @@ pub(super) fn load_table_with_context_and_session(
         search_paths,
         Some(session),
         icons,
+        cancel,
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn load_table_internal(
     path: &Path,
     source: &str,
@@ -94,6 +103,7 @@ fn load_table_internal(
     search_paths: &[PathBuf],
     session: Option<PluginRuntimeSession>,
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<(Lua, Table)> {
     let lua = Lua::new();
     lua.gc_stop();
@@ -105,6 +115,7 @@ fn load_table_internal(
         search_paths,
         session,
         icons,
+        cancel,
     )?;
     let table: Table = lua
         .load(source)
@@ -114,6 +125,7 @@ fn load_table_internal(
     Ok((lua, table))
 }
 
+#[allow(clippy::too_many_arguments)]
 fn install_runtime(
     lua: &Lua,
     plugin_path: &Path,
@@ -122,6 +134,7 @@ fn install_runtime(
     search_paths: &[PathBuf],
     session: Option<PluginRuntimeSession>,
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<()> {
     let runtime = lua.create_table()?;
     let search_paths = search_paths.to_vec();
@@ -173,6 +186,7 @@ fn install_runtime(
     )?;
 
     let exec_capture_paths = search_paths.clone();
+    let exec_capture_cancel = cancel.clone();
     runtime.set(
         "exec_capture",
         lua.create_function(
@@ -189,6 +203,7 @@ fn install_runtime(
                     first_line_only.unwrap_or(false),
                     trim.unwrap_or(true),
                     &exec_capture_paths,
+                    &exec_capture_cancel,
                 )
                 .map_err(mlua::Error::external)
             },
@@ -196,6 +211,7 @@ fn install_runtime(
     )?;
 
     let exec_status_paths = search_paths.clone();
+    let exec_status_cancel = cancel.clone();
     runtime.set(
         "exec_status",
         lua.create_function(
@@ -205,6 +221,7 @@ fn install_runtime(
                     &args,
                     silence_stderr.unwrap_or(false),
                     &exec_status_paths,
+                    &exec_status_cancel,
                 )
                 .map_err(mlua::Error::external)?;
                 Ok(true)
@@ -213,11 +230,19 @@ fn install_runtime(
     )?;
 
     let exec_json_paths = search_paths;
+    let exec_json_cancel = cancel;
     runtime.set(
         "exec_json",
         lua.create_function(move |lua, (program, args): (String, Vec<String>)| {
-            let output = exec_capture(&program, &args, false, true, &exec_json_paths)
-                .map_err(mlua::Error::external)?;
+            let output = exec_capture(
+                &program,
+                &args,
+                false,
+                true,
+                &exec_json_paths,
+                &exec_json_cancel,
+            )
+            .map_err(mlua::Error::external)?;
             let json = serde_json::from_str::<JsonValue>(&output).map_err(mlua::Error::external)?;
             lua.to_value(&json)
         })?,

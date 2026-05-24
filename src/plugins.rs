@@ -14,7 +14,7 @@ use std::{
     collections::{HashMap, HashSet, VecDeque},
     fs,
     path::{Path, PathBuf},
-    sync::{Arc, Mutex},
+    sync::{Arc, Mutex, atomic::AtomicBool},
 };
 
 use anyhow::{Context, Result, anyhow};
@@ -169,8 +169,7 @@ impl PluginHost {
 
         let mut merged_alias_config = alias_config;
         for plugin in &plugins {
-            if !plugin.default_aliases.is_empty() && !merged_alias_config.contains_key(&plugin.id)
-            {
+            if !plugin.default_aliases.is_empty() && !merged_alias_config.contains_key(&plugin.id) {
                 merged_alias_config.insert(plugin.id.clone(), plugin.default_aliases.clone());
             }
         }
@@ -200,7 +199,7 @@ impl PluginHost {
     }
 
     /// Returns search items contributed by plugins for the current query.
-    pub fn search(&self, query: &str) -> Result<Vec<SearchItem>> {
+    pub fn search(&self, query: &str, cancel: Arc<AtomicBool>) -> Result<Vec<SearchItem>> {
         if let Some((route, args)) = self.match_route(query) {
             let plugin = self
                 .plugins
@@ -216,6 +215,7 @@ impl PluginHost {
                 &self.search_paths,
                 self.session_store.clone(),
                 self.icons.clone(),
+                cancel,
             )
             .with_context(|| {
                 format!(
@@ -237,6 +237,7 @@ impl PluginHost {
                 &self.search_paths,
                 self.session_store.clone(),
                 self.icons.clone(),
+                cancel.clone(),
             )
             .with_context(|| format!("plugin `{}` search failed", plugin.id))?;
             items.extend(plugin_items);
@@ -301,7 +302,14 @@ fn load_plugin(
 ) -> Result<LuaPlugin> {
     let source = fs::read_to_string(path)
         .with_context(|| format!("failed to read plugin {}", path.display()))?;
-    let (_lua, table) = load_table(path, &source, &empty_plugin_config(), search_paths, icons)?;
+    let (_lua, table) = load_table(
+        path,
+        &source,
+        &empty_plugin_config(),
+        search_paths,
+        icons,
+        Arc::new(AtomicBool::new(false)),
+    )?;
     let metadata = extract_metadata(&table)?;
     let default_commands = extract_default_commands(&table);
     let default_aliases = extract_default_aliases(&table);
@@ -401,6 +409,7 @@ fn run_search(
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<Vec<SearchItem>> {
     let (lua, table) = load_table_with_session(
         &plugin.path,
@@ -410,6 +419,7 @@ fn run_search(
         search_paths,
         session_store,
         icons,
+        cancel,
     )?;
     let search: Function = match table.get::<Option<Function>>("search")? {
         Some(function) => function,
@@ -420,6 +430,7 @@ fn run_search(
     items_from_wire(plugin, raw_items)
 }
 
+#[allow(clippy::too_many_arguments)]
 fn run_search_handler(
     plugin: &LuaPlugin,
     handler_name: &str,
@@ -428,6 +439,7 @@ fn run_search_handler(
     search_paths: &[PathBuf],
     session_store: Arc<Mutex<PluginSessionStore>>,
     icons: Option<Arc<IconCache>>,
+    cancel: Arc<AtomicBool>,
 ) -> Result<Vec<SearchItem>> {
     let (lua, table) = load_table_with_session(
         &plugin.path,
@@ -437,6 +449,7 @@ fn run_search_handler(
         search_paths,
         session_store,
         icons,
+        cancel,
     )?;
     let search: Function = table
         .get::<Option<Function>>(handler_name)?
@@ -464,6 +477,7 @@ fn run_action(
         search_paths,
         PluginRuntimeSession::new(&plugin.id, session_store),
         icons,
+        Arc::new(AtomicBool::new(false)),
     )?;
     let run: Function = match table.get::<Option<Function>>("run")? {
         Some(function) => function,
@@ -487,6 +501,7 @@ fn run_action(
 mod tests {
     use std::collections::HashMap;
     use std::path::PathBuf;
+    use std::sync::atomic::AtomicBool;
     use std::sync::{Arc, Mutex};
 
     use super::{
@@ -496,6 +511,10 @@ mod tests {
 
     fn session_store() -> Arc<Mutex<PluginSessionStore>> {
         Arc::new(Mutex::new(PluginSessionStore::default()))
+    }
+
+    fn no_cancel() -> Arc<AtomicBool> {
+        Arc::new(AtomicBool::new(false))
     }
 
     #[test]
@@ -531,6 +550,7 @@ mod tests {
             &[],
             session_store(),
             None,
+            no_cancel(),
         )
         .expect("handler search should succeed");
 
@@ -573,6 +593,7 @@ mod tests {
             &[],
             session_store(),
             None,
+            no_cancel(),
         )
         .expect("handler search should succeed");
 
@@ -622,10 +643,19 @@ mod tests {
             &[],
             store.clone(),
             None,
+            no_cancel(),
         )
         .expect("first evaluation should store the snapshot");
-        let items = run_search(&plugin, "get", empty_plugin_config(), &[], store, None)
-            .expect("search works");
+        let items = run_search(
+            &plugin,
+            "get",
+            empty_plugin_config(),
+            &[],
+            store,
+            None,
+            no_cancel(),
+        )
+        .expect("search works");
 
         assert_eq!(items[0].title, "Two");
         assert_eq!(items[0].subtitle, "https://example.org");
@@ -673,10 +703,19 @@ mod tests {
             &[],
             store.clone(),
             None,
+            no_cancel(),
         )
         .expect("plugin A should store its own value");
-        let items = run_search(&plugin_b, "get", empty_plugin_config(), &[], store, None)
-            .expect("plugin B search works");
+        let items = run_search(
+            &plugin_b,
+            "get",
+            empty_plugin_config(),
+            &[],
+            store,
+            None,
+            no_cancel(),
+        )
+        .expect("plugin B search works");
 
         assert_eq!(items[0].title, "missing");
     }
@@ -708,6 +747,7 @@ mod tests {
             &[],
             session_store(),
             None,
+            no_cancel(),
         )
         .expect_err("functions are not JSON-serializable");
 
@@ -781,6 +821,7 @@ mod tests {
             &[],
             session_store(),
             None,
+            no_cancel(),
         )
         .expect("search should succeed");
 
@@ -825,6 +866,7 @@ mod tests {
             &[],
             session_store(),
             None,
+            no_cancel(),
         )
         .expect("search should succeed");
 
@@ -864,6 +906,7 @@ mod tests {
             &[],
             session_store(),
             None,
+            no_cancel(),
         )
         .expect("search should succeed");
 
@@ -1015,7 +1058,11 @@ mod tests {
         let routes = build_routes(route_config, &alias_config).unwrap();
         assert_eq!(routes.len(), 2);
         assert!(routes.iter().any(|r| r.command == "pass"));
-        assert!(routes.iter().any(|r| r.command == "p" && r.handler == "search"));
+        assert!(
+            routes
+                .iter()
+                .any(|r| r.command == "p" && r.handler == "search")
+        );
     }
 
     #[test]
