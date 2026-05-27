@@ -67,9 +67,9 @@ return {
 | `commands` | no | table | - | Default command routes: `{ prefix = "handler_name" }`. |
 | `aliases` | no | table | - | Default command aliases: `{ command = "alias" }`. |
 | `stateless` | no | boolean | `false` | When true, in-flight searches are cancelled on each keystroke even within the same route. Set for plugins that don't use the session store. |
-| `search` | no | function | - | Generic search entrypoint for normal queries. |
+| `search` | no | function | - | Generic search entry point for normal queries. |
 | `run` | no | function | - | Called when a plugin item is activated. |
-| `\<handler\>` | no | function | - | Named routed handlers referenced by `commands`. |
+| `<handler>` | no | function | - | Named routed handlers referenced by `commands`. |
 
 ## Search Modes
 
