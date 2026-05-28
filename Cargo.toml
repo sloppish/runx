@@ -1,6 +1,6 @@
 [package]
 name = "runx"
-version = "0.2.0-dev"
+version = "0.2.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 default-run = "runx"
@@ -10,7 +10,7 @@ anyhow = "1.0"
 base64 = "0.22"
 block2 = "0.6"
 directories = "6.0"
-global-hotkey = "0.7"
+global-hotkey = "0.8"
 image = { version = "0.25", default-features = false, features = ["png", "webp"] }
 memchr = "2.7"
 miette = { version = "7.6", features = ["fancy"] }
@@ -22,8 +22,8 @@ tempfile = "3.27"
 thread_local = "1.1"
 time = { version = "0.3", features = ["formatting"] }
 tokio = { version = "1.48", features = ["rt-multi-thread", "time"] }
-toml = "0.8"
-toml_edit = "0.23.10"
+toml = "1.1"
+toml_edit = "0.25"
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "time"] }
 walkdir = "2.5"
@@ -35,7 +35,7 @@ objc2-app-kit = { version = "0.3.2", features = ["NSApplication", "NSBitmapImage
 objc2-foundation = { version = "0.3.2", features = ["NSError", "NSProcessInfo", "NSString", "NSURL", "NSValue"] }
 objc2-service-management = "0.3.2"
 tao = "0.35"
-tray-icon = "0.21"
+tray-icon = "0.24"
 wry = { version = "0.55", features = ["transparent"] }
 
 [patch.crates-io]
