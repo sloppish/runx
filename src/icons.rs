@@ -480,8 +480,11 @@ mod tests {
         fs::{self, File, FileTimes},
         path::{Path, PathBuf},
         process,
-        sync::{Arc, Mutex},
-        time::{Duration, SystemTime, UNIX_EPOCH},
+        sync::{
+            Arc, Mutex,
+            atomic::{AtomicU64, Ordering},
+        },
+        time::{Duration, SystemTime},
     };
 
     use wry::http::{Request, StatusCode};
@@ -723,10 +726,8 @@ mod tests {
     }
 
     fn unique_temp_dir() -> PathBuf {
-        let nanos = SystemTime::now()
-            .duration_since(UNIX_EPOCH)
-            .expect("current time should be after epoch")
-            .as_nanos();
-        std::env::temp_dir().join(format!("runx-icon-test-{}-{nanos}", process::id()))
+        static COUNTER: AtomicU64 = AtomicU64::new(0);
+        let id = COUNTER.fetch_add(1, Ordering::Relaxed);
+        std::env::temp_dir().join(format!("runx-icon-test-{}-{id}", process::id()))
     }
 }
