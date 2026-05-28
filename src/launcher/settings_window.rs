@@ -1384,8 +1384,33 @@ fn table_at_mut<'a>(doc: &'a mut Document, path: &[&str]) -> Option<&'a mut Toml
 }
 
 fn set_item(doc: &mut Document, path: &[&str], key: &str, item: Item) -> Result<()> {
-    table_mut(doc, path)?.insert(key, item);
+    let table = table_mut(doc, path)?;
+    if table.get(key).is_some_and(|existing| items_equal(existing, &item)) {
+        return Ok(());
+    }
+    table.insert(key, item);
     Ok(())
+}
+
+fn items_equal(a: &Item, b: &Item) -> bool {
+    match (a.as_value(), b.as_value()) {
+        (Some(va), Some(vb)) => values_equal(va, vb),
+        _ => false,
+    }
+}
+
+fn values_equal(a: &Value, b: &Value) -> bool {
+    match (a, b) {
+        (Value::String(a), Value::String(b)) => a.value() == b.value(),
+        (Value::Integer(a), Value::Integer(b)) => a.value() == b.value(),
+        (Value::Float(a), Value::Float(b)) => a.value() == b.value(),
+        (Value::Boolean(a), Value::Boolean(b)) => a.value() == b.value(),
+        (Value::Array(a), Value::Array(b)) => {
+            a.len() == b.len()
+                && a.iter().zip(b.iter()).all(|(ai, bi)| values_equal(ai, bi))
+        }
+        _ => false,
+    }
 }
 
 fn table_mut<'a>(doc: &'a mut Document, path: &[&str]) -> Result<&'a mut TomlTable> {
@@ -1576,6 +1601,50 @@ terminal_app = "Alacritty"
         assert!(scheme_content.contains("base = \"builtin_dark\""));
         assert!(scheme_content.contains("accent = \"#fabd2f\""));
         assert!(scheme_content.contains("panel = \"#282828\""));
+    }
+
+    #[test]
+    fn structured_save_preserves_inline_comments_on_managed_keys() {
+        let raw = r#"[window]
+width_fraction = 0.4 # slightly narrow
+visible_rows = 5 # compact mode
+"#;
+        let mut draft =
+            settings_draft_from_config(&Config::default(), raw, Path::new("/tmp/test.toml"))
+                .expect("default config should produce a settings draft");
+        draft.window.visible_rows = 8;
+
+        let saved =
+            apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
+                .expect("draft should save");
+
+        assert!(
+            saved.contains("# slightly narrow"),
+            "inline comment on unchanged key should be preserved, got:\n{saved}"
+        );
+        assert!(saved.contains("visible_rows = 8"));
+    }
+
+    #[test]
+    fn structured_save_preserves_comment_lines_above_keys() {
+        let raw = r#"[window]
+# How wide the window should be
+width_fraction = 0.4
+visible_rows = 5
+"#;
+        let mut draft =
+            settings_draft_from_config(&Config::default(), raw, Path::new("/tmp/test.toml"))
+                .expect("default config should produce a settings draft");
+        draft.window.visible_rows = 8;
+
+        let saved =
+            apply_settings_draft_to_raw(Path::new("/tmp/runx-test-config.toml"), raw, &draft)
+                .expect("draft should save");
+
+        assert!(
+            saved.contains("# How wide the window should be"),
+            "comment line above key should be preserved, got:\n{saved}"
+        );
     }
 
     #[test]
