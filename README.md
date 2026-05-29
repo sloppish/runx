@@ -26,7 +26,8 @@ Runx is a keyboard-first macOS launcher capable of:
 Via [Homebrew](https://brew.sh):
 
 ```
-brew install sloppish/runx/runx
+brew tap sloppish/runx
+brew install runx
 ```
 
 Or download the latest DMG from [GitHub Releases](https://github.com/sloppish/runx/releases) (no auto-updates yet).

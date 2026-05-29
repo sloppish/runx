@@ -7,7 +7,8 @@ Runx is a native macOS launcher written in Rust. It provides keyboard-driven app
 ### Homebrew (Recommended)
 
 ```bash
-brew install sloppish/runx/runx
+brew tap sloppish/runx
+brew install runx
 ```
 
 ### From DMG
