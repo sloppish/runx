@@ -57,6 +57,8 @@ if (typeof window !== "undefined" && window.document) {
   let lastReportedPreferredHeight: number | null = null;
   let lastReportedLayoutVersion: number | null = null;
 
+  document.addEventListener("contextmenu", (event) => event.preventDefault());
+
   function cycleSelectionEnabled(): boolean {
     return !!window.__RUNX_CYCLE_SELECTION__;
   }
